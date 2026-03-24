@@ -1,0 +1,88 @@
+import { useQuery } from "@tanstack/react-query"
+import { useMemo } from "react"
+import { materialService } from "@/services/material.service"
+import { InventoryTransaction } from "@/types/material.types"
+import { DataTable } from "@/components/shared/DataTable"
+import { PageHeader } from "@/components/layout/PageHeader"
+import { TableSkeleton } from "@/components/shared/LoadingSkeleton"
+import { ColumnDef } from "@tanstack/react-table"
+import { ArrowDownToLine, ArrowUpToLine, Replace } from "lucide-react"
+
+export default function TransactionHistoryPage() {
+  const { data: transactions, isLoading } = useQuery({
+    queryKey: ["transactions"],
+    queryFn: () => materialService.getTransactions({ page: 1, page_size: 200 }),
+  })
+
+  // Define columns for TanStack Table
+  const columns = useMemo<ColumnDef<InventoryTransaction>[]>(() => [
+    {
+      accessorKey: "created_at",
+      header: "Date / Time",
+      cell: ({ row }) => {
+        const date = new Date(row.original.created_at);
+        return <span className="text-sm font-medium">{date.toLocaleString()}</span>;
+      },
+    },
+    {
+      accessorKey: "transaction_type",
+      header: "Type",
+      cell: ({ row }) => {
+        const type = row.original.transaction_type;
+        if (type === "in") return <span className="inline-flex items-center text-green-600 bg-green-50 px-2 py-1 rounded text-xs font-semibold"><ArrowDownToLine className="w-3 h-3 mr-1"/> Stock In</span>;
+        if (type === "out") return <span className="inline-flex items-center text-red-600 bg-red-50 px-2 py-1 rounded text-xs font-semibold"><ArrowUpToLine className="w-3 h-3 mr-1"/> Stock Out</span>;
+        if (type === "adjustment") return <span className="inline-flex items-center text-blue-600 bg-blue-50 px-2 py-1 rounded text-xs font-semibold"><Replace className="w-3 h-3 mr-1"/> Adjustment</span>;
+        if (type === "transfer") return <span className="inline-flex items-center text-purple-600 bg-purple-50 px-2 py-1 rounded text-xs font-semibold"><Replace className="w-3 h-3 mr-1"/> Transfer</span>;
+        return type;
+      },
+    },
+    {
+      accessorKey: "material_id",
+      header: "Material ID (UUID)",
+      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.material_id.split("-")[0]}...</span>,
+    },
+    {
+      accessorKey: "quantity",
+      header: "Quantity",
+      cell: ({ row }) => {
+        const type = row.original.transaction_type;
+        const color = type === "in" ? "text-green-600" : type === "out" ? "text-red-600" : "text-blue-600";
+        const sign = type === "in" ? "+" : type === "out" ? "-" : "";
+        return <span className={`font-mono font-bold ${color}`}>{sign}{row.original.quantity}</span>;
+      },
+    },
+    {
+      accessorKey: "reference_id",
+      header: "Reference",
+      cell: ({ row }) => <span className="text-sm">{row.original.reference_id || "-"}</span>,
+    },
+    {
+      accessorKey: "remarks",
+      header: "Remarks",
+      cell: ({ row }) => <span className="text-sm text-muted-foreground truncate max-w-[200px] inline-block" title={row.original.remarks || ""}>{row.original.remarks || "-"}</span>,
+    },
+  ], [])
+
+
+  return (
+    <div className="w-full space-y-6">
+      <PageHeader 
+        title="Transaction History" 
+        description="Immutable audit log of all stock movements and adjustments."
+      />
+
+      {isLoading ? (
+        <TableSkeleton rows={15} />
+      ) : (
+        <div className="bg-card border rounded-lg overflow-hidden">
+          <DataTable 
+            columns={columns} 
+            data={transactions || []} 
+            searchKey="remarks" 
+            searchPlaceholder="Search by remarks..."
+          />
+        </div>
+      )}
+    </div>
+  )
+}

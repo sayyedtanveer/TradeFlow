@@ -1,0 +1,222 @@
+from __future__ import annotations
+
+import uuid
+from datetime import date
+from decimal import Decimal
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
+
+
+# ── Material Request Schemas ──────────────────────────────────────────────
+class CreateMaterialRequest(BaseModel):
+    code: str = Field(..., min_length=1, max_length=100, description="Unique material code within tenant")
+    name: str = Field(..., min_length=1, max_length=255)
+    material_type: str = Field("raw", pattern="^(raw|finished)$")
+    description: Optional[str] = Field(None, max_length=2000)
+    category_id: Optional[uuid.UUID] = None
+    base_unit_id: Optional[uuid.UUID] = None
+    reorder_level: Optional[Decimal] = Field(None, ge=0)
+    location_id: Optional[uuid.UUID] = None
+    is_batch_tracked: bool = False
+    is_serialized: bool = False
+
+
+class UpdateMaterialRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = Field(None, max_length=2000)
+    category_id: Optional[uuid.UUID] = None
+    base_unit_id: Optional[uuid.UUID] = None
+    material_type: Optional[str] = Field(None, pattern="^(raw|finished)$")
+    reorder_level: Optional[Decimal] = Field(None, ge=0)
+    location_id: Optional[uuid.UUID] = None
+    is_batch_tracked: Optional[bool] = None
+    is_serialized: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+
+# ── Transaction Request Schemas ───────────────────────────────────────────
+class AddStockRequest(BaseModel):
+    material_id: uuid.UUID
+    quantity: Decimal = Field(..., gt=0, description="Quantity to add (must be positive)")
+    unit_id: Optional[uuid.UUID] = None
+    to_location_id: Optional[uuid.UUID] = None
+    remarks: Optional[str] = Field(None, max_length=500)
+    reference_id: Optional[uuid.UUID] = None
+
+
+class RemoveStockRequest(BaseModel):
+    material_id: uuid.UUID
+    quantity: Decimal = Field(..., gt=0, description="Quantity to remove (must be positive)")
+    unit_id: Optional[uuid.UUID] = None
+    from_location_id: Optional[uuid.UUID] = None
+    remarks: Optional[str] = Field(None, max_length=500)
+    reference_id: Optional[uuid.UUID] = None
+
+
+class AdjustStockRequest(BaseModel):
+    material_id: uuid.UUID
+    new_quantity: Decimal = Field(..., ge=0, description="New absolute stock quantity")
+    unit_id: Optional[uuid.UUID] = None
+    location_id: Optional[uuid.UUID] = None
+    remarks: Optional[str] = Field(None, max_length=500)
+
+
+class TransactionRequest(BaseModel):
+    """Unified transaction endpoint — client picks transaction_type."""
+    material_id: uuid.UUID
+    transaction_type: str = Field(..., pattern="^(in|out|transfer|adjustment)$")
+    quantity: Decimal = Field(..., gt=0)
+    unit_id: Optional[uuid.UUID] = None
+    from_location_id: Optional[uuid.UUID] = None
+    to_location_id: Optional[uuid.UUID] = None
+    remarks: Optional[str] = Field(None, max_length=500)
+    reference_id: Optional[uuid.UUID] = None
+    # For ADJUSTMENT, client may pass an absolute new_quantity instead
+    new_quantity: Optional[Decimal] = Field(None, ge=0)
+
+
+# ── Material Response Schemas ─────────────────────────────────────────────
+class MaterialResponse(BaseModel):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    code: str
+    name: str
+    material_type: str
+    description: Optional[str]
+    category_id: Optional[uuid.UUID]
+    base_unit_id: Optional[uuid.UUID]
+    current_stock: Decimal
+    reserved_stock: Decimal
+    available_stock: Decimal
+    reorder_level: Optional[Decimal]
+    location_id: Optional[uuid.UUID]
+    is_batch_tracked: bool
+    is_serialized: bool
+    is_active: bool
+    is_low_stock: bool
+
+    model_config = {"from_attributes": True}
+
+
+class MaterialListResponse(BaseModel):
+    items: List[MaterialResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+# ── Stock Response Schemas ────────────────────────────────────────────────
+class StockResponse(BaseModel):
+    material_id: uuid.UUID
+    material_code: str
+    material_name: str
+    current_stock: Decimal
+    reserved_stock: Decimal
+    available_stock: Decimal
+    base_unit_id: Optional[uuid.UUID]
+    is_low_stock: bool
+    reorder_level: Optional[Decimal]
+
+
+# ── Transaction Response Schemas ──────────────────────────────────────────
+class TransactionResponse(BaseModel):
+    id: uuid.UUID
+    material_id: uuid.UUID
+    transaction_type: str
+    quantity: Decimal
+    unit_id: Optional[uuid.UUID]
+    from_location_id: Optional[uuid.UUID]
+    to_location_id: Optional[uuid.UUID]
+    reference_type: str
+    reference_id: Optional[uuid.UUID]
+    remarks: Optional[str]
+    created_by: uuid.UUID
+    created_at: str
+
+    model_config = {"from_attributes": True}
+
+
+# ── Phase 1.2 — Batch Schemas ────────────────────────────────────────────
+
+class AddStockWithBatchRequest(BaseModel):
+    material_id: uuid.UUID
+    batch_number: str = Field(..., min_length=1, max_length=100)
+    quantity: Decimal = Field(..., gt=0, description="Quantity to add (positive)")
+    expiry_date: Optional[date] = None
+    unit_id: Optional[uuid.UUID] = None
+    to_location_id: Optional[uuid.UUID] = None
+    remarks: Optional[str] = Field(None, max_length=500)
+    reference_id: Optional[uuid.UUID] = None
+
+
+class RemoveStockFromBatchRequest(BaseModel):
+    material_id: uuid.UUID
+    batch_number: str = Field(..., min_length=1, max_length=100)
+    quantity: Decimal = Field(..., gt=0, description="Quantity to remove (positive)")
+    unit_id: Optional[uuid.UUID] = None
+    from_location_id: Optional[uuid.UUID] = None
+    remarks: Optional[str] = Field(None, max_length=500)
+    reference_id: Optional[uuid.UUID] = None
+
+
+class BatchResponse(BaseModel):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    material_id: uuid.UUID
+    batch_number: str
+    quantity: Decimal
+    remaining_quantity: Decimal
+    expiry_date: Optional[date]
+    location_id: Optional[uuid.UUID]
+    status: str
+    is_expired: bool
+    days_until_expiry: Optional[int]
+    created_at: str
+
+    model_config = {"from_attributes": True}
+
+
+class BatchListResponse(BaseModel):
+    items: List[BatchResponse]
+    total: int
+
+
+# ── Phase 1.3 — Serial Schemas ────────────────────────────────────────────
+
+class AddSerialStockRequest(BaseModel):
+    material_id: uuid.UUID
+    serial_numbers: List[str] = Field(..., min_length=1, description="List of unique serial number strings")
+    location_id: Optional[uuid.UUID] = None
+    remarks: Optional[str] = Field(None, max_length=500)
+
+
+class IssueSerialRequest(BaseModel):
+    serial_number: str = Field(..., min_length=1, max_length=255)
+    reference_id: Optional[uuid.UUID] = None
+    location_id: Optional[uuid.UUID] = None
+    remarks: Optional[str] = Field(None, max_length=500)
+
+
+class ReturnSerialRequest(BaseModel):
+    serial_number: str = Field(..., min_length=1, max_length=255)
+    location_id: Optional[uuid.UUID] = None
+    remarks: Optional[str] = Field(None, max_length=500)
+
+
+class SerialNumberResponse(BaseModel):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    material_id: uuid.UUID
+    serial_number: str
+    status: str
+    current_location_id: Optional[uuid.UUID]
+    reference_id: Optional[uuid.UUID]
+    created_at: str
+
+    model_config = {"from_attributes": True}
+
+
+class SerialNumberListResponse(BaseModel):
+    items: List[SerialNumberResponse]
+    total: int
