@@ -1,34 +1,39 @@
 import { useAuthStore } from "@/app/store/authStore"
+import { UserRole, normalizeRole } from "@/lib/roles.config"
 
 /**
- * Phase 0 backend RBAC mapping:
- * ADMIN     → *
- * MANAGER   → module:read, module:write
- * OPERATOR  → module:read, module:write (restricted)
- * VIEWER    → module:read
- * 
- * In a real complex app, the backend returns the exact permissions array in /auth/me.
- * For this UI, we can do rough checks based on the `user.role` to hide/show buttons.
+ * Hook for permission checking
+ * Uses centralized role configuration from roles.config.ts
  */
 export function usePermissions() {
   const { user } = useAuthStore()
 
-  const hasRole = (roles: string[]) => {
+  const hasRole = (roles: (UserRole | string)[]): boolean => {
     if (!user) return false
-    return roles.includes(user.role)
+    const normalized = normalizeRole(user.role)
+    return roles.some(role => 
+      normalizeRole(role as string) === normalized
+    )
   }
 
-  const isAdmin = () => hasRole(["ADMIN"])
-  const canWriteInventory = () => hasRole(["ADMIN", "MANAGER", "OPERATOR"])
-  const canDeleteInventory = () => hasRole(["ADMIN", "MANAGER"])
-  const canEditBOM = () => hasRole(["ADMIN", "MANAGER"])
-  const canViewBOM = () => !!user
+  const isAdmin = (): boolean => hasRole([UserRole.ADMIN])
+  const isManager = (): boolean => hasRole([UserRole.MANAGER])
+  const isOperator = (): boolean => hasRole([UserRole.OPERATOR])
+  const isViewer = (): boolean => hasRole([UserRole.VIEWER])
+  
+  const canWrite = (): boolean => hasRole([UserRole.ADMIN, UserRole.MANAGER, UserRole.OPERATOR])
+  const canDelete = (): boolean => hasRole([UserRole.ADMIN, UserRole.MANAGER])
+  const canEditBOM = (): boolean => hasRole([UserRole.ADMIN, UserRole.MANAGER])
+  const canViewBOM = (): boolean => !!user
 
   return {
     hasRole,
     isAdmin,
-    canWriteInventory,
-    canDeleteInventory,
+    isManager,
+    isOperator,
+    isViewer,
+    canWrite,
+    canDelete,
     canEditBOM,
     canViewBOM,
     role: user?.role,

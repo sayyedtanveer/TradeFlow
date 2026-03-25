@@ -3,6 +3,7 @@ import { useUIStore } from "@/app/store/uiStore"
 import { useTenantStore } from "@/app/store/tenantStore"
 import { usePermissions } from "@/hooks/usePermissions"
 import { NAV_ITEMS, type NavItem } from "@/lib/constants"
+import { normalizeRole } from "@/lib/roles.config"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react"
@@ -13,9 +14,12 @@ export function Sidebar() {
   const { role } = usePermissions()
   const location = useLocation()
 
-  // Filter items by current user role
+  // Normalize role from backend (lowercase) to enum (uppercase) for comparison
+  const normalizedRole = normalizeRole(role)
+
+  // Filter items by current user role - now comparing enums, not strings
   const visibleNavItems = NAV_ITEMS.filter((item: NavItem) => 
-    role && item.roles.includes(role)
+    normalizedRole && item.roles.includes(normalizedRole)
   )
 
   return (

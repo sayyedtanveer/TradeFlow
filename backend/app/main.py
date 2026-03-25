@@ -15,6 +15,7 @@ from backend.app.interfaces.api.v1.middleware.logging_middleware import RequestL
 from backend.app.interfaces.api.v1.middleware.tenant_middleware import TenantMiddleware
 from backend.app.interfaces.api.v1.middleware.audit_middleware import AuditMiddleware
 from backend.app.interfaces.api.v1.router import api_v1_router
+from backend.app.core.module_registry import module_registry
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -32,6 +33,9 @@ async def lifespan(app: FastAPI):
     # Create upload directory
     import os
     os.makedirs(settings.upload_dir, exist_ok=True)
+    
+    # Freeze the system map to prevent mutations and ensure dependencies are valid
+    module_registry.lock()
 
     logger.info("Application startup complete")
     yield

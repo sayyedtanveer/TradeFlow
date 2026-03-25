@@ -22,3 +22,30 @@ class AttachOperationToBOMCommand(BaseModel):
     bom_id: uuid.UUID
     operation_id: uuid.UUID
     sequence: int
+
+class UpdateWorkstationCommand(BaseModel):
+    workstation_id: uuid.UUID
+    tenant_id: uuid.UUID
+    code: Optional[str] = None
+    name: Optional[str] = None
+    capacity_hours_per_day: Optional[float] = None
+    hourly_rate: Optional[float] = None
+    is_active: Optional[bool] = None
+
+class DeleteWorkstationCommand(BaseModel):
+    workstation_id: uuid.UUID
+    tenant_id: uuid.UUID
+
+class UpdateOperationCommand(BaseModel):
+    operation_id: uuid.UUID
+    tenant_id: uuid.UUID
+    name: Optional[str] = None
+    workstation_id: Optional[uuid.UUID] = None
+    setup_time: Optional[float] = None
+    run_time: Optional[float] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class DeleteOperationCommand(BaseModel):
+    operation_id: uuid.UUID
+    tenant_id: uuid.UUID

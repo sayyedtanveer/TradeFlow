@@ -3,9 +3,9 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 
-from backend.app.application.bom.commands.routing_commands import AddOperationCommand
+from backend.app.application.bom.commands.routing_commands import AddOperationCommand, UpdateOperationCommand, DeleteOperationCommand
 from backend.app.interfaces.api.v1.dependencies.auth import get_current_tenant_id
-from backend.app.interfaces.api.v1.schemas.routing_schemas import OperationCreate, OperationResponse
+from backend.app.interfaces.api.v1.schemas.routing_schemas import OperationCreate, OperationResponse, OperationUpdate
 
 from backend.app.interfaces.api.v1.dependencies.auth import get_container
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
@@ -45,3 +45,41 @@ async def list_operations(
         handlers = RoutingHandlers(uow, BOMRepository(session), WorkstationRepository(uow), OperationRepository(uow))
         operations = await handlers._operation_repo.list_operations(tenant_id)
     return operations
+
+@router.put("/{operation_id}", response_model=OperationResponse)
+async def update_operation(
+    operation_id: uuid.UUID,
+    body: OperationUpdate,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        handlers = RoutingHandlers(uow, BOMRepository(session), WorkstationRepository(uow), OperationRepository(uow))
+        cmd = UpdateOperationCommand(
+            tenant_id=tenant_id,
+            operation_id=operation_id,
+            **body.model_dump()
+        )
+        try:
+            op = await handlers.handle_update_operation(cmd)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    return op
+
+@router.delete("/{operation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_operation(
+    operation_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        handlers = RoutingHandlers(uow, BOMRepository(session), WorkstationRepository(uow), OperationRepository(uow))
+        cmd = DeleteOperationCommand(tenant_id=tenant_id, operation_id=operation_id)
+        try:
+            await handlers.handle_delete_operation(cmd)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

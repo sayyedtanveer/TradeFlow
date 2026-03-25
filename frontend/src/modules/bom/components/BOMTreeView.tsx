@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronRight, ChevronDown, Package2, Layers, Box, Loader2, AlertCircle } from "lucide-react"
 import { bomService } from "@/services/bom.service"
@@ -35,16 +35,42 @@ const typeConfig = {
 // ─── Single node ──────────────────────────────────────────────────────────────
 
 function TreeNode({
-  node,
+  node: initialNode,
+  bomId,
   depth,
   maxDepth,
 }: {
   node: BOMTreeNode
+  bomId: string
   depth: number
   maxDepth: number
 }) {
   const [expanded, setExpanded] = useState(depth === 0)
-  const hasChildren = node.children && node.children.length > 0
+  const [node, setNode] = useState<BOMTreeNode>(initialNode)
+  
+  // Keep local state in sync if root data changes
+  useEffect(() => {
+    setNode(initialNode)
+  }, [initialNode])
+
+  const { data: lazyData, isFetching: loadingMore } = useQuery({
+    queryKey: ["bom-tree-lazy", bomId, node.id],
+    queryFn: () => bomService.getBOMTree(bomId, { max_depth: 1, parent_id: node.id }),
+    enabled: expanded && !!node.has_more && (!node.children || node.children.length === 0),
+    staleTime: 60_000,
+  })
+
+  useEffect(() => {
+    if (lazyData && lazyData.children && lazyData.children.length > 0) {
+      setNode(prev => ({
+        ...prev,
+        children: lazyData.children,
+        has_more: false
+      }))
+    }
+  }, [lazyData])
+
+  const hasChildren = (node.children && node.children.length > 0) || node.has_more
   const cfg = typeConfig[node.type] ?? typeConfig.material
   const Icon = cfg.icon
 
@@ -61,8 +87,7 @@ function TreeNode({
         style={{ paddingLeft: `${12 + indent}px` }}
         onClick={() => hasChildren && setExpanded((v) => !v)}
       >
-        {/* Expand toggle */}
-        <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 text-muted-foreground">
+        <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 text-muted-foreground mr-1">
           {hasChildren ? (
             expanded ? (
               <ChevronDown className="w-3.5 h-3.5" />
@@ -73,6 +98,9 @@ function TreeNode({
             <span className="w-3.5 h-3.5 border-l border-b border-border ml-1" />
           )}
         </span>
+
+        {/* Loading Indicator */}
+        {loadingMore && <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin flex-shrink-0 mr-1" />}
 
         {/* Icon */}
         <Icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -135,8 +163,8 @@ function TreeNode({
             className="absolute top-0 bottom-2 border-l border-dashed border-border"
             style={{ left: `${16 + indent + 20}px` }}
           />
-          {node.children.map((child, i) => (
-            <TreeNode key={child.id + i} node={child} depth={depth + 1} maxDepth={maxDepth} />
+          {node.children && node.children.map((child, i) => (
+            <TreeNode key={child.id + i} node={child} bomId={bomId} depth={depth + 1} maxDepth={maxDepth} />
           ))}
         </div>
       )}
@@ -152,7 +180,7 @@ export function BOMTreeView({ bomId }: BOMTreeViewProps) {
 
   const { data: tree, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["bom-tree", bomId, maxDepth],
-    queryFn: () => bomService.getBOMTree(bomId, maxDepth),
+    queryFn: () => bomService.getBOMTree(bomId, { max_depth: maxDepth }),
     staleTime: 30_000,
     retry: 1,
   })
@@ -201,7 +229,7 @@ export function BOMTreeView({ bomId }: BOMTreeViewProps) {
       </div>
 
       {/* Tree */}
-      <TreeNode node={tree} depth={0} maxDepth={maxDepth} />
+      <TreeNode node={tree} bomId={bomId} depth={0} maxDepth={maxDepth} />
     </div>
   )
 }

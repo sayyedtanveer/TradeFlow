@@ -7,64 +7,87 @@ import {
   ClipboardList,
   Factory,
   BarChart3,
+  Layers,
+  PackageSearch,
+  Network,
   LucideIcon
 } from "lucide-react"
+import { UserRole, getRolesForModule } from "@/lib/roles.config"
 
 export type NavItem = {
   title: string
   href: string
   icon: LucideIcon
-  roles: string[] // Which roles can see this
+  roles: UserRole[] // Use enum values instead of strings
 }
 
+// Use getRolesForModule() helper to get roles instead of hardcoding them
 export const NAV_ITEMS: NavItem[] = [
   {
     title: "Dashboard",
     href: "/",
     icon: LayoutDashboard,
-    roles: ["ADMIN", "MANAGER", "OPERATOR", "VIEWER"],
+    roles: getRolesForModule("dashboard"),
   },
   {
-    title: "Inventory",
-    href: "/inventory",
-    icon: Package,
-    roles: ["ADMIN", "MANAGER", "OPERATOR", "VIEWER"],
+    title: "System Map",
+    href: "/system-map",
+    icon: Network,
+    roles: getRolesForModule("dashboard"),
   },
   {
-    title: "Work Orders",
-    href: "/work-orders",
-    icon: ClipboardList,
-    roles: ["ADMIN", "MANAGER", "OPERATOR"],
+    title: "Products",
+    href: "/products",
+    icon: PackageSearch,
+    roles: getRolesForModule("products"),
+  },
+  {
+    title: "Bill of Materials",
+    href: "/bom/list",
+    icon: Layers,
+    roles: getRolesForModule("bom"),
   },
   {
     title: "Manufacturing",
     href: "/manufacturing",
     icon: Factory,
-    roles: ["ADMIN", "MANAGER"],
+    roles: getRolesForModule("manufacturing"),
+  },
+  {
+    title: "Inventory",
+    href: "/inventory",
+    icon: Package,
+    roles: getRolesForModule("inventory"),
+  },
+  {
+    title: "Work Orders",
+    href: "/work-orders",
+    icon: ClipboardList,
+    roles: getRolesForModule("workOrders"),
   },
   {
     title: "Sales",
     href: "/sales",
     icon: ShoppingCart,
-    roles: ["ADMIN", "MANAGER", "VIEWER"],
+    roles: getRolesForModule("sales"),
   },
   {
     title: "Reports",
     href: "/reports",
     icon: BarChart3,
-    roles: ["ADMIN", "MANAGER"],
+    roles: getRolesForModule("reports"),
   },
   {
     title: "Users",
     href: "/users",
     icon: Users,
-    roles: ["ADMIN"],
+    roles: getRolesForModule("users"),
   },
   {
     title: "Settings",
     href: "/settings",
     icon: Settings,
-    roles: ["ADMIN"],
+    roles: getRolesForModule("settings"),
   },
 ]
 
@@ -79,6 +102,8 @@ export const ROUTE_PATHS = {
   LOGIN: "/login",
   REGISTER: "/register",
   DASHBOARD: "/",
+  PRODUCTS: "/products",
+  BOM: "/bom/list",
   INVENTORY: "/inventory/materials",
   MATERIALS: "/inventory/materials",
   TRANSACTIONS: "/inventory/transactions",

@@ -53,7 +53,10 @@ export interface BOMTreeNode {
 
 export interface BOMCostResponse {
   bom_id: string;
-  cost: number;
+  material_cost: number;
+  operation_cost: number;
+  total_cost: number;
+  currency: string;
 }
 
 // ─── Operations & Workstations ────────────────────────────────────────────────

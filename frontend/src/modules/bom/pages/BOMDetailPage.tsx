@@ -1,8 +1,8 @@
 import { useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
 import {
-  ArrowLeft, GitBranch, Package2, Zap, Lock, AlertCircle
+  ArrowLeft, GitBranch, Package2, Zap, Lock, AlertCircle, Plus
 } from "lucide-react"
 import { bomService } from "@/services/bom.service"
 import { BOM } from "@/types/bom.types"
@@ -12,8 +12,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
+import { Label } from "@/components/ui/label"
 import { usePermissions } from "@/hooks/usePermissions"
 import { BOMTreeView } from "../components/BOMTreeView"
+import { BOMLineList } from "../components/BOMLineList"
 import { BOMVersionPanel } from "../components/BOMVersionPanel"
 import { BOMCostBreakdown } from "../components/BOMCostBreakdown"
 import { BOMOperationList } from "../components/BOMOperationList"
@@ -29,18 +31,156 @@ export default function BOMDetailPage() {
 
   const [activateOpen, setActivateOpen] = useState(false)
   const [copyOpen, setCopyOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState("tree")
+  const [activeTab, setActiveTab] = useState("builder")
+  
+  // For NEW BOM creation form
+  const [selectedProductId, setSelectedProductId] = useState<string>("")
 
+
+  const isNewBOM = bomId === "new"
+
+  // Fetch products for new BOM creation
+  const { data: templatesData, isLoading: isLoadingTemplates } = useQuery({
+    queryKey: ["bom-templates"],
+    queryFn: () => bomService.getTemplates({ page_size: 100 }),
+    enabled: isNewBOM,
+    staleTime: 30_000,
+  })
+  const templates = templatesData?.items ?? []
+
+  // For existing BOMs: fetch the BOM data
   const { data: bom, isLoading, isError, error } = useQuery({
     queryKey: ["bom", bomId],
     queryFn: () => bomService.getBOM(bomId!),
-    enabled: !!bomId,
+    enabled: !!bomId && !isNewBOM,
     staleTime: 30_000,
+  })
+
+  // Mutation for creating new BOM
+  const createBOMMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedProductId) throw new Error("Please select a product template")
+      const payload: any = {
+        version: "v1.0",
+        valid_from: new Date().toISOString(),
+        template_id: selectedProductId,
+        lines: [],
+      }
+      return bomService.createBOM(selectedProductId, payload)
+    },
+    onSuccess: (newBom) => {
+      toast.success("BOM created successfully")
+      qc.invalidateQueries({ queryKey: ["bom-list-templates"] })
+      navigate(`/bom/${newBom.id}`)
+    },
+    onError: (err: any) => {
+      const message = err.response?.data?.detail || err.message || "Failed to create BOM"
+      toast.error(typeof message === "string" ? message : JSON.stringify(message))
+    },
   })
 
   // Fetch product context for version panel
   const productId = bom?.variant_id ?? bom?.template_id
   const isTemplate = !bom?.variant_id
+
+  // ─── NEW BOM CREATION FORM ───────────────────────────────────────────────────
+
+  if (isNewBOM) {
+    return (
+      <div className="w-full max-w-2xl space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/bom/list")}
+            className="-ml-2"
+          >
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            Back
+          </Button>
+          <h1 className="text-2xl font-bold">Create Bill of Materials</h1>
+        </div>
+
+        {/* Form Card */}
+        <div className="border rounded-lg p-6 space-y-6 bg-card">
+          {/* Select Product */}
+          <div className="space-y-3">
+            <Label htmlFor="product-select" className="text-base font-medium">
+              Product Template
+            </Label>
+            <div className="relative">
+              <select
+                id="product-select"
+                value={selectedProductId}
+                onChange={(e) => setSelectedProductId(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">-- Select a product template --</option>
+                {isLoadingTemplates ? (
+                  <option disabled>Loading...</option>
+                ) : templates.length === 0 ? (
+                  <option disabled>No product templates found</option>
+                ) : (
+                  templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.code})
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+            {templates.length === 0 && !isLoadingTemplates && (
+              <Alert className="mt-2">
+                <AlertCircle className="w-4 h-4" />
+                <AlertDescription>
+                  No product templates found. Please{" "}
+                  <Button
+                    variant="link"
+                    className="h-auto p-0"
+                    onClick={() => navigate("/products")}
+                  >
+                    create a product template
+                  </Button>{" "}
+                  first.
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => navigate("/bom/list")}
+              disabled={createBOMMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => createBOMMutation.mutate()}
+              disabled={!selectedProductId || createBOMMutation.isPending}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              {createBOMMutation.isPending ? "Creating..." : "Create BOM"}
+            </Button>
+          </div>
+        </div>
+
+        {/* Helper text */}
+        <div className="text-sm text-muted-foreground bg-muted/50 rounded-lg p-4">
+          <p className="mb-2 font-medium text-foreground">What happens next:</p>
+          <ul className="list-disc list-inside space-y-1">
+            <li>A new BOM will be created for the selected product</li>
+            <li>You'll be able to add components and operations</li>
+            <li>You can activate the BOM when it's ready for production</li>
+          </ul>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── EXISTING BOM DETAIL VIEW ────────────────────────────────────────────────
 
   if (isLoading) {
     return (
@@ -197,13 +337,24 @@ export default function BOMDetailPage() {
         <div className={productId ? "lg:col-span-3" : "lg:col-span-4"}>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="w-full sm:w-auto">
-              <TabsTrigger value="tree">
+              <TabsTrigger value="builder">
                 <Package2 className="w-3.5 h-3.5 mr-1.5" />
-                BOM Tree
+                Components Builder
+              </TabsTrigger>
+              <TabsTrigger value="tree">
+                <GitBranch className="w-3.5 h-3.5 mr-1.5" />
+                Multi-level Tree
               </TabsTrigger>
               <TabsTrigger value="operations">Operations</TabsTrigger>
               <TabsTrigger value="cost">Cost Breakdown</TabsTrigger>
             </TabsList>
+
+            {/* Components Builder tab */}
+            <TabsContent value="builder" className="mt-4">
+              <div className="rounded-xl border bg-card p-4">
+                <BOMLineList bom={bom} canEdit={canEditBOM() && !bom.is_active} />
+              </div>
+            </TabsContent>
 
             {/* BOM Tree tab */}
             <TabsContent value="tree" className="mt-4">
@@ -212,9 +363,6 @@ export default function BOMDetailPage() {
                   <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
                     <Package2 className="w-10 h-10" />
                     <p className="text-sm">This BOM has no components yet.</p>
-                    {canEditBOM() && !bom.is_active && (
-                      <p className="text-xs">Edit the BOM to add components.</p>
-                    )}
                   </div>
                 ) : (
                   <BOMTreeView bomId={bom.id} />

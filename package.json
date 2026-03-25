@@ -1,0 +1,22 @@
+{
+  "name": "medtrack-erp",
+  "version": "0.1.0",
+  "description": "MedTrack ERP - Multi-tenant Manufacturing System",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
+    "backend:dev": "python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8001 --reload",
+    "backend:prod": "python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8001",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "frontend:preview": "cd frontend && npm run preview",
+    "build": "npm run frontend:build",
+    "test": "python -m pytest",
+    "test:e2e": "python test_e2e.py",
+    "test:bom": "python test_bom_api.py",
+    "test:login": "python debug_login.py"
+  },
+  "dependencies": {
+    "concurrently": "^9.0.0"
+  }
+}

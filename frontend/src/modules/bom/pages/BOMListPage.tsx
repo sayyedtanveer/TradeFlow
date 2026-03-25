@@ -76,9 +76,33 @@ export default function BOMListPage() {
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground border border-dashed rounded-xl">
-          <Layers className="w-10 h-10" />
-          <p className="text-sm">No products found. Create item templates first.</p>
+        <div className="flex flex-col items-center justify-center py-16 gap-4 border border-dashed rounded-xl bg-muted/20">
+          <div className="rounded-full bg-muted p-4">
+            <Layers className="w-8 h-8 text-muted-foreground" />
+          </div>
+          <div className="text-center space-y-1">
+            <h3 className="font-semibold text-base">
+              {search ? "No matching products found" : "No Bill of Materials yet"}
+            </h3>
+            <p className="text-sm text-muted-foreground max-w-xs">
+              {search
+                ? "Try a different search term."
+                : "To create a BOM, first create a Product Template, then open a product to create its Bill of Materials."}
+            </p>
+          </div>
+          {!search && (
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => navigate("/products")}>
+                Go to Products
+              </Button>
+              {canEditBOM() && (
+                <Button onClick={() => navigate("/bom/new")}>
+                  <Layers className="w-4 h-4 mr-2" />
+                  New BOM
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

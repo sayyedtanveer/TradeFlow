@@ -1,14 +1,17 @@
+import { Link } from "react-router-dom"
 import { KPIData } from "@/types/inventory.types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon, PackageOpen } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 interface KPICardProps {
   data: KPIData
+  href?: string
 }
 
-export function KPICard({ data }: KPICardProps) {
-  return (
-    <Card>
+export function KPICard({ data, href }: KPICardProps) {
+  const content = (
+    <Card className={cn(href && "cursor-pointer hover:shadow-md hover:border-primary/40 transition-all")}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{data.label}</CardTitle>
         <PackageOpen className="h-4 w-4 text-muted-foreground" />
@@ -21,7 +24,7 @@ export function KPICard({ data }: KPICardProps) {
           {data.trend === "neutral" && <ArrowRightIcon className="mr-1 h-3 w-3 text-muted-foreground" />}
           <span
             className={
-              data.trend === "down" && data.label.includes("Alerts") ? "text-destructive font-medium" : 
+              data.trend === "down" && data.label.includes("Alerts") ? "text-destructive font-medium" :
               data.trend === "up" && !data.label.includes("Alerts") ? "text-emerald-500 font-medium" : ""
             }
           >
@@ -32,4 +35,10 @@ export function KPICard({ data }: KPICardProps) {
       </CardContent>
     </Card>
   )
+
+  if (href) {
+    return <Link to={href} className="block">{content}</Link>
+  }
+
+  return content
 }

@@ -12,3 +12,7 @@ class GetBOMCostQuery(BaseModel):
     tenant_id: uuid.UUID
     bom_id: uuid.UUID
     max_depth: int = 20
+
+class ValidateBOMQuery(BaseModel):
+    tenant_id: uuid.UUID
+    bom_id: uuid.UUID

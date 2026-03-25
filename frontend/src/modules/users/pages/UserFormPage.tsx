@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { usersService } from "@/services/users.service"
+import { AVAILABLE_ROLES } from "@/lib/roles.config"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -127,10 +128,11 @@ export default function UserFormPage() {
               <SelectValue placeholder="Select Role" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ADMIN">Admin (Full Access)</SelectItem>
-              <SelectItem value="MANAGER">Manager (View + Edit)</SelectItem>
-              <SelectItem value="OPERATOR">Operator (Limited Actions)</SelectItem>
-              <SelectItem value="VIEWER">Viewer (Read Only)</SelectItem>
+              {AVAILABLE_ROLES.map((role) => (
+                <SelectItem key={role.value} value={role.value}>
+                  {role.label} ({role.description})
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           {errors.role && <p className="text-xs text-destructive">{errors.role.message}</p>}

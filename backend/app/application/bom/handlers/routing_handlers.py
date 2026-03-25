@@ -8,6 +8,10 @@ from backend.app.application.bom.commands.routing_commands import (
     AddWorkstationCommand,
     AddOperationCommand,
     AttachOperationToBOMCommand,
+    UpdateWorkstationCommand,
+    DeleteWorkstationCommand,
+    UpdateOperationCommand,
+    DeleteOperationCommand,
 )
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
 
@@ -73,3 +77,59 @@ class RoutingHandlers:
         await self._uow.commit()
 
         return bom_op.id
+
+    async def handle_update_workstation(self, cmd: UpdateWorkstationCommand) -> Workstation:
+        workstation = await self._workstation_repo.get_by_id(cmd.workstation_id, cmd.tenant_id)
+        if not workstation:
+            raise ValueError(f"Workstation {cmd.workstation_id} not found.")
+
+        workstation.update(
+            code=cmd.code,
+            name=cmd.name,
+            capacity_hours_per_day=cmd.capacity_hours_per_day,
+            hourly_rate=cmd.hourly_rate,
+            is_active=cmd.is_active
+        )
+        self._workstation_repo.save(workstation)
+        await self._uow.commit()
+        return workstation
+
+    async def handle_delete_workstation(self, cmd: DeleteWorkstationCommand) -> None:
+        workstation = await self._workstation_repo.get_by_id(cmd.workstation_id, cmd.tenant_id)
+        if not workstation:
+            raise ValueError(f"Workstation {cmd.workstation_id} not found.")
+
+        workstation.soft_delete()
+        self._workstation_repo.save(workstation)
+        await self._uow.commit()
+
+    async def handle_update_operation(self, cmd: UpdateOperationCommand) -> Operation:
+        operation = await self._operation_repo.get_by_id(cmd.operation_id, cmd.tenant_id)
+        if not operation:
+            raise ValueError(f"Operation {cmd.operation_id} not found.")
+
+        if cmd.workstation_id:
+            workstation = await self._workstation_repo.get_by_id(cmd.workstation_id, cmd.tenant_id)
+            if not workstation:
+                raise ValueError(f"Workstation {cmd.workstation_id} not found.")
+
+        operation.update(
+            name=cmd.name,
+            workstation_id=cmd.workstation_id,
+            setup_time=cmd.setup_time,
+            run_time=cmd.run_time,
+            description=cmd.description,
+            is_active=cmd.is_active
+        )
+        self._operation_repo.save(operation)
+        await self._uow.commit()
+        return operation
+
+    async def handle_delete_operation(self, cmd: DeleteOperationCommand) -> None:
+        operation = await self._operation_repo.get_by_id(cmd.operation_id, cmd.tenant_id)
+        if not operation:
+            raise ValueError(f"Operation {cmd.operation_id} not found.")
+
+        operation.soft_delete()
+        self._operation_repo.save(operation)
+        await self._uow.commit()

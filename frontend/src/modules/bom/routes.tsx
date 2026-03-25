@@ -24,6 +24,16 @@ export const bomRoutes: RouteObject[] = [
     ),
   },
   {
+    // NEW: Handle creation form - must come BEFORE the dynamic :bomId route
+    path: "bom/new",
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <BOMDetailPage />
+      </Suspense>
+    ),
+  },
+  {
+    // Dynamic route for viewing/editing existing BOMs
     path: "bom/:bomId",
     element: (
       <Suspense fallback={<PageLoading />}>

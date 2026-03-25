@@ -18,7 +18,7 @@ from backend.app.application.bom.handlers.bom_handlers import BOMHandlers
 from backend.app.application.bom.handlers.routing_handlers import RoutingHandlers
 from backend.app.application.bom.handlers.bom_advanced_handlers import BOMAdvancedHandlers
 from backend.app.application.bom.commands.routing_commands import AttachOperationToBOMCommand
-from backend.app.application.bom.queries.bom_advanced_queries import GetBOMTreeQuery, GetBOMCostQuery
+from backend.app.application.bom.queries.bom_advanced_queries import GetBOMTreeQuery, GetBOMCostQuery, ValidateBOMQuery
 from backend.app.interfaces.api.v1.schemas.routing_schemas import BOMOperationAttach
 
 from backend.app.infrastructure.persistence.repositories.bom_repository import BOMRepository
@@ -310,6 +310,26 @@ async def attach_operation(
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return op_id
+
+@router.post("/boms/{bom_id}/validate", summary="Validate BOM constraints")
+async def validate_bom(
+    bom_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        bom_repo = BOMRepository(session)
+        handlers = BOMAdvancedHandlers(uow, bom_repo)
+        
+        try:
+            result = await handlers.handle_validate(
+                ValidateBOMQuery(tenant_id=tenant_id, bom_id=bom_id)
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    return result
 
 @router.get("/boms/{bom_id}/tree", summary="Get multi-level BOM Tree")
 async def get_bom_tree(

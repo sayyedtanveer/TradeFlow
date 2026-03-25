@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
-  DollarSign, RefreshCw, Loader2, AlertCircle, TrendingUp, Package2
+  DollarSign, RefreshCw, Loader2, AlertCircle, TrendingUp, Package2, Settings2
 } from "lucide-react"
 import { bomService } from "@/services/bom.service"
 import { BOM } from "@/types/bom.types"
@@ -89,7 +89,7 @@ export function BOMCostBreakdown({ bom }: BOMCostBreakdownProps) {
               </CardHeader>
               <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold text-green-800">
-                  ${Number(data.cost).toFixed(2)}
+                  ${Number(data.total_cost).toFixed(2)}
                 </div>
                 <p className="text-xs text-green-600 mt-1">
                   All levels included
@@ -101,40 +101,40 @@ export function BOMCostBreakdown({ bom }: BOMCostBreakdownProps) {
               <CardHeader className="pb-1 pt-4 px-4">
                 <CardTitle className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
                   <Package2 className="w-3.5 h-3.5" />
-                  Components
+                  Materials
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold">
-                  {bom.lines.length}
+                  ${Number(data.material_cost).toFixed(2)}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Direct lines</p>
+                <p className="text-xs text-muted-foreground mt-1">Rolled-up components</p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-1 pt-4 px-4">
                 <CardTitle className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
-                  <DollarSign className="w-3.5 h-3.5" />
-                  Cost per Unit
+                  <Settings2 className="w-3.5 h-3.5" />
+                  Operations
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold">
-                  ${Number(data.cost).toFixed(4)}
+                  ${Number(data.operation_cost).toFixed(2)}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Per finished unit</p>
+                <p className="text-xs text-muted-foreground mt-1">Routing & Workstations</p>
               </CardContent>
             </Card>
           </div>
 
           {/* Note if cost is zero */}
-          {Number(data.cost) === 0 && (
+          {Number(data.total_cost) === 0 && (
             <Alert>
               <AlertCircle className="w-4 h-4" />
               <AlertDescription>
                 Cost is $0.00 — ensure materials have a <strong>current_cost</strong> value set
-                and variants have a <strong>standard_cost</strong>.
+                and routing operations have a defined run time and workstation rate.
               </AlertDescription>
             </Alert>
           )}

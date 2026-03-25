@@ -60,9 +60,9 @@ export const bomService = {
 
   // ── BOM Tree (lazy per node) ───────────────────────────────────────────────
 
-  async getBOMTree(bomId: string, maxDepth = 20): Promise<BOMTreeNode> {
+  async getBOMTree(bomId: string, params: { max_depth?: number; parent_id?: string } = {}): Promise<BOMTreeNode> {
     const { data } = await apiClient.get(`/boms/${bomId}/tree`, {
-      params: { max_depth: maxDepth },
+      params: { max_depth: 20, ...params },
     });
     return data;
   },
@@ -117,30 +117,31 @@ export const bomService = {
     page?: number;
     page_size?: number;
   }): Promise<ItemVariantListResponse> {
-    // Fetches variants across all templates — uses templates list then flattens
-    const tplRes = await bomService.getTemplates({ page_size: 100 });
-    const allVariants: ItemVariant[] = [];
-    for (const tpl of tplRes.items.slice(0, 10)) {
-      try {
-        const varRes = await bomService.getVariants(tpl.id, { page_size: 50 });
-        allVariants.push(...varRes.items);
-      } catch { /* skip */ }
-    }
+    // Fetch up to 10 templates concurrently, then flatten variants
+    const tplRes = await bomService.getTemplates({ page_size: 100 })
+    const topTemplates = tplRes.items.slice(0, 10)
+    // Batch all variant requests concurrently (no sequential loop)
+    const variantResults = await Promise.allSettled(
+      topTemplates.map((tpl) => bomService.getVariants(tpl.id, { page_size: 50 }))
+    )
+    const allVariants: ItemVariant[] = variantResults.flatMap((r) =>
+      r.status === "fulfilled" ? r.value.items : []
+    )
     // Client-side filter by query
-    const q = (params.query || "").toLowerCase();
+    const q = (params.query || "").toLowerCase()
     const filtered = q
       ? allVariants.filter(
           (v) =>
             v.name.toLowerCase().includes(q) ||
             v.code.toLowerCase().includes(q)
         )
-      : allVariants;
+      : allVariants
     return {
       items: filtered.slice(0, params.page_size ?? 20),
       total: filtered.length,
       page: 1,
       page_size: params.page_size ?? 20,
-    };
+    }
   },
 
   // ── Workstations & Operations ──────────────────────────────────────────────

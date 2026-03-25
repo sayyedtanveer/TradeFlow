@@ -38,3 +38,34 @@ class Workstation(BaseEntity):
     def deactivate(self):
         self.is_active = False
         self._touch()
+
+    def update(
+        self,
+        *,
+        code: Optional[str] = None,
+        name: Optional[str] = None,
+        capacity_hours_per_day: Optional[float] = None,
+        hourly_rate: Optional[float] = None,
+        is_active: Optional[bool] = None,
+    ):
+        if code is not None:
+            if not code.strip(): raise ValueError("Code cannot be empty.")
+            self.code = code
+        if name is not None:
+            if not name.strip(): raise ValueError("Name cannot be empty.")
+            self.name = name
+        if capacity_hours_per_day is not None:
+            if capacity_hours_per_day <= 0: raise ValueError("Capacity must be > 0.")
+            self.capacity_hours_per_day = capacity_hours_per_day
+        if hourly_rate is not None:
+            if hourly_rate < 0: raise ValueError("Rate cannot be < 0.")
+            self.hourly_rate = hourly_rate
+        if is_active is not None:
+            self.is_active = is_active
+        self._touch()
+
+    def soft_delete(self):
+        from datetime import datetime, timezone
+        self.is_deleted = True
+        self.deleted_at = datetime.now(timezone.utc)
+        self._touch()
