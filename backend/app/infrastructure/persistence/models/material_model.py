@@ -32,7 +32,8 @@ class MaterialModel(Base):
     
     material_type = Column(String(20), nullable=False, default="raw") # raw, finished
 
-    # Stock fields — stored as NUMERIC for precision
+    # Stock and Cost fields — stored as NUMERIC for precision
+    current_cost: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     current_stock: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     reserved_stock: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     reorder_level: Mapped[Optional[float]] = mapped_column(Numeric(18, 4), nullable=True)

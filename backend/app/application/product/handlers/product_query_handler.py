@@ -49,6 +49,7 @@ class ProductQueryHandler:
     async def list_templates(self, query: ListItemTemplatesQuery) -> TemplateListResult:
         items, total = await self._template_repo.list_templates(
             tenant_id=query.tenant_id,
+            category_id=query.category_id,
             search=query.query,
             is_active=query.is_active,
             page=query.page,
@@ -69,6 +70,7 @@ class ProductQueryHandler:
         items, total = await self._variant_repo.list_variants(
             template_id=query.template_id,
             tenant_id=query.tenant_id,
+            search=query.query,
             is_active=query.is_active,
             page=query.page,
             page_size=query.page_size,

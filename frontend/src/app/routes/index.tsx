@@ -5,6 +5,7 @@ import AuthLayout from "@/layouts/AuthLayout"
 import DefaultLayout from "@/layouts/DefaultLayout"
 import { inventoryRoutes } from "@/modules/inventory/routes"
 import { usersRoutes } from "@/modules/users/routes"
+import { bomRoutes } from "@/modules/bom/routes"
 import { NotFoundPage, ForbiddenPage } from "@/components/layout/ErrorPages"
 
 // Lazy loaded modules
@@ -41,6 +42,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
           ...inventoryRoutes,
           ...usersRoutes,
+          ...bomRoutes,
           { path: "403", element: <ForbiddenPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],

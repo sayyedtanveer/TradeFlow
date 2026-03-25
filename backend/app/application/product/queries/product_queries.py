@@ -14,6 +14,7 @@ class GetItemTemplateQuery:
 @dataclass(frozen=True)
 class ListItemTemplatesQuery:
     tenant_id: uuid.UUID
+    category_id: Optional[uuid.UUID] = None
     query: Optional[str] = None          # text search on name/code
     is_active: Optional[bool] = None
     page: int = 1
@@ -30,6 +31,7 @@ class GetItemVariantQuery:
 class ListItemVariantsQuery:
     template_id: uuid.UUID
     tenant_id: uuid.UUID
+    query: Optional[str] = None
     is_active: Optional[bool] = None
     page: int = 1
     page_size: int = 50

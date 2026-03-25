@@ -22,6 +22,7 @@ from backend.app.domain.product.entities.item_variant import (
     _build_variant_key,
 )
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
+from backend.app.domain.shared.exceptions.business_rule_violation import BusinessRuleViolationException
 
 
 # ── DTOs ─────────────────────────────────────────────────────────────────────
@@ -76,7 +77,7 @@ class CreateItemTemplateHandler:
             base_unit_id=cmd.base_unit_id,
             attributes=cmd.attributes,
         )
-        await self._repo.add(template)
+        await self._repo.save(template)
         await self._uow.commit()
         return _to_template_result(template)
 
@@ -99,7 +100,7 @@ class UpdateItemTemplateHandler:
             attributes=cmd.attributes,
             is_active=cmd.is_active,
         )
-        await self._repo.update(template)
+        await self._repo.save(template)
         await self._uow.commit()
         return _to_template_result(template)
 
@@ -120,7 +121,21 @@ class CreateItemVariantHandler:
 
         # Build variant_key and check uniqueness
         ordered_keys = template.attribute_keys()
-        normalised_values = {k.upper(): v for k, v in cmd.attribute_values.items()}
+        # Validate attribute values against allowed template values
+        for attr in template.attributes:
+            key = str(attr["key"]).upper()
+            val = normalised_values.get(key)
+            allowed_values = attr.get("values", [])
+            
+            if not val:
+                raise BusinessRuleViolationException("Missing attribute", f"Value for '{key}' is required.")
+                
+            if allowed_values and str(val) not in allowed_values:
+                raise BusinessRuleViolationException(
+                    "Invalid attribute value", 
+                    f"Value '{val}' is not valid for attribute '{key}'. Allowed values: {', '.join(allowed_values)}"
+                )
+
         variant_key = _build_variant_key(ordered_keys, normalised_values)
 
         existing = await self._variant_repo.get_by_variant_key(
@@ -129,7 +144,8 @@ class CreateItemVariantHandler:
             tenant_id=cmd.tenant_id,
         )
         if existing:
-            raise ValueError(
+            raise BusinessRuleViolationException(
+                "Duplicate Variant", 
                 f"A variant with attribute combination '{variant_key}' already exists for this template."
             )
 
@@ -144,7 +160,7 @@ class CreateItemVariantHandler:
             standard_cost=cmd.standard_cost,
             selling_price=cmd.selling_price,
         )
-        await self._variant_repo.add(variant)
+        await self._variant_repo.save(variant)
         await self._uow.commit()
         return _to_variant_result(variant)
 
@@ -169,7 +185,7 @@ class UpdateItemVariantHandler:
         elif cmd.is_active is False:
             variant.deactivate()
 
-        await self._variant_repo.update(variant)
+        await self._variant_repo.save(variant)
         await self._uow.commit()
         return _to_variant_result(variant)
 

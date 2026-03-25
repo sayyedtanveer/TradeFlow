@@ -66,6 +66,7 @@ class ItemTemplateRepository(BaseRepository[ItemTemplate, ItemTemplateModel]):
     async def list_templates(
         self,
         tenant_id: uuid.UUID,
+        category_id: Optional[uuid.UUID] = None,
         search: Optional[str] = None,
         is_active: Optional[bool] = None,
         page: int = 1,
@@ -77,6 +78,8 @@ class ItemTemplateRepository(BaseRepository[ItemTemplate, ItemTemplateModel]):
         )
         if is_active is not None:
             base_stmt = base_stmt.where(ItemTemplateModel.is_active == is_active)
+        if category_id is not None:
+            base_stmt = base_stmt.where(ItemTemplateModel.category_id == category_id)
         if search:
             like = f"%{search}%"
             base_stmt = base_stmt.where(

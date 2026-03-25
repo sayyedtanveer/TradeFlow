@@ -83,6 +83,7 @@ class ItemVariantRepository(BaseRepository[ItemVariant, ItemVariantModel]):
         self,
         template_id: uuid.UUID,
         tenant_id: uuid.UUID,
+        search: Optional[str] = None,
         is_active: Optional[bool] = None,
         page: int = 1,
         page_size: int = 50,
@@ -94,6 +95,15 @@ class ItemVariantRepository(BaseRepository[ItemVariant, ItemVariantModel]):
         )
         if is_active is not None:
             base_stmt = base_stmt.where(ItemVariantModel.is_active == is_active)
+        if search:
+            from sqlalchemy import or_
+            like = f"%{search}%"
+            base_stmt = base_stmt.where(
+                or_(
+                    ItemVariantModel.name.ilike(like),
+                    ItemVariantModel.code.ilike(like),
+                )
+            )
 
         count_stmt = select(func.count()).select_from(base_stmt.subquery())
         total = (await self._session.execute(count_stmt)).scalar_one()

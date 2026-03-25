@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 class AttributeDefinition(BaseModel):
     key: str = Field(..., description="Attribute key, e.g. 'SIZE'")
     label: str = Field(..., description="Human-readable label, e.g. 'Size'")
+    values: List[str] = Field(default_factory=list, description="Allowed values, e.g. ['S', 'M', 'L']")
 
 
 class CreateItemTemplateRequest(BaseModel):

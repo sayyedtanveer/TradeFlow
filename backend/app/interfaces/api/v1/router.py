@@ -9,6 +9,9 @@ from backend.app.interfaces.api.v1.routes.inventory import router as inventory_r
 from backend.app.interfaces.api.v1.routes.master_data import router as master_data_router
 from backend.app.interfaces.api.v1.routes.batch_and_serial import router as batch_and_serial_router
 from backend.app.interfaces.api.v1.routes.products import router as products_router
+from backend.app.interfaces.api.v1.routes.boms import router as boms_router
+from backend.app.interfaces.api.v1.workstations import router as workstations_router
+from backend.app.interfaces.api.v1.operations import router as operations_router
 
 api_v1_router = APIRouter()
 
@@ -19,3 +22,6 @@ api_v1_router.include_router(inventory_router)
 api_v1_router.include_router(master_data_router)
 api_v1_router.include_router(batch_and_serial_router)
 api_v1_router.include_router(products_router)
+api_v1_router.include_router(boms_router)
+api_v1_router.include_router(workstations_router)
+api_v1_router.include_router(operations_router)

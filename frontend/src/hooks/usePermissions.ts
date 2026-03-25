@@ -21,12 +21,16 @@ export function usePermissions() {
   const isAdmin = () => hasRole(["ADMIN"])
   const canWriteInventory = () => hasRole(["ADMIN", "MANAGER", "OPERATOR"])
   const canDeleteInventory = () => hasRole(["ADMIN", "MANAGER"])
+  const canEditBOM = () => hasRole(["ADMIN", "MANAGER"])
+  const canViewBOM = () => !!user
 
   return {
     hasRole,
     isAdmin,
     canWriteInventory,
     canDeleteInventory,
+    canEditBOM,
+    canViewBOM,
     role: user?.role,
   }
 }

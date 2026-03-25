@@ -30,6 +30,10 @@ from backend.app.infrastructure.persistence.models import (  # noqa: F401
     serial_number_model,
     item_template_model,
     item_variant_model,
+    bom_model,
+    workstation_model,
+    operation_model,
+    bom_operation_model,
 )
 
 config = context.config

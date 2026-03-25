@@ -16,7 +16,7 @@ class ItemTemplate(BaseEntity):
 
     Domain Rules:
     - `code` must be unique per tenant (enforced at application+DB layer)
-    - `attributes` is a list of dicts: [{"key": "SIZE", "label": "Size"}, ...]
+    - `attributes` is a list of dicts: [{"key": "SIZE", "label": "Size", "values": ["S", "M", "L"]}, ...]
     - is_active defaults to True
     """
 
@@ -67,19 +67,28 @@ class ItemTemplate(BaseEntity):
     # ── Private validation ────────────────────────────────────────────────────
 
     def _validate_attributes(self) -> None:
-        """Ensure each attribute definition has a 'key' and 'label'."""
+        """Ensure each attribute definition has a 'key' and 'label', and optional 'values'."""
         seen_keys: set = set()
         for attr in self._attributes:
             key = attr.get("key")
             label = attr.get("label")
+            values = attr.get("values", [])
+            
             if not key or not str(key).strip():
                 raise ValueError("Each attribute must have a non-empty 'key'.")
             if not label or not str(label).strip():
                 raise ValueError("Each attribute must have a non-empty 'label'.")
+                
+            if not isinstance(values, list):
+                raise ValueError("Attribute 'values' must be a list of strings.")
+                
             key_upper = str(key).upper()
             if key_upper in seen_keys:
                 raise ValueError(f"Duplicate attribute key: '{key_upper}'.")
             seen_keys.add(key_upper)
+            
+            # Ensure values are clean
+            attr["values"] = [str(v).strip() for v in values if str(v).strip()]
 
     # ── Properties ────────────────────────────────────────────────────────────
 

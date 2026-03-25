@@ -129,6 +129,7 @@ async def list_templates(
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     query: Optional[str] = Query(None, description="Search by name or code"),
+    category_id: Optional[uuid.UUID] = Query(None, description="Filter by category"),
     is_active: Optional[bool] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -141,6 +142,7 @@ async def list_templates(
         result = await handler.list_templates(
             ListItemTemplatesQuery(
                 tenant_id=tenant_id,
+                category_id=category_id,
                 query=query,
                 is_active=is_active,
                 page=page,
@@ -260,6 +262,7 @@ async def list_variants(
     template_id: uuid.UUID,
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    query: Optional[str] = Query(None, description="Search variants by name or code"),
     is_active: Optional[bool] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
@@ -273,6 +276,7 @@ async def list_variants(
             ListItemVariantsQuery(
                 template_id=template_id,
                 tenant_id=tenant_id,
+                query=query,
                 is_active=is_active,
                 page=page,
                 page_size=page_size,

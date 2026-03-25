@@ -11,8 +11,12 @@ headers = {'Authorization': f'Bearer {token}'}
 print('LOGIN: OK')
 
 # 1. Create Template
+import time
+unique_id = str(int(time.time()))[-5:]
+code_tshirt = f'TSHIRT-{unique_id}'
+
 tmpl_body = {
-    'code': 'TSHIRT',
+    'code': code_tshirt,
     'name': 'T-Shirt',
     'description': 'Classic T-Shirt',
     'attributes': [
@@ -39,7 +43,7 @@ if v1.status_code != 201:
     print(v1.text); sys.exit(1)
 variant1 = v1.json()
 print(f"  code: {variant1['code']} | key: {variant1['variant_key']}")
-assert variant1['code'] == 'TSHIRT-SMALL-RED', f"Expected TSHIRT-SMALL-RED, got {variant1['code']}"
+assert variant1['code'] == f'{code_tshirt}-SMALL-RED', f"Expected {code_tshirt}-SMALL-RED, got {variant1['code']}"
 assert variant1['variant_key'] == 'SIZE=SMALL|COLOR=RED', f"Bad variant_key: {variant1['variant_key']}"
 print('  Code + variant_key assertions PASSED')
 
@@ -74,7 +78,8 @@ tlist = requests.get(f'{BASE}/products/templates', headers=headers)
 print(f"LIST TEMPLATES: {tlist.status_code} - total: {tlist.json()['total']}")
 
 # 8. Update variant pricing
-v_update = requests.put(f'{BASE}/products/variants/{variant1[\"id\"]}', headers=headers, json={
+variant_id = variant1["id"]
+v_update = requests.put(f'{BASE}/products/variants/{variant_id}', headers=headers, json={
     'selling_price': '120.00'
 })
 print(f'UPDATE VARIANT PRICING: {v_update.status_code}')
