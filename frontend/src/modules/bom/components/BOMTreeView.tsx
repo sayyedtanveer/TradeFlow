@@ -74,7 +74,8 @@ function TreeNode({
   const cfg = typeConfig[node.type] ?? typeConfig.material
   const Icon = cfg.icon
 
-  const indent = depth * 20
+  const INDENT_STEP = 24
+  const indent = depth * INDENT_STEP
 
   return (
     <div className="select-none">
@@ -136,6 +137,19 @@ function TreeNode({
           {cfg.label}
         </Badge>
 
+        {/* Children count badge */}
+        {hasChildren && (
+          <Badge
+            variant="secondary"
+            className="text-xs flex-shrink-0 bg-muted text-muted-foreground hover:bg-muted/80"
+          >
+            {node.children?.length || "..."}
+            <span className="ml-1 text-xs opacity-75">
+              {expanded ? "▼" : "▶"}
+            </span>
+          </Badge>
+        )}
+
         {/* Cost */}
         {node.cost != null && (
           <span className="text-xs font-medium text-green-700 flex-shrink-0">
@@ -148,7 +162,7 @@ function TreeNode({
       {depth >= maxDepth && hasChildren && (
         <div
           className="flex items-center gap-1 text-xs text-amber-600 py-1"
-          style={{ paddingLeft: `${12 + indent + 24}px` }}
+          style={{ paddingLeft: `${12 + indent + INDENT_STEP}px` }}
         >
           <AlertCircle className="w-3 h-3" />
           Max depth reached
@@ -161,7 +175,7 @@ function TreeNode({
           {/* Vertical connector line */}
           <div
             className="absolute top-0 bottom-2 border-l border-dashed border-border"
-            style={{ left: `${16 + indent + 20}px` }}
+            style={{ left: `${16 + indent + INDENT_STEP - 4}px` }}
           />
           {node.children && node.children.map((child, i) => (
             <TreeNode key={child.id + i} node={child} bomId={bomId} depth={depth + 1} maxDepth={maxDepth} />
@@ -188,6 +202,9 @@ export function BOMTreeView({ bomId }: BOMTreeViewProps) {
   const expandMore = useCallback(() => {
     setMaxDepth((d) => Math.min(d + 5, MAX_DEPTH))
   }, [])
+  
+  const expandAll = useCallback(() => setMaxDepth(MAX_DEPTH), [])
+  const collapseToRoot = useCallback(() => setMaxDepth(1), [])
 
   if (isLoading) {
     return (
@@ -214,17 +231,54 @@ export function BOMTreeView({ bomId }: BOMTreeViewProps) {
   return (
     <div className="space-y-1">
       {/* Controls row */}
-      <div className="flex items-center justify-between px-3 pb-2 border-b">
-        <span className="text-xs text-muted-foreground">
-          Showing up to depth {maxDepth}
-        </span>
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 px-3 py-3 border-b bg-muted/30 rounded-t-lg">
         <div className="flex items-center gap-2">
-          {isFetching && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
-          {maxDepth < MAX_DEPTH && (
-            <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={expandMore}>
-              Load deeper levels
-            </Button>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">Depth:</span>
+            <Badge variant="outline" className="text-xs">
+              {maxDepth}/{MAX_DEPTH}
+            </Badge>
+          </div>
+          {isFetching && (
+            <div className="flex items-center gap-1 text-xs text-primary">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span className="hidden sm:inline">Loading...</span>
+            </div>
           )}
+        </div>
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-8 text-xs flex-1 sm:flex-none" 
+            onClick={expandMore} 
+            disabled={maxDepth >= MAX_DEPTH}
+            title="Load one more level of detail"
+          >
+            + Level
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-8 text-xs flex-1 sm:flex-none" 
+            onClick={expandAll} 
+            disabled={maxDepth >= MAX_DEPTH}
+            title="Expand all nodes to maximum depth"
+          >
+            <span className="hidden sm:inline">Expand All</span>
+            <span className="sm:hidden">Expand</span>
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-8 text-xs flex-1 sm:flex-none" 
+            onClick={collapseToRoot} 
+            disabled={maxDepth <= 1}
+            title="Collapse all nodes to root level"
+          >
+            <span className="hidden sm:inline">Collapse</span>
+            <span className="sm:hidden">Close</span>
+          </Button>
         </div>
       </div>
 

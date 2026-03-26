@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     jwt_refresh_expiry_days: int = 7
 
     # ── CORS ─────────────────────────────────────
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "*"
 
     @property
     def cors_origins_list(self) -> List[str]:

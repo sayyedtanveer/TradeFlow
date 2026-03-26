@@ -54,40 +54,38 @@ async def test_phase23_routing_and_advanced_bom(async_client: AsyncClient, token
 
     # Sub-Assembly Variant
     v1_resp = await async_client.post(f"/api/v1/products/templates/{tpl_id}/variants", json={
-        "code": "V-SUB", "name": "Sub Assembly", "sku": "SKU-SUB", "is_active": True
+        "attribute_values": {"type": "SubAssembly"}, "is_active": True, "standard_cost": 50.0
     }, headers=token_headers)
     sub_variant_id = v1_resp.json()
 
     # Final Product Variant
     v2_resp = await async_client.post(f"/api/v1/products/templates/{tpl_id}/variants", json={
-        "code": "V-FIN", "name": "Final Bicycle", "sku": "SKU-FIN", "is_active": True
+        "attribute_values": {"type": "FinalBicycle"}, "is_active": True, "standard_cost": 250.0
     }, headers=token_headers)
     final_variant_id = v2_resp.json()
 
     # 4. Create Sub-Assembly BOM
     sub_bom_payload = {
-        "variant_id": sub_variant_id,
         "version": "1.0",
         "valid_from": "2026-01-01T00:00:00Z",
         "lines": [
             {"material_id": mat_id, "quantity": 2.0, "unit_id": unit_id}
         ]
     }
-    resp = await async_client.post("/api/v1/boms", json=sub_bom_payload, headers=token_headers)
+    resp = await async_client.post(f"/api/v1/products/{sub_variant_id}/boms", json=sub_bom_payload, headers=token_headers)
     assert resp.status_code == 201
     sub_bom_id = resp.json()
     await async_client.post(f"/api/v1/boms/{sub_bom_id}/activate", headers=token_headers)
 
     # 5. Create Final Assembly BOM
     fin_bom_payload = {
-        "variant_id": final_variant_id,
         "version": "1.0",
         "valid_from": "2026-01-01T00:00:00Z",
         "lines": [
             {"variant_id": sub_variant_id, "quantity": 1.0, "unit_id": unit_id}
         ]
     }
-    resp = await async_client.post("/api/v1/boms", json=fin_bom_payload, headers=token_headers)
+    resp = await async_client.post(f"/api/v1/products/{final_variant_id}/boms", json=fin_bom_payload, headers=token_headers)
     assert resp.status_code == 201
     final_bom_id = resp.json()
 
@@ -127,14 +125,13 @@ async def test_phase23_routing_and_advanced_bom(async_client: AsyncClient, token
     # 9. Test Circular Dependency validation
     # Try creating a BOM for Sub-Assembly that requires Final Product
     circ_bom_payload = {
-        "variant_id": sub_variant_id,
         "version": "2.0",
         "valid_from": "2026-01-01T00:00:00Z",
         "lines": [
             {"variant_id": final_variant_id, "quantity": 1.0, "unit_id": unit_id}
         ]
     }
-    resp = await async_client.post("/api/v1/boms", json=circ_bom_payload, headers=token_headers)
+    resp = await async_client.post(f"/api/v1/products/{sub_variant_id}/boms", json=circ_bom_payload, headers=token_headers)
     # Expected to fail due to circular reference during creation
     assert resp.status_code == 400
     assert "Circular dependency" in resp.json()["detail"] or "cannot reference its own product" in resp.json()["detail"]

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 from backend.app.core.module_registry import module_registry
-from backend.app.interfaces.api.v1.dependencies.auth import get_current_user
-from backend.app.domain.user.entities.user import User
+from backend.app.interfaces.api.v1.dependencies.auth import get_current_role
 
 from backend.app.interfaces.api.v1.routes.auth import router as auth_router
 from backend.app.interfaces.api.v1.routes.tenants import router as tenants_router
@@ -82,6 +81,6 @@ module_registry.register(
 
 # --- System API Map ---
 @api_v1_router.get("/system-map", tags=["System"])
-async def get_system_map(current_user: User = Depends(get_current_user)):
+async def get_system_map(current_role: str = Depends(get_current_role)):
     """Returns the dynamic system floor plan tailored to the user's role."""
-    return module_registry.get_system_map(user_role=current_user.role.name)
+    return module_registry.get_system_map(user_role=current_role)

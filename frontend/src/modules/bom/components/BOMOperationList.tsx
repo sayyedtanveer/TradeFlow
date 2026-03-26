@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Plus, Loader2, GripVertical, AlertCircle } from "lucide-react"
+import { Plus, Loader2, GripVertical, AlertCircle, ChevronUp, ChevronDown, Trash2 } from "lucide-react"
 import { bomService } from "@/services/bom.service"
 import { BOM } from "@/types/bom.types"
 import { Button } from "@/components/ui/button"
@@ -104,43 +104,121 @@ export function BOMOperationList({ bom, canEdit }: BOMOperationListProps) {
         </div>
       ) : (
         <div className="rounded-lg border overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto min-w-0">
+            <table className="w-full text-sm">
             <thead className="bg-muted/50 border-b">
               <tr>
                 <th className="text-left px-3 py-2 font-medium text-muted-foreground w-16">Seq</th>
-                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Operation</th>
-                <th className="text-left px-3 py-2 font-medium text-muted-foreground hidden md:table-cell">Workstation</th>
-                <th className="text-left px-3 py-2 font-medium text-muted-foreground hidden sm:table-cell">Setup</th>
-                <th className="text-left px-3 py-2 font-medium text-muted-foreground hidden sm:table-cell">Run</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground min-w-48">Operation</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground hidden md:table-cell min-w-40">Workstation</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground hidden sm:table-cell w-24">Setup</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground hidden sm:table-cell w-28">Run Time</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground w-24">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y">
               {[...attachedOps]
                 .sort((a, b) => a.sequence - b.sequence)
-                .map((ao) => {
+                .map((ao, idx, sorted) => {
                   const op = getOp(ao.operation_id)
+                  const isFirst = idx === 0
+                  const isLast = idx === sorted.length - 1
+                  
                   return (
-                    <tr key={ao.id} className="border-b last:border-0 hover:bg-accent/30">
+                    <tr key={ao.id} className="group hover:bg-muted/20 transition-colors">
                       <td className="px-3 py-2">
-                        <Badge variant="outline" className="font-mono text-xs">
+                        <Badge variant="outline" className="font-mono text-xs font-semibold bg-muted/50">
                           {ao.sequence}
                         </Badge>
                       </td>
-                      <td className="px-3 py-2 font-medium">{op?.name ?? "Unknown"}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-medium">{op?.name ?? "Unknown Operation"}</span>
+                          {op?.description && (
+                            <span className="text-xs text-muted-foreground line-clamp-1">{op.description}</span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-3 py-2 text-muted-foreground hidden md:table-cell">
-                        {op ? getWsName(op.workstation_id) : "—"}
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-medium text-foreground">{op ? getWsName(op.workstation_id) : "—"}</span>
+                          {op && (
+                            <span className="text-xs text-muted-foreground">
+                              {workstations?.find(w => w.id === op.workstation_id)?.capacity_hours_per_day}h/day
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">
-                        {op ? `${op.setup_time}m` : "—"}
+                        {op ? (
+                          <span className="font-mono font-medium">{op.setup_time || 0}m</span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">
-                        {op ? `${op.run_time}m/unit` : "—"}
+                        {op ? (
+                          <span className="font-mono font-medium">{op.run_time || 0}m</span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {!isFirst && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                               title="Move up"
+                              onClick={() => {
+                                // Implement reorder - swap with previous
+                                const prevSeq = sorted[idx - 1].sequence
+                                const currSeq = ao.sequence
+                                console.log(`Reorder: Move sequence ${currSeq} before ${prevSeq}`)
+                                // TODO: Call API to reorder
+                              }}
+                            >
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                          {!isLast && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              title="Move down"
+                              onClick={() => {
+                                // Implement reorder - swap with next
+                                const nextSeq = sorted[idx + 1].sequence
+                                const currSeq = ao.sequence
+                                console.log(`Reorder: Move sequence ${currSeq} after ${nextSeq}`)
+                                // TODO: Call API to reorder
+                              }}
+                            >
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
+                            title="Delete operation"
+                            onClick={() => {
+                              // TODO: Implement delete operation
+                              console.log(`Delete operation: ${ao.id}`)
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   )
                 })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

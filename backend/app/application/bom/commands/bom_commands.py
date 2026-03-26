@@ -8,8 +8,8 @@ from typing import List, Optional
 @dataclass
 class BOMLineInput:
     quantity: Decimal
-    unit_id: uuid.UUID
     scrap_percentage: Decimal = Decimal("0")
+    unit_id: Optional[uuid.UUID] = None
     material_id: Optional[uuid.UUID] = None
     template_id: Optional[uuid.UUID] = None
     variant_id: Optional[uuid.UUID] = None

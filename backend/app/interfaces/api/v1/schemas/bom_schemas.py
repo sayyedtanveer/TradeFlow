@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 
 class BOMLineRequest(BaseModel):
     quantity: Decimal = Field(gt=0, description="Must be greater than zero")
-    unit_id: uuid.UUID
+    unit_id: Optional[uuid.UUID] = None
     scrap_percentage: Decimal = Field(default=Decimal("0"), ge=0, le=100)
     material_id: Optional[uuid.UUID] = None
     template_id: Optional[uuid.UUID] = None
@@ -29,7 +29,7 @@ class BOMLineResponse(BaseModel):
     bom_id: uuid.UUID
     quantity: Decimal
     scrap_percentage: Decimal
-    unit_id: uuid.UUID
+    unit_id: Optional[uuid.UUID] = None
     material_id: Optional[uuid.UUID] = None
     template_id: Optional[uuid.UUID] = None
     variant_id: Optional[uuid.UUID] = None

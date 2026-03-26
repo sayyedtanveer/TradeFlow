@@ -1,18 +1,17 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
 import {
-  ArrowLeft, GitBranch, Package2, Zap, Lock, AlertCircle, Plus
+  ArrowLeft, GitBranch, Package2, Zap, Lock, AlertCircle
 } from "lucide-react"
 import { bomService } from "@/services/bom.service"
-import { BOM } from "@/types/bom.types"
+import { BOM, ItemTemplate, ItemVariant } from "@/types/bom.types"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
-import { Label } from "@/components/ui/label"
 import { usePermissions } from "@/hooks/usePermissions"
 import { BOMTreeView } from "../components/BOMTreeView"
 import { BOMLineList } from "../components/BOMLineList"
@@ -21,6 +20,8 @@ import { BOMCostBreakdown } from "../components/BOMCostBreakdown"
 import { BOMOperationList } from "../components/BOMOperationList"
 import { BOMActivateDialog } from "../components/BOMActivateDialog"
 import { BOMCopyDialog } from "../components/BOMCopyDialog"
+import { ProductSelectionModal } from "../components/ProductSelectionModal"
+import { VersionSelectionPanel } from "../components/VersionSelectionPanel"
 import { toast } from "sonner"
 
 export default function BOMDetailPage() {
@@ -33,23 +34,25 @@ export default function BOMDetailPage() {
   const [copyOpen, setCopyOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("builder")
   
-  // For NEW BOM creation form
-  const [selectedProductId, setSelectedProductId] = useState<string>("")
-
+  // For NEW BOM creation flow
+  const [creationStep, setCreationStep] = useState<"select-product" | "select-version">("select-product")
+  const [selectedProduct, setSelectedProduct] = useState<{
+    product: ItemTemplate | ItemVariant
+    isTemplate: boolean
+  } | null>(null)
 
   const isNewBOM = bomId === "new"
 
-  // Fetch products for new BOM creation
-  const { data: templatesData, isLoading: isLoadingTemplates } = useQuery({
-    queryKey: ["bom-templates"],
-    queryFn: () => bomService.getTemplates({ page_size: 100 }),
-    enabled: isNewBOM,
-    staleTime: 30_000,
-  })
-  const templates = templatesData?.items ?? []
+  // Reset creation state when navigating to /bom/new
+  useEffect(() => {
+    if (isNewBOM) {
+      setCreationStep("select-product")
+      setSelectedProduct(null)
+    }
+  }, [bomId])
 
   // For existing BOMs: fetch the BOM data
-  const { data: bom, isLoading, isError, error } = useQuery({
+  const { data: bom, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["bom", bomId],
     queryFn: () => bomService.getBOM(bomId!),
     enabled: !!bomId && !isNewBOM,
@@ -59,18 +62,34 @@ export default function BOMDetailPage() {
   // Mutation for creating new BOM
   const createBOMMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedProductId) throw new Error("Please select a product template")
+      if (!selectedProduct) throw new Error("No product selected")
+      const isTemplate = selectedProduct.isTemplate
+      const productId = selectedProduct.product.id
+      
+      // Calculate next version
+      const versionsRes = await bomService.getBOMsForProduct(productId, isTemplate)
+      const versions = versionsRes.items.map(b => b.version).sort()
+      const nextVersion = versions.length > 0 
+        ? `v${parseInt(versions[versions.length - 1].substring(1)) + 1}.0`
+        : "v1.0"
+
       const payload: any = {
-        version: "v1.0",
+        version: nextVersion,
         valid_from: new Date().toISOString(),
-        template_id: selectedProductId,
         lines: [],
       }
-      return bomService.createBOM(selectedProductId, payload)
+      
+      if (isTemplate) {
+        payload.template_id = productId
+      } else {
+        payload.variant_id = productId
+      }
+      
+      return bomService.createBOM(productId, payload)
     },
     onSuccess: (newBom) => {
       toast.success("BOM created successfully")
-      qc.invalidateQueries({ queryKey: ["bom-list-templates"] })
+      qc.invalidateQueries({ queryKey: ["product-boms"] })
       navigate(`/bom/${newBom.id}`)
     },
     onError: (err: any) => {
@@ -81,100 +100,110 @@ export default function BOMDetailPage() {
 
   // Fetch product context for version panel
   const productId = bom?.variant_id ?? bom?.template_id
-  const isTemplate = !bom?.variant_id
+  const isTemplateType = !bom?.variant_id
 
-  // ─── NEW BOM CREATION FORM ───────────────────────────────────────────────────
+  // ─── NEW BOM CREATION FLOW ────────────────────────────────────────────────────
 
   if (isNewBOM) {
+    // Step 1: Select Product
+    if (creationStep === "select-product") {
+      return (
+        <div className="w-full max-w-2xl">
+          <div className="mb-6">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate("/bom/list")}
+              className="-ml-2 mb-4"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Back
+            </Button>
+          </div>
+          <div className="border rounded-lg p-6 space-y-6 bg-card">
+            <h2 className="text-2xl font-bold mb-4">Create New Bill of Materials</h2>
+            <ProductSelectionModal
+              onSelect={(product, isTemplate) => {
+                setSelectedProduct({ product, isTemplate })
+                setCreationStep("select-version")
+              }}
+              onCancel={() => navigate("/bom/list")}
+            />
+          </div>
+        </div>
+      )
+    }
+
+    // Step 2: Select Version (create new or open existing)
+    if (creationStep === "select-version" && selectedProduct) {
+      return (
+        <div className="w-full max-w-2xl space-y-6">
+          {/* Header */}
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCreationStep("select-product")}
+              className="-ml-2"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Back
+            </Button>
+            <h1 className="text-2xl font-bold">Bill of Materials for</h1>
+          </div>
+
+          {/* Selected Product Info */}
+          <div className="border rounded-lg p-4 bg-muted/30">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-semibold">{selectedProduct.product.name}</h3>
+                <p className="text-sm text-muted-foreground font-mono">
+                  {selectedProduct.product.code}
+                </p>
+              </div>
+              <Badge variant={selectedProduct.isTemplate ? "default" : "secondary"}>
+                {selectedProduct.isTemplate ? "Template" : "Variant"}
+              </Badge>
+            </div>
+          </div>
+
+          {/* Version Selection */}
+          <div className="border rounded-lg p-6 space-y-6 bg-card">
+            <VersionSelectionPanel
+              productId={selectedProduct.product.id}
+              isTemplate={selectedProduct.isTemplate}
+              onCreateNew={() => createBOMMutation.mutate()}
+              onOpenExisting={(selected) => navigate(`/bom/${selected.id}`)}
+              isCreatingNew={createBOMMutation.isPending}
+            />
+          </div>
+        </div>
+      )
+    }
+
+    // Fallback: If none of the steps matched, go back to step 1
     return (
-      <div className="w-full max-w-2xl space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-3">
+      <div className="w-full max-w-2xl">
+        <div className="mb-6">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => navigate("/bom/list")}
-            className="-ml-2"
+            className="-ml-2 mb-4"
           >
             <ArrowLeft className="w-4 h-4 mr-1" />
             Back
           </Button>
-          <h1 className="text-2xl font-bold">Create Bill of Materials</h1>
         </div>
-
-        {/* Form Card */}
         <div className="border rounded-lg p-6 space-y-6 bg-card">
-          {/* Select Product */}
-          <div className="space-y-3">
-            <Label htmlFor="product-select" className="text-base font-medium">
-              Product Template
-            </Label>
-            <div className="relative">
-              <select
-                id="product-select"
-                value={selectedProductId}
-                onChange={(e) => setSelectedProductId(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                <option value="">-- Select a product template --</option>
-                {isLoadingTemplates ? (
-                  <option disabled>Loading...</option>
-                ) : templates.length === 0 ? (
-                  <option disabled>No product templates found</option>
-                ) : (
-                  templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.code})
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
-            {templates.length === 0 && !isLoadingTemplates && (
-              <Alert className="mt-2">
-                <AlertCircle className="w-4 h-4" />
-                <AlertDescription>
-                  No product templates found. Please{" "}
-                  <Button
-                    variant="link"
-                    className="h-auto p-0"
-                    onClick={() => navigate("/products")}
-                  >
-                    create a product template
-                  </Button>{" "}
-                  first.
-                </AlertDescription>
-              </Alert>
-            )}
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex gap-3 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => navigate("/bom/list")}
-              disabled={createBOMMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => createBOMMutation.mutate()}
-              disabled={!selectedProductId || createBOMMutation.isPending}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              {createBOMMutation.isPending ? "Creating..." : "Create BOM"}
-            </Button>
-          </div>
-        </div>
-
-        {/* Helper text */}
-        <div className="text-sm text-muted-foreground bg-muted/50 rounded-lg p-4">
-          <p className="mb-2 font-medium text-foreground">What happens next:</p>
-          <ul className="list-disc list-inside space-y-1">
-            <li>A new BOM will be created for the selected product</li>
-            <li>You'll be able to add components and operations</li>
-            <li>You can activate the BOM when it's ready for production</li>
-          </ul>
+          <h2 className="text-2xl font-bold mb-4">Create New Bill of Materials</h2>
+          <ProductSelectionModal
+            onSelect={(product, isTemplate) => {
+              setSelectedProduct({ product, isTemplate })
+              setCreationStep("select-version")
+            }}
+            onCancel={() => navigate("/bom/list")}
+          />
         </div>
       </div>
     )
@@ -198,7 +227,7 @@ export default function BOMDetailPage() {
     )
   }
 
-  if (isError || !bom) {
+  if ((isError || !bom) && !isNewBOM) {
     return (
       <div className="p-8 flex flex-col items-center gap-4">
         <Alert variant="destructive" className="max-w-md">
@@ -207,12 +236,22 @@ export default function BOMDetailPage() {
             {(error as any)?.response?.data?.detail || "BOM not found."}
           </AlertDescription>
         </Alert>
-        <Button variant="outline" onClick={() => navigate("/bom/list")}>
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to BOM List
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => refetch()}>
+            Retry
+          </Button>
+          <Button variant="outline" onClick={() => navigate("/bom/list")}>
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to BOM List
+          </Button>
+        </div>
       </div>
     )
+  }
+
+  // Ensure bom is defined for existing BOM detail view
+  if (!bom) {
+    return null
   }
 
   const onActivated = (updated: BOM) => {
@@ -322,7 +361,7 @@ export default function BOMDetailPage() {
             <div className="rounded-xl border bg-card p-4">
               <BOMVersionPanel
                 productId={productId}
-                isTemplate={isTemplate}
+                isTemplate={isTemplateType}
                 productName={`Product ${productId.slice(0, 8)}`}
                 productCode={productId.slice(0, 8)}
                 selectedBomId={bom.id}

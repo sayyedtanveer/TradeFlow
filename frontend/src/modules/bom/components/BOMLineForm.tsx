@@ -47,7 +47,7 @@ export function BOMLineForm({ onAdd, onCancel }: BOMLineFormProps) {
   const [selected, setSelected] = useState<ComponentResult | null>(null)
   const [qty, setQty] = useState("1")
   const [scrap, setScrap] = useState("0")
-  const [unitId, setUnitId] = useState("")
+  const [unitId, setUnitId] = useState("auto")
 
   const debouncedSearch = useDebounce(search, 300)
 
@@ -93,7 +93,7 @@ export function BOMLineForm({ onAdd, onCancel }: BOMLineFormProps) {
     const line: BOMLineInput = {
       quantity: parseFloat(qty) || 1,
       scrap_percentage: parseFloat(scrap) || 0,
-      unit_id: unitId || undefined,
+      unit_id: unitId && unitId !== "auto" ? unitId : undefined,
     }
     if (selected.type === "material") line.material_id = selected.id
     else if (selected.type === "template") line.template_id = selected.id
@@ -221,7 +221,7 @@ export function BOMLineForm({ onAdd, onCancel }: BOMLineFormProps) {
               <SelectValue placeholder="Auto" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Auto</SelectItem>
+              <SelectItem value="auto">Auto</SelectItem>
               {(units ?? []).map((u) => (
                 <SelectItem key={u.id} value={u.id}>
                   {u.code}

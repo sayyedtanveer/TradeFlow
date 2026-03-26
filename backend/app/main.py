@@ -76,6 +76,17 @@ def create_application() -> FastAPI:
     # ── Routers ───────────────────────────────────────
     app.include_router(api_v1_router, prefix="/api/v1")
 
+    # ── Exception handlers ─────────────────────────────
+    from backend.app.domain.shared.exceptions.domain_exception import DomainException
+    
+    @app.exception_handler(DomainException)
+    async def domain_exception_handler(request, exc: DomainException):
+        """Convert domain exceptions to HTTP 401 responses"""
+        return JSONResponse(
+            status_code=401,
+            content={"detail": str(exc.message)},
+        )
+
     # ── Health check ──────────────────────────────────
     @app.get("/health", tags=["Health"])
     async def health_check():

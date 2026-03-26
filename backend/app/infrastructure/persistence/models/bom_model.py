@@ -85,7 +85,7 @@ class BOMLineModel(Base):
     
     quantity: Mapped[float] = mapped_column(Numeric(15, 6), nullable=False)
     scrap_percentage: Mapped[float] = mapped_column(Numeric(5, 2), default=0.0, nullable=False)
-    unit_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("units_of_measure.id"), nullable=False)
+    unit_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("units_of_measure.id"), nullable=True)
 
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deleted_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)

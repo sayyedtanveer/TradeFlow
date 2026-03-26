@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -41,6 +42,7 @@ from backend.app.interfaces.api.v1.schemas.bom_schemas import (
 from backend.app.domain.bom.entities.bom import BillOfMaterial
 
 router = APIRouter(tags=["Bill of Materials"])
+logger = logging.getLogger(__name__)
 
 
 def _bom_to_response(bom: BillOfMaterial) -> BOMResponse:
@@ -151,6 +153,9 @@ async def create_bom(
             )
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        except Exception as e:
+            logger.exception(f"Error creating BOM for product {product_id}: {str(e)}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Creation failed: {str(e)}")
     return _bom_to_response(bom)
 
 
@@ -212,6 +217,10 @@ async def update_bom(
         except ValueError as e:
             code = status.HTTP_404_NOT_FOUND if "not found" in str(e) else status.HTTP_409_CONFLICT
             raise HTTPException(status_code=code, detail=str(e))
+        except Exception as e:
+            # Log the full exception for debugging
+            logger.exception(f"Error updating BOM {bom_id}: {str(e)}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Update failed: {str(e)}")
     return _bom_to_response(bom)
 
 

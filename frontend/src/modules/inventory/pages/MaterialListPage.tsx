@@ -17,7 +17,7 @@ import { StockOperationDrawer } from "../components/StockOperationDrawer"
 
 export default function MaterialListPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { canWriteInventory } = usePermissions()
+  const { canWrite } = usePermissions()
   
   const materialId = searchParams.get("materialId")
   const isDrawerOpen = materialId !== null
@@ -104,7 +104,7 @@ export default function MaterialListPage() {
 
   const actionButtons = (
     <>
-      {canWriteInventory() && (
+      {canWrite() && (
         <Button onClick={() => setSearchParams({ materialId: "new" })}>
           <Plus className="mr-2 h-4 w-4" />
           Add Material

@@ -16,7 +16,7 @@ import { ProductFormDrawer } from "../components/ProductFormDrawer"
 
 export default function ProductListPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { canWriteInventory } = usePermissions()
+  const { canWrite } = usePermissions()
   
   const productId = searchParams.get("productId")
   const isDrawerOpen = productId !== null
@@ -82,13 +82,13 @@ export default function ProductListPage() {
 
   const actionButtons = (
     <>
-      {canWriteInventory() && (
+      {canWrite() && (
         <Button variant="outline" onClick={() => setSearchParams({ action: "scan" })}>
           <ScanBarcode className="mr-2 h-4 w-4" />
           Scan Product
         </Button>
       )}
-      {canWriteInventory() && (
+      {canWrite() && (
         <Button onClick={() => setSearchParams({ productId: "new" })}>
           <Plus className="mr-2 h-4 w-4" />
           Add Product

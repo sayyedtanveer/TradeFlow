@@ -1,6 +1,6 @@
 import uuid
 from decimal import Decimal
-from typing import Optional, Protocol
+from typing import Optional, Protocol, Dict, Any, Tuple
 
 from backend.app.domain.bom.entities.bom import BillOfMaterial
 

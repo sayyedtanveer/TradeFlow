@@ -112,14 +112,15 @@ export function BOMLineList({ bom, canEdit }: BOMLineListProps) {
         </div>
       ) : (
         <div className="rounded-md border overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto min-w-0">
+            <table className="w-full text-sm">
             <thead className="bg-muted/50 border-b">
               <tr>
                 <th className="h-9 px-3 text-left font-medium text-muted-foreground w-12">Type</th>
-                <th className="h-9 px-3 text-left font-medium text-muted-foreground">Component ID</th>
-                <th className="h-9 px-3 text-right font-medium text-muted-foreground w-32">Quantity</th>
+                <th className="h-9 px-3 text-left font-medium text-muted-foreground min-w-40">Component</th>
+                <th className="h-9 px-3 text-right font-medium text-muted-foreground w-28">Qty</th>
                 <th className="h-9 px-3 text-right font-medium text-muted-foreground w-24">Scrap %</th>
-                <th className="h-9 px-3 text-right font-medium text-muted-foreground w-24">Actions</th>
+                <th className="h-9 px-3 text-right font-medium text-muted-foreground w-24">Edit</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -131,7 +132,7 @@ export function BOMLineList({ bom, canEdit }: BOMLineListProps) {
                 else if (line.variant_id) type = "variant"
 
                 return (
-                  <tr key={line.id} className="group hover:bg-muted/20 transition-colors">
+                  <tr key={line.id} className={`group hover:bg-muted/20 transition-colors ${isEditing ? 'bg-blue-50 dark:bg-blue-950/20 border-l-2 border-l-blue-500' : ''}`}>
                     <td className="p-3">
                       {type === "material" ? (
                         <Package2 className="w-4 h-4 text-amber-600" />
@@ -142,56 +143,81 @@ export function BOMLineList({ bom, canEdit }: BOMLineListProps) {
                       )}
                     </td>
                     <td className="p-3">
-                      <div className="flex flex-col">
-                        <span className="font-medium font-mono text-xs">{targetId?.split("-")[0]}...</span>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-medium text-xs truncate">{targetId?.split("-")[0]}...</span>
                         <span className="text-xs text-muted-foreground capitalize">{type}</span>
                       </div>
                     </td>
                     <td className="p-3 text-right">
                       {isEditing ? (
-                        <Input
-                          type="number"
-                          size={1}
-                          className="h-7 w-20 text-right ml-auto"
-                          value={editQty}
-                          onChange={(e) => setEditQty(e.target.value)}
-                        />
+                        <div className="flex items-center justify-end gap-1">
+                          <Input
+                            type="number"
+                            step="0.001"
+                            className="h-7 w-20 text-right font-semibold border-blue-500 focus:border-blue-600"
+                            value={editQty}
+                            onChange={(e) => setEditQty(e.target.value)}
+                          />
+                        </div>
                       ) : (
-                        <span>{parseFloat(line.quantity.toString())}</span>
+                        <span className="font-medium">{parseFloat(line.quantity.toString()).toFixed(3)}</span>
                       )}
                     </td>
                     <td className="p-3 text-right">
                       {isEditing ? (
                         <Input
                           type="number"
-                          size={1}
-                          className="h-7 w-16 text-right ml-auto"
+                          step="0.01"
+                          className="h-7 w-16 text-right border-blue-500 focus:border-blue-600"
                           value={editScrap}
                           onChange={(e) => setEditScrap(e.target.value)}
                         />
                       ) : (
-                        <span className={line.scrap_percentage ? "text-amber-600" : "text-muted-foreground"}>
-                          {parseFloat((line.scrap_percentage || 0).toString())}%
+                        <span className={`font-medium ${(line.scrap_percentage ?? 0) > 0 ? "text-amber-600 font-semibold" : "text-muted-foreground"}`}>
+                          {parseFloat((line.scrap_percentage || 0).toString()).toFixed(2)}%
                         </span>
                       )}
                     </td>
                     <td className="p-3 text-right">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {isEditing && canEdit ? (
+                      <div className="flex items-center justify-end gap-1">
+                        {isEditing ? (
                           <>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-green-600" onClick={() => saveEdit(idx)}>
-                              <Check className="w-3.5 h-3.5" />
+                            <Button 
+                              variant="default" 
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700" 
+                              onClick={() => saveEdit(idx)}
+                              title="Save changes"
+                            >
+                              <Check className="w-4 h-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={cancelEdit}>
-                              <X className="w-3.5 h-3.5" />
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={cancelEdit}
+                              title="Cancel edit"
+                            >
+                              <X className="w-4 h-4" />
                             </Button>
                           </>
                         ) : canEdit ? (
                           <>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEdit(line)}>
-                              <Edit2 className="w-3.5 h-3.5" />
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity" 
+                              onClick={() => startEdit(line)}
+                              title="Edit line"
+                            >
+                              <Edit2 className="w-4 h-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => handleRemoveLine(idx)}>
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:bg-destructive/10" 
+                              onClick={() => handleRemoveLine(idx)}
+                              title="Delete line"
+                            >
                               <Trash2 className="w-3.5 h-3.5" />
                             </Button>
                           </>
@@ -203,6 +229,7 @@ export function BOMLineList({ bom, canEdit }: BOMLineListProps) {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

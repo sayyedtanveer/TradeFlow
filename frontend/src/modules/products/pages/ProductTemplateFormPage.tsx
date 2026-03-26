@@ -116,7 +116,6 @@ export default function ProductTemplateFormPage() {
               <Select value={categoryId} onValueChange={setCategoryId} disabled={!canEdit}>
                 <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
                   {categories?.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -126,7 +125,6 @@ export default function ProductTemplateFormPage() {
               <Select value={baseUnitId} onValueChange={setBaseUnitId} disabled={!canEdit}>
                 <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
                   {units?.map(u => <SelectItem key={u.id} value={u.id}>{u.code}</SelectItem>)}
                 </SelectContent>
               </Select>
