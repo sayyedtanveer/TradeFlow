@@ -466,7 +466,12 @@ async def add_order_line(
     async with container.session_factory() as session:
         order_repo = SalesOrderRepository(session)
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = AddLineToSalesOrderCommandHandler(order_repo, uow)
+        
+        price_list_repo = PriceListRepository(session)
+        from backend.app.domain.sales.services.pricing_service import PricingService
+        pricing_service = PricingService(price_list_repo)
+        
+        handler = AddLineToSalesOrderCommandHandler(order_repo, pricing_service, uow)
         try:
             await handler.handle(
                 AddLineToSalesOrderCommand(
@@ -560,7 +565,22 @@ async def confirm_order(
         order_repo = SalesOrderRepository(session)
         client_repo = ClientRepository(session)
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = ConfirmSalesOrderCommandHandler(order_repo, client_repo, uow)
+        
+        from backend.app.domain.sales.services.credit_validation_service import CreditValidationService
+        from backend.app.domain.sales.services.inventory_reservation_service import InventoryReservationService
+        from backend.app.application.sales.manufacturing_integration import SalesManufacturingIntegrationService
+        from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
+        from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
+        from backend.app.application.inventory.services.inventory_service import InventoryService as AppInventoryService
+        
+        credit_service = CreditValidationService(client_repo)
+        app_inventory = AppInventoryService(session, container.event_dispatcher)
+        wo_handler = WorkOrderHandler(session)
+        inv_integ = SalesInventoryIntegrationService(app_inventory)
+        mfg_integ = SalesManufacturingIntegrationService(wo_handler)
+        inv_service = InventoryReservationService(inv_integ, mfg_integ)
+
+        handler = ConfirmSalesOrderCommandHandler(order_repo, client_repo, credit_service, inv_service, uow)
         try:
             await handler.handle(
                 ConfirmSalesOrderCommand(
@@ -590,7 +610,20 @@ async def ship_order(
     async with container.session_factory() as session:
         order_repo = SalesOrderRepository(session)
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = ShipOrderCommandHandler(order_repo, uow)
+        
+        from backend.app.domain.sales.services.inventory_reservation_service import InventoryReservationService
+        from backend.app.application.sales.manufacturing_integration import SalesManufacturingIntegrationService
+        from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
+        from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
+        from backend.app.application.inventory.services.inventory_service import InventoryService as AppInventoryService
+        
+        app_inventory = AppInventoryService(session, container.event_dispatcher)
+        wo_handler = WorkOrderHandler(session)
+        inv_integ = SalesInventoryIntegrationService(app_inventory)
+        mfg_integ = SalesManufacturingIntegrationService(wo_handler)
+        inv_service = InventoryReservationService(inv_integ, mfg_integ)
+        
+        handler = ShipOrderCommandHandler(order_repo, inv_service, uow)
         try:
             await handler.handle(
                 ShipOrderCommand(
@@ -651,7 +684,22 @@ async def cancel_order(
         order_repo = SalesOrderRepository(session)
         client_repo = ClientRepository(session)
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = CancelSalesOrderCommandHandler(order_repo, client_repo, uow)
+        
+        from backend.app.domain.sales.services.credit_validation_service import CreditValidationService
+        from backend.app.domain.sales.services.inventory_reservation_service import InventoryReservationService
+        from backend.app.application.sales.manufacturing_integration import SalesManufacturingIntegrationService
+        from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
+        from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
+        from backend.app.application.inventory.services.inventory_service import InventoryService as AppInventoryService
+        
+        credit_service = CreditValidationService(client_repo)
+        app_inventory = AppInventoryService(session, container.event_dispatcher)
+        wo_handler = WorkOrderHandler(session)
+        inv_integ = SalesInventoryIntegrationService(app_inventory)
+        mfg_integ = SalesManufacturingIntegrationService(wo_handler)
+        inv_service = InventoryReservationService(inv_integ, mfg_integ)
+
+        handler = CancelSalesOrderCommandHandler(order_repo, credit_service, inv_service, uow)
         try:
             await handler.handle(
                 CancelSalesOrderCommand(

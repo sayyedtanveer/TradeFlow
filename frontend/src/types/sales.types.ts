@@ -71,7 +71,6 @@ export interface CreateOrderLineRequest {
   product_type: 'variant' | 'finished_product';
   quantity: number;
   uom_id: string;
-  unit_price: number;
   tax_rate: number;
 }
 

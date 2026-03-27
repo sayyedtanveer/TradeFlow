@@ -230,10 +230,15 @@ class WorkOrderHandler:
     # ── Helpers ──────────────────────────────────────────────────────────────────
 
     async def _get_wo(self, work_order_id: uuid.UUID, tenant_id: uuid.UUID) -> WorkOrderModel:
-        stmt = select(WorkOrderModel).where(
-            WorkOrderModel.id == work_order_id,
-            WorkOrderModel.tenant_id == tenant_id,
-            WorkOrderModel.is_deleted.is_(False),
+        # SELECT FOR UPDATE: prevents concurrent status-transition race conditions
+        stmt = (
+            select(WorkOrderModel)
+            .where(
+                WorkOrderModel.id == work_order_id,
+                WorkOrderModel.tenant_id == tenant_id,
+                WorkOrderModel.is_deleted.is_(False),
+            )
+            .with_for_update()
         )
         result = await self._session.execute(stmt)
         wo = result.scalar_one_or_none()

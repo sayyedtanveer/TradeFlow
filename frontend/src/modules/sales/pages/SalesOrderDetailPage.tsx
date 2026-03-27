@@ -11,7 +11,8 @@ import { Badge } from '@/components/ui/badge';
 import { CardSkeleton } from '@/components/shared/LoadingSkeleton';
 import { ordersApi } from '@/services/sales.service';
 import { SalesOrder, OrderStatus } from '@/types/sales.types';
-import { ArrowLeft, Edit2, CheckCircle, Truck, Package, Trash2 } from 'lucide-react';
+import { ArrowLeft, Edit2, CheckCircle, Truck, Package, Trash2, Plus } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 
 export default function SalesOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -20,6 +21,15 @@ export default function SalesOrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  
+  // New Line Item State
+  const [newLine, setNewLine] = useState({
+    product_id: '',
+    product_type: 'variant',
+    uom_id: '',
+    quantity: 1,
+    tax_rate: 0
+  });
 
   useEffect(() => {
     const loadOrder = async () => {
@@ -61,6 +71,30 @@ export default function SalesOrderDetailPage() {
       setOrder(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Action failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleAddLine = async () => {
+    if (!order || !newLine.product_id || !newLine.uom_id || newLine.quantity <= 0) {
+      setError('Please provide product ID, UOM ID, and a valid quantity');
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const updated = await ordersApi.addLine(order.id, {
+        product_id: newLine.product_id,
+        product_type: newLine.product_type,
+        uom_id: newLine.uom_id,
+        quantity: newLine.quantity,
+        tax_rate: newLine.tax_rate,
+      });
+      setOrder(updated);
+      setNewLine({ ...newLine, product_id: '', quantity: 1 });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add line item');
     } finally {
       setActionLoading(false);
     }
@@ -238,6 +272,53 @@ export default function SalesOrderDetailPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+          
+          {order.status === OrderStatus.DRAFT && (
+            <div className="mt-6 border-t pt-6">
+              <h4 className="font-semibold mb-4 text-gray-800">Add Line Item</h4>
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                <div className="col-span-2">
+                  <label className="text-sm font-medium text-gray-700 block mb-1">Product Variant ID *</label>
+                  <Input 
+                    placeholder="UUID of Variant"
+                    value={newLine.product_id}
+                    onChange={(e) => setNewLine({ ...newLine, product_id: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1">UOM ID *</label>
+                  <Input 
+                    placeholder="UUID of UOM"
+                    value={newLine.uom_id}
+                    onChange={(e) => setNewLine({ ...newLine, uom_id: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1">Quantity *</label>
+                  <Input 
+                    type="number"
+                    min="1"
+                    value={newLine.quantity}
+                    onChange={(e) => setNewLine({ ...newLine, quantity: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div>
+                  <Button 
+                    className="w-full bg-slate-800 hover:bg-slate-700" 
+                    onClick={handleAddLine}
+                    disabled={actionLoading}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                * Note: Pricing is automatically resolved from the Client's assigned Price List or the Default Price List. 
+                Auto-Work Order generation occurs on confirm if no physical stock is available.
+              </p>
             </div>
           )}
         </CardContent>
