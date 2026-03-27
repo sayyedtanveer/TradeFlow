@@ -29,10 +29,10 @@ from datetime import date, timedelta
 
 BASE_URL   = "http://127.0.0.1:8000/api/v1"
 
-ADMIN_EMAIL    = "admin@synapse-erp-v6.com"
+ADMIN_EMAIL    = "admin@synapse-erp-v16.com"
 ADMIN_PASSWORD = "Erp@1234"
 TENANT_NAME    = "Synapse Manufacturing Pvt Ltd"
-TENANT_SLUG    = "synapse-mfg-v6"
+TENANT_SLUG    = "synapse-mfg-v16"
 
 SEP = "─" * 65
 
@@ -386,7 +386,7 @@ def create_bom(template_code, lines, operations, version="v1.0"):
             {"operation_id": ops[op_code], "sequence": (i + 1) * 10, "notes": ""},
             headers=headers,
         )
-    put(f"{BASE_URL}/boms/{bom_id}/activate", {}, headers=headers)
+    post(f"{BASE_URL}/boms/{bom_id}/activate", {}, headers=headers)
     return bom_id
 
 # BOM 1: Temperature Controller

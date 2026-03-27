@@ -50,14 +50,17 @@ def _bom_to_response(bom: BillOfMaterial) -> BOMResponse:
     return BOMResponse(
         id=bom.id,
         tenant_id=bom.tenant_id,
+        template_id=bom.template_id,
+        variant_id=bom.variant_id,
         version=bom.version,
         is_active=bom.is_active,
         valid_from=bom.valid_from,
         valid_to=bom.valid_to,
+        created_at=bom.created_at,
+        updated_at=bom.updated_at,
         created_by=bom.created_by,
         approved_by=bom.approved_by,
-        template_id=bom.template_id,
-        variant_id=bom.variant_id,
+        operations_count=len(bom.operations),
         lines=[
             BOMLineResponse(
                 id=line.id,
@@ -70,7 +73,7 @@ def _bom_to_response(bom: BillOfMaterial) -> BOMResponse:
                 variant_id=line.variant_id,
             )
             for line in bom.lines
-        ],
+        ]
     )
 
 

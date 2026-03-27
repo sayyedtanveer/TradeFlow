@@ -32,7 +32,12 @@ async def create_workstation(
             tenant_id=tenant_id,
             **body.model_dump()
         )
-        return await handlers.handle_add_workstation(cmd)
+        try:
+            return await handlers.handle_add_workstation(cmd)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=400, detail=f"500-DEBUG: {str(e)}\n{traceback.format_exc()}")
 
 @router.get("", response_model=List[WorkstationResponse])
 async def list_workstations(
