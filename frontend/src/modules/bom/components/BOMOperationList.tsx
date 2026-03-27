@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Lock } from "lucide-react"
 
 interface BOMOperationListProps {
   bom: BOM
@@ -101,6 +103,23 @@ export function BOMOperationList({ bom, canEdit }: BOMOperationListProps) {
               Attach First Operation
             </Button>
           )}
+          {!canEdit && bom.is_active && (
+            <TooltipProvider>
+              <Tooltip delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <div className="inline-block cursor-not-allowed">
+                    <Button variant="outline" size="sm" disabled className="pointer-events-none opacity-50">
+                      <Plus className="w-3.5 h-3.5 mr-1.5" />
+                      Attach First Operation
+                    </Button>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Active BOM cannot be edited. Create a new version to modify.</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
       ) : (
         <div className="rounded-lg border overflow-hidden">
@@ -164,53 +183,70 @@ export function BOMOperationList({ bom, canEdit }: BOMOperationListProps) {
                         )}
                       </td>
                       <td className="px-3 py-2">
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {!isFirst && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                               title="Move up"
-                              onClick={() => {
-                                // Implement reorder - swap with previous
-                                const prevSeq = sorted[idx - 1].sequence
-                                const currSeq = ao.sequence
-                                console.log(`Reorder: Move sequence ${currSeq} before ${prevSeq}`)
-                                // TODO: Call API to reorder
-                              }}
-                            >
-                              <ChevronUp className="w-3.5 h-3.5" />
-                            </Button>
-                          )}
-                          {!isLast && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              title="Move down"
-                              onClick={() => {
-                                // Implement reorder - swap with next
-                                const nextSeq = sorted[idx + 1].sequence
-                                const currSeq = ao.sequence
-                                console.log(`Reorder: Move sequence ${currSeq} after ${nextSeq}`)
-                                // TODO: Call API to reorder
-                              }}
-                            >
-                              <ChevronDown className="w-3.5 h-3.5" />
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                            title="Delete operation"
-                            onClick={() => {
-                              // TODO: Implement delete operation
-                              console.log(`Delete operation: ${ao.id}`)
-                            }}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
+                        <div className="flex items-center justify-end gap-1 opacity-100 group-hover:opacity-100 transition-opacity">
+                          {canEdit ? (
+                            <>
+                              {!isFirst && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 opacity-0 group-hover:opacity-100"
+                                  title="Move up"
+                                  onClick={() => {
+                                    // Implement reorder - swap with previous
+                                    const prevSeq = sorted[idx - 1].sequence
+                                    const currSeq = ao.sequence
+                                    console.log(`Reorder: Move sequence ${currSeq} before ${prevSeq}`)
+                                  }}
+                                >
+                                  <ChevronUp className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                              {!isLast && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 opacity-0 group-hover:opacity-100"
+                                  title="Move down"
+                                  onClick={() => {
+                                    // Implement reorder - swap with next
+                                    const nextSeq = sorted[idx + 1].sequence
+                                    const currSeq = ao.sequence
+                                    console.log(`Reorder: Move sequence ${currSeq} after ${nextSeq}`)
+                                  }}
+                                >
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 opacity-0 group-hover:opacity-100 text-destructive hover:bg-destructive/10"
+                                title="Delete operation"
+                                onClick={() => {
+                                  // TODO: Implement delete operation
+                                  console.log(`Delete operation: ${ao.id}`)
+                                }}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </>
+                          ) : bom.is_active ? (
+                            <TooltipProvider>
+                              <Tooltip delayDuration={300}>
+                                <TooltipTrigger asChild>
+                                  <div className="inline-block cursor-not-allowed">
+                                    <Button variant="ghost" size="sm" disabled className="pointer-events-none opacity-30 h-7 w-7">
+                                      <Lock className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="left">
+                                  <p>Active BOM cannot be edited.</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -223,18 +259,36 @@ export function BOMOperationList({ bom, canEdit }: BOMOperationListProps) {
       )}
 
       {/* Attach form */}
-      {canEdit && (
+      {(canEdit || bom.is_active) && (
         <div className="space-y-3">
           {!showForm ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full"
-              onClick={() => { setShowForm(true); setForm((f) => ({ ...f, sequence: nextSequence() })) }}
-            >
-              <Plus className="w-3.5 h-3.5 mr-1.5" />
-              Attach Operation
-            </Button>
+            canEdit ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => { setShowForm(true); setForm((f) => ({ ...f, sequence: nextSequence() })) }}
+              >
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
+                Attach Operation
+              </Button>
+            ) : (
+              <TooltipProvider>
+                <Tooltip delayDuration={300}>
+                  <TooltipTrigger asChild>
+                    <div className="inline-block cursor-not-allowed w-full">
+                      <Button variant="outline" size="sm" disabled className="w-full pointer-events-none opacity-50">
+                        <Plus className="w-3.5 h-3.5 mr-1.5" />
+                        Attach Operation
+                      </Button>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Active BOM cannot be edited. Create a new version.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )
           ) : (
             <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
               <h4 className="text-sm font-medium">Attach New Operation</h4>

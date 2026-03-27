@@ -24,6 +24,10 @@ class TenantModel(Base):
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Currency
+    currency_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    currency_symbol: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False

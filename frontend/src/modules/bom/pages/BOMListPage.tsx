@@ -3,10 +3,9 @@ import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import {
   Layers, Search, CheckCircle2, Circle, AlertCircle,
-  Copy, Eye, DollarSign, Edit2, ChevronDown
+  Copy, Eye, DollarSign, ChevronDown, Plus, Calendar, Clock, Loader2
 } from "lucide-react"
 import { bomService } from "@/services/bom.service"
-import { BOM } from "@/types/bom.types"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { toast } from "sonner"
 import { usePermissions } from "@/hooks/usePermissions"
 import {
   DropdownMenu,
@@ -21,6 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { formatCurrency } from "@/utils/currency"
 
 // We list BOMs by fetching templates first, then their BOMs
 export default function BOMListPage() {
@@ -29,6 +30,7 @@ export default function BOMListPage() {
   const [search, setSearch] = useState("")
   const [showOnlyWithBOM, setShowOnlyWithBOM] = useState(false)
   const [showOnlyActive, setShowOnlyActive] = useState(false)
+  const [showOnlyDraft, setShowOnlyDraft] = useState(false)
 
   const { data: tplData, isLoading, isError, refetch } = useQuery({
     queryKey: ["bom-list-templates"],
@@ -47,10 +49,6 @@ export default function BOMListPage() {
           template.code.toLowerCase().includes(search.toLowerCase())
         )
       }
-      return true
-    })
-    .filter((_template) => {
-      // This will be enhanced in the grid rendering to check if template has BOMs
       return true
     })
 
@@ -86,20 +84,29 @@ export default function BOMListPage() {
           <Button
             variant={showOnlyWithBOM ? "default" : "outline"}
             size="sm"
-            onClick={() => setShowOnlyWithBOM(!showOnlyWithBOM)}
+            onClick={() => { setShowOnlyWithBOM(!showOnlyWithBOM); if(!showOnlyWithBOM) { setShowOnlyActive(false); setShowOnlyDraft(false); } }}
             className="gap-1.5"
           >
             <Circle className="w-3 h-3" />
-            Has BOMs
+            Has BOM
           </Button>
           <Button
             variant={showOnlyActive ? "default" : "outline"}
             size="sm"
-            onClick={() => setShowOnlyActive(!showOnlyActive)}
+            onClick={() => { setShowOnlyActive(!showOnlyActive); if(!showOnlyActive){ setShowOnlyWithBOM(false); setShowOnlyDraft(false); } }}
             className="gap-1.5"
           >
             <CheckCircle2 className="w-3 h-3" />
             Active Only
+          </Button>
+          <Button
+            variant={showOnlyDraft ? "default" : "outline"}
+            size="sm"
+            onClick={() => { setShowOnlyDraft(!showOnlyDraft); if(!showOnlyDraft){ setShowOnlyWithBOM(false); setShowOnlyActive(false); } }}
+            className="gap-1.5"
+          >
+            <AlertCircle className="w-3 h-3" />
+            Draft Only
           </Button>
         </div>
       </div>
@@ -134,27 +141,12 @@ export default function BOMListPage() {
           </div>
           <div className="text-center space-y-1">
             <h3 className="font-semibold text-base">
-              {search ? "No matching products found" : "No Bill of Materials yet"}
+              No matching products found
             </h3>
             <p className="text-sm text-muted-foreground max-w-xs">
-              {search
-                ? "Try a different search term."
-                : "To create a BOM, first create a Product Template, then open a product to create its Bill of Materials."}
+              Try a different search term.
             </p>
           </div>
-          {!search && (
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={() => navigate("/products")}>
-                Go to Products
-              </Button>
-              {canEditBOM() && (
-                <Button onClick={() => navigate("/bom/new")}>
-                  <Layers className="w-4 h-4 mr-2" />
-                  New BOM
-                </Button>
-              )}
-            </div>
-          )}
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -166,10 +158,8 @@ export default function BOMListPage() {
               code={tpl.code}
               showOnlyWithBOM={showOnlyWithBOM}
               showOnlyActive={showOnlyActive}
-              onClick={() =>
-                navigate(`/bom/list?templateId=${tpl.id}`)
-              }
-              onSelectBom={(bom) => navigate(`/bom/${bom.id}`)}
+              showOnlyDraft={showOnlyDraft}
+              onClick={() => navigate(`/bom/list?templateId=${tpl.id}`)}
             />
           ))}
         </div>
@@ -186,19 +176,21 @@ function TemplateCard({
   code,
   showOnlyWithBOM,
   showOnlyActive,
+  showOnlyDraft,
   onClick,
-  onSelectBom,
 }: {
   templateId: string
   name: string
   code: string
   showOnlyWithBOM: boolean
   showOnlyActive: boolean
+  showOnlyDraft: boolean
   onClick: () => void
-  onSelectBom: (bom: BOM) => void
 }) {
   const navigate = useNavigate()
   const { canEditBOM } = usePermissions()
+  const [showCost, setShowCost] = useState(false)
+  
   const { data, isLoading } = useQuery({
     queryKey: ["bom-versions", templateId, true],
     queryFn: () => bomService.getBOMsForProduct(templateId, true),
@@ -207,51 +199,68 @@ function TemplateCard({
 
   const boms = data?.items ?? []
   const activeBom = boms.find((b) => b.is_active)
+  const draftBoms = boms.filter((b) => !b.is_active)
+  
+  // Use either active BOM or newest draft as the representative BOM for the card
+  const representativeBom = activeBom || boms[0]
 
-  // MUST call hooks before any conditional returns
+  // Cost fetch on demand to prevent mass API polling
   const { data: costData, isLoading: costLoading } = useQuery({
-    queryKey: ["bom-cost", activeBom?.id],
-    queryFn: () => bomService.getBOMCost(activeBom!.id),
-    staleTime: 30_000,
-    enabled: !!activeBom,
+    queryKey: ["bom-cost", representativeBom?.id],
+    queryFn: () => bomService.getBOMCost(representativeBom!.id),
+    staleTime: 60_000,
+    enabled: !!representativeBom && showCost,
   })
 
   // Apply filters AFTER all hooks are called
   const hasBoMs = boms.length > 0
   if (showOnlyWithBOM && !hasBoMs) return null
   if (showOnlyActive && !activeBom) return null
+  if (showOnlyDraft && draftBoms.length === 0) return null
 
-  const componentCount = activeBom?.lines?.length ?? 0
-  const totalCost = costData?.total_cost ?? 0
-  const currency = costData?.currency ?? "USD"
+  const componentCount = representativeBom?.lines?.length ?? 0
+  const operationsCount = representativeBom?.operations_count ?? 0
+  const totalCost = costData?.total_cost ?? null
+  const currencySymbol = costData?.currency_symbol ?? "₹"
 
-  const handleEdit = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (activeBom) {
-      navigate(`/bom/${activeBom.id}`)
-    }
+  // Date formatters
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return "N/A"
+    return new Date(dateString).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+  }
+  
+  const formatRelative = (dateString?: string) => {
+    if (!dateString) return "N/A"
+    const diff = Date.now() - new Date(dateString).getTime()
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+    if (days === 0) return "Today"
+    if (days === 1) return "Yesterday"
+    if (days < 30) return `${days} days ago`
+    return formatDate(dateString)
   }
 
-  const handleViewTree = (e: React.MouseEvent) => {
+  const handleCreateBom = async (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (activeBom) {
-      navigate(`/bom/${activeBom.id}?tab=tree`)
-    }
-  }
-
-  const handleViewCost = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (activeBom) {
-      navigate(`/bom/${activeBom.id}?tab=costs`)
+    try {
+      const res = await bomService.createBOM(templateId, {
+        version: "v1.0",
+        valid_from: new Date().toISOString(),
+        template_id: templateId,
+        lines: []
+      })
+      toast.success("BOM created successfully")
+      navigate(`/bom/${res.id}`)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Failed to create BOM")
     }
   }
 
   return (
     <Card
-      className="cursor-pointer hover:border-primary/50 hover:bg-accent/20 transition-all group"
+      className="cursor-pointer hover:border-primary/50 hover:bg-accent/20 transition-all flex flex-col justify-between group"
       onClick={onClick}
     >
-      <CardContent className="p-4 space-y-3">
+      <CardContent className="p-4 space-y-4">
         {/* Header with quick actions */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
@@ -259,40 +268,25 @@ function TemplateCard({
             <p className="text-xs text-muted-foreground font-mono">{code}</p>
           </div>
           
-          {/* Quick action menu */}
-          {activeBom && canEditBOM() && (
+          {representativeBom && canEditBOM() && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-7 h-7 p-0 hover:bg-primary/10"
-                >
+                <Button variant="ghost" size="sm" className="w-7 h-7 p-0 hover:bg-primary/10">
                   <ChevronDown className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleEdit} className="gap-2">
-                  <Edit2 className="w-3.5 h-3.5" />
-                  Edit BOM
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleViewTree} className="gap-2">
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigate(`/bom/${representativeBom.id}`); }} className="gap-2">
                   <Eye className="w-3.5 h-3.5" />
+                  View Details
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigate(`/bom/${representativeBom.id}?tab=tree`); }} className="gap-2">
+                  <Layers className="w-3.5 h-3.5" />
                   View Tree
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleViewCost} className="gap-2">
-                  <DollarSign className="w-3.5 h-3.5" />
-                  View Cost
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    navigate(`/bom/${activeBom.id}?action=copy`)
-                  }}
-                  className="gap-2"
-                >
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigate(`/bom/${representativeBom.id}?action=copy`); }} className="gap-2">
                   <Copy className="w-3.5 h-3.5" />
-                  Copy BOM
+                  Copy version
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -301,61 +295,86 @@ function TemplateCard({
 
         {/* BOM status and metrics */}
         {isLoading ? (
-          <Skeleton className="h-6 w-24" />
+          <Skeleton className="h-10 w-full" />
         ) : boms.length === 0 ? (
-          <div className="flex items-center gap-2">
-            <Circle className="w-3 h-3 text-muted-foreground/50" />
-            <p className="text-xs text-muted-foreground">No BOMs</p>
+          <div className="flex flex-col items-center justify-center py-5 gap-2 border border-dashed border-border/60 rounded-lg bg-muted/10">
+            <Layers className="w-5 h-5 text-muted-foreground/40" />
+            <p className="text-xs font-medium text-muted-foreground">No BOM available</p>
+            {canEditBOM() && (
+              <Button variant="outline" size="sm" className="h-7 text-xs mt-1 bg-background" onClick={handleCreateBom}>
+                <Plus className="w-3 h-3 mr-1.5" />
+                Create BOM
+              </Button>
+            )}
           </div>
         ) : (
-          <div className="space-y-2.5">
-            {/* Version badges */}
-            <div className="flex flex-wrap gap-1.5">
-              {boms.slice(0, 3).map((bom) => (
-                <button
-                  key={bom.id}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onSelectBom(bom)
-                  }}
-                  className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs hover:bg-accent/50 transition-colors"
-                >
-                  {bom.is_active ? (
-                    <CheckCircle2 className="w-3 h-3 text-green-500" />
-                  ) : (
-                    <Circle className="w-3 h-3 text-muted-foreground" />
-                  )}
-                  v{bom.version}
-                </button>
-              ))}
-              {boms.length > 3 && (
-                <Badge variant="outline" className="text-xs">
-                  +{boms.length - 3}
-                </Badge>
-              )}
+          <div className="space-y-4">
+            {/* Version counts and badges */}
+            <div className="flex items-center flex-wrap gap-2 text-xs">
+              <span className="text-muted-foreground font-medium">{boms.length} version{boms.length > 1 ? 's' : ''}</span>
+              <div className="flex flex-wrap gap-1.5 ml-auto">
+                {activeBom && (
+                  <Badge className="bg-green-100 text-green-800 border-green-200 hover:bg-green-200 shadow-none font-normal px-1.5 py-0 flex items-center gap-1">
+                     <span className="text-[10px]">●</span>
+                     Active v{activeBom.version}
+                  </Badge>
+                )}
+                {draftBoms.slice(0, activeBom ? 1 : 2).map(draft => (
+                  <Badge key={draft.id} variant="outline" className="text-muted-foreground font-normal px-1.5 py-0 flex items-center gap-1">
+                     <span className="text-[10px]">○</span>
+                     v{draft.version}
+                  </Badge>
+                ))}
+                {draftBoms.length > (activeBom ? 1 : 2) && (
+                   <span className="text-[10px] text-muted-foreground self-center">+{draftBoms.length - (activeBom ? 1 : 2)}</span>
+                )}
+              </div>
             </div>
 
-            {/* Active BOM details */}
-            {activeBom && (
-              <div className="pt-1.5 border-t space-y-1.5">
-                <Badge className="bg-green-50 text-green-700 border border-green-200 text-xs font-normal">
-                  Active: v{activeBom.version}
-                </Badge>
+            {/* Representative BOM details */}
+            {representativeBom && (
+              <div className="pt-2 border-t space-y-3">
+                {/* Dates */}
+                <div className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="w-3 h-3" />
+                    <span>Created: {formatDate(representativeBom.created_at)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3 h-3" />
+                    <span>Updated: <span className="text-foreground">{formatRelative(representativeBom.updated_at)}</span></span>
+                  </div>
+                </div>
 
-                {/* Metrics row */}
+                {/* Structure row */}
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="flex items-center justify-between bg-muted/30 px-2 py-1.5 rounded">
-                    <span className="text-muted-foreground">Components:</span>
-                    <span className="font-semibold">{componentCount}</span>
+                  <div className="flex flex-col bg-muted/30 px-2 py-1.5 rounded border border-border/40">
+                    <span className="text-muted-foreground text-[10px] uppercase font-semibold">Components</span>
+                    <span className="font-medium text-foreground">{componentCount}</span>
                   </div>
-                  <div className="flex items-center justify-between bg-muted/30 px-2 py-1.5 rounded">
-                    <span className="text-muted-foreground">Cost:</span>
-                    {costLoading ? (
-                      <Skeleton className="h-4 w-12" />
-                    ) : (
-                      <span className="font-semibold">{currency} {totalCost.toFixed(2)}</span>
-                    )}
+                  <div className="flex flex-col bg-muted/30 px-2 py-1.5 rounded border border-border/40">
+                    <span className="text-muted-foreground text-[10px] uppercase font-semibold">Operations</span>
+                    <span className="font-medium text-foreground">{operationsCount}</span>
                   </div>
+                </div>
+
+                {/* Cost row */}
+                <div className="flex items-center justify-between text-xs p-2 rounded bg-primary/5 border border-primary/10">
+                   <div className="font-medium text-muted-foreground flex items-center gap-1.5">
+                     <DollarSign className="w-3.5 h-3.5 text-primary" />
+                     Total Cost
+                   </div>
+                   <div className="font-semibold text-primary">
+                     {!showCost ? (
+                       <Button variant="ghost" size="sm" className="h-5 px-2 text-[10px] uppercase font-bold tracking-wide" onClick={(e) => { e.stopPropagation(); setShowCost(true); }}>
+                         Load Cost
+                       </Button>
+                     ) : costLoading ? (
+                       <Loader2 className="w-3 h-3 animate-spin"/>
+                     ) : totalCost !== null ? (
+                       formatCurrency(totalCost, currencySymbol)
+                     ) : "—"}
+                   </div>
                 </div>
               </div>
             )}

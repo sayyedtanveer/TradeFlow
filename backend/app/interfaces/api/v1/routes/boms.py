@@ -37,6 +37,7 @@ from backend.app.interfaces.api.v1.schemas.bom_schemas import (
     CopyBOMRequest,
     BOMResponse,
     BOMListResponse,
+    BOMCostResponse,
     BOMLineResponse,
 )
 from backend.app.domain.bom.entities.bom import BillOfMaterial
@@ -362,7 +363,7 @@ async def get_bom_tree(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return tree
 
-@router.get("/boms/{bom_id}/cost", summary="Get Rolled-up Standard Cost")
+@router.get("/boms/{bom_id}/cost", response_model=BOMCostResponse, summary="Get Rolled-up Standard Cost")
 async def get_bom_cost(
     bom_id: uuid.UUID,
     request: Request,

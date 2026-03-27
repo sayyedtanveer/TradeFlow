@@ -8,6 +8,7 @@ import { usersRoutes } from "@/modules/users/routes"
 import { bomRoutes } from "@/modules/bom/routes"
 import { productRoutes } from "@/modules/products/routes"
 import { operationsRoutes } from "@/modules/operations/routes"
+import { salesRoutes } from "@/modules/sales/routes"
 import { NotFoundPage, ForbiddenPage } from "@/components/layout/ErrorPages"
 
 // Lazy loaded modules
@@ -64,6 +65,7 @@ export const router = createBrowserRouter([
           ...bomRoutes,
           ...productRoutes,
           ...operationsRoutes,
+          ...salesRoutes,
           { path: "403", element: <ForbiddenPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],

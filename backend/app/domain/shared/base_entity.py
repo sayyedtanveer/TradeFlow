@@ -98,3 +98,13 @@ class BaseEntity(ABC):
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} id={self._id}>"
+
+
+class AggregateRoot(BaseEntity):
+    """
+    Aggregate Root - special entity type representing domain aggregates.
+    
+    In DDD, aggregates are clusters of objects that act as a single unit.
+    The aggregate root is the entry point for all transactions within the aggregate.
+    """
+    pass

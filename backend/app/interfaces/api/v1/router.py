@@ -14,6 +14,8 @@ from backend.app.interfaces.api.v1.routes.products import router as products_rou
 from backend.app.interfaces.api.v1.routes.boms import router as boms_router
 from backend.app.interfaces.api.v1.workstations import router as workstations_router
 from backend.app.interfaces.api.v1.operations import router as operations_router
+from backend.app.interfaces.api.sales import router as sales_router
+from backend.app.interfaces.api.v1.routes.work_orders import router as work_orders_router
 
 api_v1_router = APIRouter()
 
@@ -27,6 +29,8 @@ api_v1_router.include_router(products_router)
 api_v1_router.include_router(boms_router)
 api_v1_router.include_router(workstations_router)
 api_v1_router.include_router(operations_router)
+api_v1_router.include_router(sales_router)
+api_v1_router.include_router(work_orders_router)
 
 # --- Dynamic Module Registration ---
 module_registry.register(
@@ -75,6 +79,36 @@ module_registry.register(
     route="/manufacturing",
     dependencies=["bom"],
     roles=["ADMIN", "MANAGER"],
+    status="active",
+    icon="Factory"
+)
+
+module_registry.register(
+    id="sales",
+    name="Sales & Orders",
+    route="/sales",
+    dependencies=["inventory", "products"],
+    roles=["ADMIN", "MANAGER", "OPERATOR", "VIEWER"],
+    status="active",
+    icon="ShoppingCart"
+)
+
+module_registry.register(
+    id="work-orders",
+    name="Work Orders",
+    route="/work-orders",
+    dependencies=["bom", "inventory"],
+    roles=["ADMIN", "MANAGER", "OPERATOR"],
+    status="active",
+    icon="ClipboardList"
+)
+
+module_registry.register(
+    id="shop-floor",
+    name="Shop Floor",
+    route="/shop-floor",
+    dependencies=["work-orders"],
+    roles=["ADMIN", "MANAGER", "OPERATOR"],
     status="active",
     icon="Factory"
 )

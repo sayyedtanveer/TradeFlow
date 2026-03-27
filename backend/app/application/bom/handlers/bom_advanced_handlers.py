@@ -12,7 +12,8 @@ from backend.app.application.bom.queries.bom_advanced_queries import GetBOMTreeQ
 from backend.app.infrastructure.services.bom_providers import (
     InfrastructureBOMProvider,
     InfrastructureCostProvider,
-    InfrastructureComponentDetailProvider
+    InfrastructureComponentDetailProvider,
+    InfrastructureTenantProvider
 )
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
 from backend.app.application.bom.queries.bom_advanced_queries import GetBOMTreeQuery, GetBOMCostQuery, ValidateBOMQuery
@@ -53,7 +54,8 @@ class BOMAdvancedHandlers:
 
         bom_provider = InfrastructureBOMProvider(self._bom_repo)
         cost_provider = InfrastructureCostProvider(self._uow._session)
-        service = CostRollupService(bom_provider, cost_provider)
+        tenant_provider = InfrastructureTenantProvider(self._uow._session)
+        service = CostRollupService(bom_provider, cost_provider, tenant_provider)
         
         return await service.calculate_standard_cost(query.tenant_id, bom, max_depth=query.max_depth)
 

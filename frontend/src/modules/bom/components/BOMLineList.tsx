@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { Trash2, Plus, Edit2, Check, X, Package2, Box, Layers } from "lucide-react"
+import { Trash2, Plus, Edit2, Check, X, Package2, Box, Layers, Lock } from "lucide-react"
 import { bomService } from "@/services/bom.service"
 import { BOM, BOMLine, BOMLineInput } from "@/types/bom.types"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 
 import { BOMLineForm } from "./BOMLineForm"
 import { toast } from "sonner"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 
 interface BOMLineListProps {
@@ -99,6 +100,23 @@ export function BOMLineList({ bom, canEdit }: BOMLineListProps) {
             <Plus className="w-3.5 h-3.5 mr-1.5" />
             Add Component
           </Button>
+        )}
+        {!canEdit && bom.is_active && (
+          <TooltipProvider>
+            <Tooltip delayDuration={300}>
+              <TooltipTrigger asChild>
+                <div className="inline-block cursor-not-allowed">
+                  <Button size="sm" disabled className="h-8 pointer-events-none opacity-50">
+                    <Plus className="w-3.5 h-3.5 mr-1.5" />
+                    Add Component
+                  </Button>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Active BOM cannot be edited. Create a new version to modify.</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
       </div>
 
@@ -221,6 +239,21 @@ export function BOMLineList({ bom, canEdit }: BOMLineListProps) {
                               <Trash2 className="w-3.5 h-3.5" />
                             </Button>
                           </>
+                        ) : bom.is_active ? (
+                          <TooltipProvider>
+                            <Tooltip delayDuration={300}>
+                              <TooltipTrigger asChild>
+                                <div className="inline-block cursor-not-allowed">
+                                  <Button variant="ghost" size="sm" disabled className="pointer-events-none opacity-30">
+                                    <Lock className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="left">
+                                <p>Active BOM cannot be edited.</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         ) : null}
                       </div>
                     </td>

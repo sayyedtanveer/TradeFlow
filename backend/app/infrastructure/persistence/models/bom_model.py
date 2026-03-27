@@ -10,9 +10,10 @@ from sqlalchemy import (
     UniqueConstraint,
     Numeric,
     Index,
-    func
+    func,
+    select
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, column_property
 
 from backend.app.infrastructure.persistence.models.bom_operation_model import BOMOperationModel
 
@@ -51,12 +52,15 @@ class BOMModel(Base):
         lazy="selectin"
     )
 
-    # Relationship to Operations (Routing)
     operations: Mapped[List["BOMOperationModel"]] = relationship(
         "BOMOperationModel",
         back_populates="bom",
         cascade="all, delete-orphan",
         lazy="selectin"
+    )
+
+    operations_count: Mapped[int] = column_property(
+        select(func.count(BOMOperationModel.id)).where(BOMOperationModel.bom_id == id).correlate_except(BOMOperationModel).scalar_subquery()
     )
 
     __table_args__ = (

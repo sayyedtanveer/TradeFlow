@@ -121,6 +121,8 @@ class CreateItemVariantHandler:
 
         # Build variant_key and check uniqueness
         ordered_keys = template.attribute_keys()
+        # Normalise incoming attribute_values: uppercase all keys
+        normalised_values: dict = {str(k).upper(): v for k, v in cmd.attribute_values.items()}
         # Validate attribute values against allowed template values
         for attr in template.attributes:
             key = str(attr["key"]).upper()

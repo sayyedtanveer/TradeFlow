@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query"
 import {
-  ArrowLeft, GitBranch, Package2, Zap, Lock, AlertCircle
+  ArrowLeft, GitBranch, Package2, Zap, Lock, AlertCircle, Trash2
 } from "lucide-react"
 import { bomService } from "@/services/bom.service"
 import { BOM, ItemTemplate, ItemVariant } from "@/types/bom.types"
@@ -12,6 +12,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { usePermissions } from "@/hooks/usePermissions"
 import { BOMTreeView } from "../components/BOMTreeView"
 import { BOMLineList } from "../components/BOMLineList"
@@ -311,14 +320,51 @@ export default function BOMDetailPage() {
         {canEditBOM() && (
           <div className="flex gap-2 flex-shrink-0">
             {!bom.is_active && (
-              <Button
-                size="sm"
-                onClick={() => setActivateOpen(true)}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                <Zap className="w-3.5 h-3.5 mr-1.5" />
-                Activate
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  onClick={() => setActivateOpen(true)}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  <Zap className="w-3.5 h-3.5 mr-1.5" />
+                  Activate
+                </Button>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="destructive" className="bg-red-600 hover:bg-red-700/90 text-white border-transparent">
+                      <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                      Delete
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Are you sure you want to delete this draft BOM?</DialogTitle>
+                      <DialogDescription>
+                        This will permanently delete the draft BOM version {bom.version}. This action cannot be undone.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                      <Button variant="outline" className="mt-2 sm:mt-0" onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', {'key': 'Escape'}))}>Cancel</Button>
+                      <Button
+                        variant="destructive"
+                        className="bg-red-600 hover:bg-red-700"
+                        onClick={async () => {
+                          try {
+                            await bomService.deleteBOM(bom.id);
+                            // Close dialog manually if needed, or redirect
+                            toast.success(`Draft BOM v${bom.version} deleted`)
+                            navigate("/bom/list")
+                          } catch (err: any) {
+                            toast.error(err?.response?.data?.detail || "Failed to delete BOM")
+                          }
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </>
             )}
             <Button
               size="sm"

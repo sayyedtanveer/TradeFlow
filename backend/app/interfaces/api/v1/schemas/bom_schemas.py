@@ -78,6 +78,9 @@ class BOMResponse(BaseModel):
     approved_by: Optional[uuid.UUID] = None
     template_id: Optional[uuid.UUID] = None
     variant_id: Optional[uuid.UUID] = None
+    created_at: datetime
+    updated_at: datetime
+    operations_count: int = 0
     lines: List[BOMLineResponse] = []
 
     model_config = {"from_attributes": True}
@@ -88,3 +91,11 @@ class BOMListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+class BOMCostResponse(BaseModel):
+    bom_id: uuid.UUID
+    material_cost: Decimal
+    operation_cost: Decimal
+    total_cost: Decimal
+    currency_code: Optional[str] = None
+    currency_symbol: Optional[str] = None

@@ -31,6 +31,7 @@ class BOMRepository(BaseRepository[BillOfMaterial, BOMModel]):
             deleted_at=model.deleted_at,
             created_at=model.created_at,
             updated_at=model.updated_at,
+            operations_count=model.operations_count,
             lines=[],
         )
         if hasattr(model, "lines") and model.lines is not None:

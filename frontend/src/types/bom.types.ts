@@ -22,7 +22,11 @@ export interface BOM {
   approved_by: string | null;
   template_id: string | null;
   variant_id: string | null;
+  created_at: string;
+  updated_at: string;
+  operations_count: number;
   lines: BOMLine[];
+  operations?: BOMOperation[];
 }
 
 export interface BOMListResponse {
@@ -56,7 +60,8 @@ export interface BOMCostResponse {
   material_cost: number;
   operation_cost: number;
   total_cost: number;
-  currency: string;
+  currency_code?: string;
+  currency_symbol?: string;
 }
 
 // ─── Operations & Workstations ────────────────────────────────────────────────

@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { formatCurrency } from "@/utils/currency"
 
 interface BOMCostBreakdownProps {
   bom: BOM
@@ -41,6 +42,18 @@ export function BOMCostBreakdown({ bom }: BOMCostBreakdownProps) {
     queryFn: () => bomService.getBOMTree(bom.id, { max_depth: maxDepth }),
     staleTime: 60_000,
     retry: 1,
+  })
+
+  const { data: operationsList } = useQuery({
+    queryKey: ["operations"],
+    queryFn: bomService.getOperations,
+    staleTime: 60_000,
+  })
+
+  const { data: workstationsList } = useQuery({
+    queryKey: ["workstations"],
+    queryFn: bomService.getWorkstations,
+    staleTime: 60_000,
   })
 
   const isRefreshing = isFetching && !isLoading
@@ -118,7 +131,7 @@ export function BOMCostBreakdown({ bom }: BOMCostBreakdownProps) {
               </CardHeader>
               <CardContent className="px-4 pb-4 space-y-2">
                 <div className="text-2xl sm:text-3xl font-bold text-green-800 truncate">
-                  {data.currency} {Number(data.total_cost).toFixed(2)}
+                  {formatCurrency(data.total_cost, data.currency_symbol || "₹")}
                 </div>
                 <p className="text-xs text-green-600">
                   All levels included
@@ -135,7 +148,7 @@ export function BOMCostBreakdown({ bom }: BOMCostBreakdownProps) {
               </CardHeader>
               <CardContent className="px-4 pb-4 space-y-2">
                 <div className="text-xl sm:text-2xl font-bold text-amber-700 truncate">
-                  {data.currency} {Number(data.material_cost).toFixed(2)}
+                  {formatCurrency(data.material_cost, data.currency_symbol || "₹")}
                 </div>
                 <div className="space-y-1">
                   <div className="flex justify-between items-center text-xs">
@@ -171,7 +184,7 @@ export function BOMCostBreakdown({ bom }: BOMCostBreakdownProps) {
               </CardHeader>
               <CardContent className="px-4 pb-4 space-y-2">
                 <div className="text-xl sm:text-2xl font-bold text-blue-700 truncate">
-                  {data.currency} {Number(data.operation_cost).toFixed(2)}
+                  {formatCurrency(data.operation_cost, data.currency_symbol || "₹")}
                 </div>
                 <div className="space-y-1">
                   <div className="flex justify-between items-center text-xs">
@@ -262,10 +275,10 @@ export function BOMCostBreakdown({ bom }: BOMCostBreakdownProps) {
                                 {node.unit && ` ${node.unit}`}
                               </TableCell>
                               <TableCell className="text-xs text-right">
-                                {data.currency} {unitCost.toFixed(4)}
+                                {data.currency_symbol || "₹"} {unitCost.toFixed(4)}
                               </TableCell>
                               <TableCell className="text-xs text-right font-semibold">
-                                {data.currency} {itemCost.toFixed(2)}
+                                {formatCurrency(itemCost, data.currency_symbol || "₹")}
                               </TableCell>
                               <TableCell className="text-xs text-right text-amber-600">
                                 {pct}%
@@ -300,14 +313,66 @@ export function BOMCostBreakdown({ bom }: BOMCostBreakdownProps) {
               </button>
 
               {expandOperations && (
-                <Alert className="bg-blue-50 border-blue-200">
-                  <AlertCircle className="w-4 h-4 text-blue-600" />
-                  <AlertDescription className="text-xs text-blue-700">
-                    Detailed operation costs are calculated based on workstation hourly rates and 
-                    operation setup/run times. To view individual operation costs, attach operations 
-                    to this BOM and ensure workstations have hourly rates configured.
-                  </AlertDescription>
-                </Alert>
+                <div className="rounded-lg border overflow-hidden mt-3">
+                  <div className="overflow-x-auto min-w-0">
+                    <Table className="text-sm">
+                      <TableHeader className="bg-muted/50">
+                        <TableRow>
+                          <TableHead className="text-xs">Operation</TableHead>
+                          <TableHead className="text-xs text-right">Time (min)</TableHead>
+                          <TableHead className="text-xs text-right">Workstation Rate</TableHead>
+                          <TableHead className="text-xs text-right">Operation Cost</TableHead>
+                          <TableHead className="text-xs text-right">% of Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(bom.operations || []).map((bomOp) => {
+                          const op = operationsList?.find((o) => o.id === bomOp.operation_id)
+                          const ws = workstationsList?.find((w) => w.id === op?.workstation_id)
+                          const totalTime = (op?.setup_time || 0) + (op?.run_time || 0)
+                          const hourlyRate = ws?.hourly_rate || 0
+                          const opCost = totalTime * (hourlyRate / 60)
+                          
+                          const pct = Number(data.total_cost) > 0 
+                            ? ((opCost / data.total_cost) * 100).toFixed(1) 
+                            : "0.0"
+
+                          return (
+                            <TableRow key={bomOp.id} className="hover:bg-muted/30 transition-colors">
+                              <TableCell className="text-xs font-medium">
+                                <div className="flex flex-col gap-0.5">
+                                  <span>{op ? op.name : "Unknown Operation"}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {ws ? ws.name : "Unknown Workstation"}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-xs text-right text-muted-foreground">
+                                {totalTime}
+                              </TableCell>
+                              <TableCell className="text-xs text-right text-muted-foreground">
+                                {data.currency_symbol || "₹"} {hourlyRate.toFixed(2)}/hr
+                              </TableCell>
+                              <TableCell className="text-xs text-right font-semibold">
+                                {formatCurrency(opCost, data.currency_symbol || "₹")}
+                              </TableCell>
+                              <TableCell className="text-xs text-right text-blue-600">
+                                {pct}%
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                        {(!bom.operations || bom.operations.length === 0) && (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center text-muted-foreground py-4">
+                              No direct operations attached to this BOM entirely.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
               )}
             </div>
           )}

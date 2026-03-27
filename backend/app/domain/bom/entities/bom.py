@@ -29,6 +29,7 @@ class BillOfMaterial(BaseEntity):
         deleted_at: Optional[datetime] = None,
         created_at: Optional[datetime] = None,
         updated_at: Optional[datetime] = None,
+        operations_count: int = 0,
     ):
         super().__init__(
             id=id,
@@ -59,6 +60,7 @@ class BillOfMaterial(BaseEntity):
 
         self.lines: List[BOMLine] = lines or []
         self.operations: List[BOMOperation] = operations or []
+        self.operations_count = operations_count
 
     @property
     def target_product_id(self) -> uuid.UUID:
