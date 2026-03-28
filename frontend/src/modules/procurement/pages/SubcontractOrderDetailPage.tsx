@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
+import { ProductVariantSelector } from "@/modules/procurement/components/ProductVariantSelector"
 
 function locKind(l: Location & { location_type?: string }) {
   return l.location_type ?? (l as { type?: string }).type ?? ""
@@ -157,10 +158,7 @@ export default function SubcontractOrderDetailPage() {
         <h2 className="font-medium">Receive finished goods</h2>
         <p className="text-xs text-muted-foreground">Adds FG material into warehouse available stock.</p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label>FG material UUID</Label>
-            <Input value={recvMat} onChange={(e) => setRecvMat(e.target.value)} placeholder="finished goods material id" />
-          </div>
+          <ProductVariantSelector value={recvMat} onChange={setRecvMat} />
           <div className="space-y-2">
             <Label>Quantity</Label>
             <Input type="number" value={recvQty} onChange={(e) => setRecvQty(e.target.value)} />

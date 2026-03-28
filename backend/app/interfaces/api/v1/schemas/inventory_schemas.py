@@ -33,6 +33,8 @@ class UpdateMaterialRequest(BaseModel):
     is_batch_tracked: Optional[bool] = None
     is_serialized: Optional[bool] = None
     is_active: Optional[bool] = None
+    inspection_required: Optional[bool] = None
+    inspection_template_id: Optional[uuid.UUID] = None
 
 
 # ── Transaction Request Schemas ───────────────────────────────────────────
@@ -93,6 +95,8 @@ class MaterialResponse(BaseModel):
     location_id: Optional[uuid.UUID]
     is_batch_tracked: bool
     is_serialized: bool
+    inspection_required: bool = False
+    inspection_template_id: Optional[uuid.UUID] = None
     is_active: bool
     is_low_stock: bool
 

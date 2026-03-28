@@ -18,6 +18,7 @@ from backend.app.application.product.queries.product_queries import (
     ListItemTemplatesQuery,
     GetItemVariantQuery,
     ListItemVariantsQuery,
+    ListAllVariantsQuery,
 )
 
 
@@ -69,6 +70,21 @@ class ProductQueryHandler:
     async def list_variants(self, query: ListItemVariantsQuery) -> VariantListResult:
         items, total = await self._variant_repo.list_variants(
             template_id=query.template_id,
+            tenant_id=query.tenant_id,
+            search=query.query,
+            is_active=query.is_active,
+            page=query.page,
+            page_size=query.page_size,
+        )
+        return VariantListResult(
+            items=[_to_variant_result(v) for v in items],
+            total=total,
+            page=query.page,
+            page_size=query.page_size,
+        )
+
+    async def list_all_variants(self, query: ListAllVariantsQuery) -> VariantListResult:
+        items, total = await self._variant_repo.list_all_variants(
             tenant_id=query.tenant_id,
             search=query.query,
             is_active=query.is_active,

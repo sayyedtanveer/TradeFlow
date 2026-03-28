@@ -76,8 +76,32 @@ export const materialService = {
     return data;
   },
 
-  async getLocations(): Promise<Location[]> {
-    const { data } = await apiClient.get("/inventory/master-data/locations");
+  async getLocations(params?: { type?: string }): Promise<Location[]> {
+    const { data } = await apiClient.get("/inventory/master-data/locations", { params });
+    return data;
+  },
+
+  async createLocation(body: {
+    name: string;
+    type: string;
+    code?: string | null;
+    parent_id?: string | null;
+    is_active?: boolean;
+  }): Promise<Location> {
+    const { data } = await apiClient.post("/inventory/master-data/locations", body);
+    return data;
+  },
+
+  async updateLocation(
+    id: string,
+    body: {
+      name?: string;
+      code?: string | null;
+      parent_id?: string | null;
+      is_active?: boolean;
+    }
+  ): Promise<Location> {
+    const { data } = await apiClient.put(`/inventory/master-data/locations/${id}`, body);
     return data;
   },
 

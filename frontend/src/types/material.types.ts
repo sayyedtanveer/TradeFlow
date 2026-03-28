@@ -14,6 +14,8 @@ export interface Material {
   location_id: string | null;
   is_batch_tracked: boolean;
   is_serialized: boolean;
+  inspection_required?: boolean;
+  inspection_template_id?: string | null;
   is_active: boolean;
   is_low_stock: boolean;
 }
@@ -66,6 +68,7 @@ export interface UnitOfMeasure {
 export interface Location {
   id: string;
   name: string;
+  code?: string | null;
   /** API may return `location_type` instead of `type` */
   type: string;
   location_type?: string;
@@ -99,6 +102,8 @@ export interface UpdateMaterialInput {
   is_active?: boolean;
   is_batch_tracked?: boolean;
   is_serialized?: boolean;
+  inspection_required?: boolean;
+  inspection_template_id?: string | null;
 }
 
 export interface StockOperationInput {

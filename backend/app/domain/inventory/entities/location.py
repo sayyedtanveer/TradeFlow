@@ -12,6 +12,10 @@ class LocationType(str, Enum):
     WAREHOUSE = "warehouse"
     RACK = "rack"
     BIN = "bin"
+    QUARANTINE = "quarantine"
+    SUBCONTRACTOR = "subcontractor"
+    PRODUCTION = "production"
+    SHIPPING = "shipping"
 
 
 class Location(BaseEntity):
@@ -27,6 +31,7 @@ class Location(BaseEntity):
         name: str,
         location_type: LocationType,
         parent_location_id: Optional[uuid.UUID] = None,
+        code: Optional[str] = None,
         is_active: bool = True,
         created_at: Optional[datetime] = None,
         updated_at: Optional[datetime] = None,
@@ -40,6 +45,7 @@ class Location(BaseEntity):
         self._name = name
         self._location_type = location_type
         self._parent_location_id = parent_location_id
+        self._code = code
         self._is_active = is_active
 
     @property
@@ -62,6 +68,15 @@ class Location(BaseEntity):
     @parent_location_id.setter
     def parent_location_id(self, value: Optional[uuid.UUID]) -> None:
         self._parent_location_id = value
+        self._touch()
+
+    @property
+    def code(self) -> Optional[str]:
+        return self._code
+
+    @code.setter
+    def code(self, value: Optional[str]) -> None:
+        self._code = value
         self._touch()
 
     @property

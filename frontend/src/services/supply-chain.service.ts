@@ -88,6 +88,14 @@ export type QuarantineRow = {
   quantity: number
 }
 
+export type InspectionTemplate = {
+  id: string
+  tenant_id: string
+  name: string
+  parameters: Record<string, unknown>[]
+  is_active: boolean
+}
+
 export const supplyChainApi = {
   listSuppliers: () => apiClient.get<Supplier[]>(`${BASE}/suppliers`),
   createSupplier: (body: {
@@ -136,6 +144,18 @@ export const supplyChainApi = {
   listInspections: () => apiClient.get<InspectionRow[]>(`${BASE}/quality/inspections`),
   listNCRs: () => apiClient.get<NCRRow[]>(`${BASE}/quality/ncrs`),
   quarantineStock: () => apiClient.get<QuarantineRow[]>(`${BASE}/quarantine-stock`),
+
+  listInspectionTemplates: () => apiClient.get<InspectionTemplate[]>(`${BASE}/inspection-templates`),
+  createInspectionTemplate: (body: {
+    name: string
+    parameters?: Record<string, unknown>[]
+    is_active?: boolean
+  }) => apiClient.post<InspectionTemplate>(`${BASE}/inspection-templates`, body),
+  updateInspectionTemplate: (
+    id: string,
+    body: { name?: string; parameters?: Record<string, unknown>[]; is_active?: boolean }
+  ) => apiClient.put<InspectionTemplate>(`${BASE}/inspection-templates/${id}`, body),
+  deleteInspectionTemplate: (id: string) => apiClient.delete(`${BASE}/inspection-templates/${id}`),
 
   listMaterialRequests: () => apiClient.get<MaterialRequest[]>(`${BASE}/material-requests`),
   runMrp: () => apiClient.post<{ created: number }>(`${BASE}/material-requests/run-mrp`),

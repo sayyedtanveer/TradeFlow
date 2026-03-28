@@ -4,7 +4,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-from typing import List, Optional
+from typing import Any, List, Optional
+
+# Sentinel: "field not provided" vs explicit None (e.g. clear inspection_template_id)
+MISSING = object()
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,8 @@ class UpdateMaterialCommand:
     is_batch_tracked: Optional[bool] = None
     is_serialized: Optional[bool] = None
     is_active: Optional[bool] = None
+    inspection_required: Any = field(default=MISSING)
+    inspection_template_id: Any = field(default=MISSING)
 
 
 @dataclass(frozen=True)

@@ -25,14 +25,27 @@ class CategoryResponse(BaseModel):
 # ── Location Schemas ──────────────────────────────────────────────────────
 class CreateLocationRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    type: str = Field("warehouse", pattern="^(warehouse|rack|bin)$")
+    type: str = Field(
+        "warehouse",
+        pattern="^(warehouse|rack|bin|quarantine|subcontractor|production|shipping)$",
+    )
+    code: Optional[str] = Field(None, max_length=50)
     parent_id: Optional[uuid.UUID] = None
     is_active: bool = True
+
+
+class UpdateLocationRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    code: Optional[str] = Field(None, max_length=50)
+    parent_id: Optional[uuid.UUID] = None
+    is_active: Optional[bool] = None
+
 
 class LocationResponse(BaseModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
     name: str
+    code: Optional[str] = None
     location_type: str
     parent_location_id: Optional[uuid.UUID] = None
     is_active: bool

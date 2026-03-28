@@ -6,6 +6,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from backend.app.application.inventory.commands.inventory_commands import (
+    MISSING,
     AddStockCommand,
     AdjustStockCommand,
     CreateMaterialCommand,
@@ -175,6 +176,7 @@ async def update_material(
         material_repo = MaterialRepository(session)
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
         handler = UpdateMaterialHandler(material_repo=material_repo, uow=uow)
+        patch = body.model_dump(exclude_unset=True)
         try:
             result = await handler.handle(
                 UpdateMaterialCommand(
@@ -190,6 +192,12 @@ async def update_material(
                     is_batch_tracked=body.is_batch_tracked,
                     is_serialized=body.is_serialized,
                     is_active=body.is_active,
+                    inspection_required=patch["inspection_required"]
+                    if "inspection_required" in patch
+                    else MISSING,
+                    inspection_template_id=patch["inspection_template_id"]
+                    if "inspection_template_id" in patch
+                    else MISSING,
                 )
             )
         except ValueError as e:

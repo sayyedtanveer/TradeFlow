@@ -116,3 +116,40 @@ class ItemVariantRepository(BaseRepository[ItemVariant, ItemVariantModel]):
         )
         rows = (await self._session.execute(paged)).scalars().all()
         return [self._to_entity(r) for r in rows], total
+
+    async def list_all_variants(
+        self,
+        tenant_id: uuid.UUID,
+        search: Optional[str] = None,
+        is_active: Optional[bool] = True,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> tuple[list[ItemVariant], int]:
+        """All variants for tenant (search by code/name)."""
+        base_stmt = select(ItemVariantModel).where(
+            ItemVariantModel.tenant_id == tenant_id,
+            ItemVariantModel.is_deleted.is_(False),
+        )
+        if is_active is not None:
+            base_stmt = base_stmt.where(ItemVariantModel.is_active == is_active)
+        if search:
+            from sqlalchemy import or_
+
+            like = f"%{search}%"
+            base_stmt = base_stmt.where(
+                or_(
+                    ItemVariantModel.name.ilike(like),
+                    ItemVariantModel.code.ilike(like),
+                )
+            )
+
+        count_stmt = select(func.count()).select_from(base_stmt.subquery())
+        total = (await self._session.execute(count_stmt)).scalar_one()
+
+        paged = (
+            base_stmt.order_by(ItemVariantModel.code.asc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        rows = (await self._session.execute(paged)).scalars().all()
+        return [self._to_entity(r) for r in rows], total

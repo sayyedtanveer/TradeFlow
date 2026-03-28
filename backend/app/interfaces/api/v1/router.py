@@ -17,6 +17,7 @@ from backend.app.interfaces.api.v1.operations import router as operations_router
 from backend.app.interfaces.api.sales import router as sales_router
 from backend.app.interfaces.api.v1.routes.work_orders import router as work_orders_router
 from backend.app.interfaces.api.v1.routes.supply_chain import router as supply_chain_router
+from backend.app.interfaces.api.v1.routes.inspection_templates import router as inspection_templates_router
 
 api_v1_router = APIRouter()
 
@@ -33,6 +34,7 @@ api_v1_router.include_router(operations_router)
 api_v1_router.include_router(sales_router)
 api_v1_router.include_router(work_orders_router)
 api_v1_router.include_router(supply_chain_router)
+api_v1_router.include_router(inspection_templates_router)
 
 # --- Dynamic Module Registration ---
 module_registry.register(

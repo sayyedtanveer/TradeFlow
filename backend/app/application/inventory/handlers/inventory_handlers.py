@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Optional
 
 from backend.app.application.inventory.commands.inventory_commands import (
+    MISSING,
     CreateMaterialCommand,
     UpdateMaterialCommand,
     AddStockCommand,
@@ -40,6 +41,8 @@ class MaterialResult:
     location_id: Optional[uuid.UUID]
     is_batch_tracked: bool
     is_serialized: bool
+    inspection_required: bool
+    inspection_template_id: Optional[uuid.UUID]
     is_active: bool
     is_low_stock: bool
 
@@ -60,6 +63,8 @@ def _to_result(m: Material) -> MaterialResult:
         location_id=m.location_id,
         is_batch_tracked=m.is_batch_tracked,
         is_serialized=m.is_serialized,
+        inspection_required=m.inspection_required,
+        inspection_template_id=m.inspection_template_id,
         is_active=m.is_active,
         is_low_stock=m.is_low_stock(),
     )
@@ -116,6 +121,10 @@ class UpdateMaterialHandler:
             is_serialized=cmd.is_serialized,
             is_active=cmd.is_active,
         )
+        if cmd.inspection_required is not MISSING:
+            material.inspection_required = cmd.inspection_required
+        if cmd.inspection_template_id is not MISSING:
+            material.inspection_template_id = cmd.inspection_template_id
         await self._repo.save(material)
         await self._uow.commit()
         return _to_result(material)

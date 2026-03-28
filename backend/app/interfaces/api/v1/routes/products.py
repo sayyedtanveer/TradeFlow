@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from typing import Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import select
+
+from backend.app.infrastructure.persistence.models.material_model import MaterialModel
+from backend.app.infrastructure.persistence.models.unit_of_measure_model import UnitOfMeasureModel
 
 from backend.app.application.product.commands.product_commands import (
     CreateItemTemplateCommand,
@@ -17,12 +21,14 @@ from backend.app.application.product.handlers.product_handlers import (
     CreateItemVariantHandler,
     UpdateItemVariantHandler,
 )
+from backend.app.application.product.handlers.product_handlers import ItemVariantResult
 from backend.app.application.product.handlers.product_query_handler import ProductQueryHandler
 from backend.app.application.product.queries.product_queries import (
     GetItemTemplateQuery,
     ListItemTemplatesQuery,
     GetItemVariantQuery,
     ListItemVariantsQuery,
+    ListAllVariantsQuery,
 )
 from backend.app.infrastructure.persistence.repositories.item_template_repository import ItemTemplateRepository
 from backend.app.infrastructure.persistence.repositories.item_variant_repository import ItemVariantRepository
@@ -41,6 +47,8 @@ from backend.app.interfaces.api.v1.schemas.product_schemas import (
     UpdateItemVariantRequest,
     ItemVariantResponse,
     ItemVariantListResponse,
+    ItemVariantSearchItem,
+    ItemVariantSearchListResponse,
 )
 
 router = APIRouter(prefix="/products", tags=["Product Master"])
@@ -79,6 +87,58 @@ def _variant_from_result(r) -> ItemVariantResponse:
         selling_price=Decimal(r.selling_price) if r.selling_price else None,
         is_active=r.is_active,
     )
+
+
+async def _batch_fg_material_ids(
+    session,
+    tenant_id: uuid.UUID,
+    variant_rows: List[ItemVariantResult],
+) -> Dict[str, Optional[uuid.UUID]]:
+    """Resolve FG stock material id: same UUID as variant, or finished material with matching code."""
+    if not variant_rows:
+        return {}
+    out: Dict[str, Optional[uuid.UUID]] = {r.id: None for r in variant_rows}
+    ids = [uuid.UUID(r.id) for r in variant_rows]
+    stmt = select(MaterialModel).where(
+        MaterialModel.tenant_id == tenant_id,
+        MaterialModel.id.in_(ids),
+        MaterialModel.is_deleted.is_(False),
+    )
+    res = await session.execute(stmt)
+    for m in res.scalars().all():
+        key = str(m.id)
+        if key in out:
+            out[key] = m.id
+    for r in variant_rows:
+        if out[r.id] is not None:
+            continue
+        stmt2 = select(MaterialModel).where(
+            MaterialModel.tenant_id == tenant_id,
+            MaterialModel.code == r.code,
+            MaterialModel.material_type == "finished",
+            MaterialModel.is_deleted.is_(False),
+        ).limit(1)
+        m = (await session.execute(stmt2)).scalar_one_or_none()
+        if m:
+            out[r.id] = m.id
+    return out
+
+
+async def _batch_unit_codes(
+    session,
+    tenant_id: uuid.UUID,
+    base_unit_ids: List[uuid.UUID],
+) -> Dict[uuid.UUID, str]:
+    if not base_unit_ids:
+        return {}
+    uniq = list({u for u in base_unit_ids})
+    stmt = select(UnitOfMeasureModel).where(
+        UnitOfMeasureModel.tenant_id == tenant_id,
+        UnitOfMeasureModel.id.in_(uniq),
+        UnitOfMeasureModel.is_deleted.is_(False),
+    )
+    res = await session.execute(stmt)
+    return {m.id: m.code for m in res.scalars().all()}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -284,6 +344,58 @@ async def list_variants(
         )
     return ItemVariantListResponse(
         items=[_variant_from_result(v) for v in result.items],
+        total=result.total,
+        page=result.page,
+        page_size=result.page_size,
+    )
+
+
+@router.get(
+    "/variants",
+    response_model=ItemVariantSearchListResponse,
+    summary="Search all item variants (tenant-wide)",
+)
+async def search_all_variants(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    search: Optional[str] = Query(None, description="Search by name or code"),
+    is_active: Optional[bool] = Query(True),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        t_repo = ItemTemplateRepository(session)
+        v_repo = ItemVariantRepository(session)
+        handler = ProductQueryHandler(template_repo=t_repo, variant_repo=v_repo)
+        result = await handler.list_all_variants(
+            ListAllVariantsQuery(
+                tenant_id=tenant_id,
+                query=search,
+                is_active=is_active,
+                page=page,
+                page_size=page_size,
+            )
+        )
+        fg_map = await _batch_fg_material_ids(session, tenant_id, result.items)
+        bu_ids: List[uuid.UUID] = []
+        for r in result.items:
+            if r.base_unit_id:
+                bu_ids.append(uuid.UUID(r.base_unit_id))
+        unit_codes = await _batch_unit_codes(session, tenant_id, bu_ids)
+        items: List[ItemVariantSearchItem] = []
+        for r in result.items:
+            base = _variant_from_result(r)
+            bu = uuid.UUID(r.base_unit_id) if r.base_unit_id else None
+            items.append(
+                ItemVariantSearchItem(
+                    **base.model_dump(),
+                    base_unit_code=unit_codes.get(bu) if bu else None,
+                    stock_material_id=fg_map.get(r.id),
+                )
+            )
+    return ItemVariantSearchListResponse(
+        items=items,
         total=result.total,
         page=result.page,
         page_size=result.page_size,

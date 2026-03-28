@@ -41,6 +41,8 @@ class Material(BaseEntity):
         location_id: Optional[uuid.UUID] = None,
         is_batch_tracked: bool = False,
         is_serialized: bool = False,
+        inspection_required: bool = False,
+        inspection_template_id: Optional[uuid.UUID] = None,
         is_active: bool = True,
         created_at: Optional[datetime] = None,
         updated_at: Optional[datetime] = None,
@@ -67,6 +69,8 @@ class Material(BaseEntity):
         self._location_id = location_id
         self._is_batch_tracked = is_batch_tracked
         self._is_serialized = is_serialized
+        self._inspection_required = inspection_required
+        self._inspection_template_id = inspection_template_id
         self._is_active = is_active
 
     # ── Properties ──────────────────────────────────────────────────────────
@@ -156,6 +160,24 @@ class Material(BaseEntity):
     @is_serialized.setter
     def is_serialized(self, value: bool) -> None:
         self._is_serialized = value
+        self._touch()
+
+    @property
+    def inspection_required(self) -> bool:
+        return self._inspection_required
+
+    @inspection_required.setter
+    def inspection_required(self, value: bool) -> None:
+        self._inspection_required = value
+        self._touch()
+
+    @property
+    def inspection_template_id(self) -> Optional[uuid.UUID]:
+        return self._inspection_template_id
+
+    @inspection_template_id.setter
+    def inspection_template_id(self, value: Optional[uuid.UUID]) -> None:
+        self._inspection_template_id = value
         self._touch()
 
     @property

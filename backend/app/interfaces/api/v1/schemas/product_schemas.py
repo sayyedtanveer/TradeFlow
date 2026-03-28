@@ -92,3 +92,20 @@ class ItemVariantListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class ItemVariantSearchItem(ItemVariantResponse):
+    """Variant row for global search — includes unit label and resolvable FG material id."""
+
+    base_unit_code: Optional[str] = None
+    stock_material_id: Optional[uuid.UUID] = Field(
+        default=None,
+        description="Material id to use for receive/stock when linked (same id as variant or finished material with matching code).",
+    )
+
+
+class ItemVariantSearchListResponse(BaseModel):
+    items: List[ItemVariantSearchItem]
+    total: int
+    page: int
+    page_size: int

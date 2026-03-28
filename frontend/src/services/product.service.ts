@@ -1,5 +1,11 @@
 import { apiClient } from "./api-client";
-import { ItemTemplate, ItemTemplateListResponse, ItemVariant, ItemVariantListResponse } from "@/types/bom.types";
+import {
+  ItemTemplate,
+  ItemTemplateListResponse,
+  ItemVariant,
+  ItemVariantListResponse,
+  ItemVariantSearchListResponse,
+} from "@/types/bom.types";
 
 export interface CreateTemplateInput {
   code: string;
@@ -83,6 +89,17 @@ export const productService = {
 
   async updateVariant(id: string, payload: UpdateVariantInput): Promise<ItemVariant> {
     const { data } = await apiClient.put(`/products/variants/${id}`, payload);
+    return data;
+  },
+
+  /** Tenant-wide variant search (for subcontract receive / FG selection) */
+  async searchVariants(params: {
+    search?: string;
+    is_active?: boolean;
+    page?: number;
+    page_size?: number;
+  }): Promise<ItemVariantSearchListResponse> {
+    const { data } = await apiClient.get("/products/variants", { params });
     return data;
   },
 };

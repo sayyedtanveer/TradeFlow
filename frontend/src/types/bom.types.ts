@@ -139,6 +139,19 @@ export interface ItemVariantListResponse {
   page_size: number;
 }
 
+/** Global variant search (subcontract FG picker) */
+export interface ItemVariantSearchItem extends ItemVariant {
+  base_unit_code?: string | null;
+  stock_material_id?: string | null;
+}
+
+export interface ItemVariantSearchListResponse {
+  items: ItemVariantSearchItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 // ─── Form Inputs ──────────────────────────────────────────────────────────────
 
 export type ComponentType = "material" | "template" | "variant";

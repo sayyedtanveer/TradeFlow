@@ -7,7 +7,7 @@ from typing import List, Optional, Type
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.domain.inventory.entities.material import Material
+from backend.app.domain.inventory.entities.material import Material, MaterialType
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.infrastructure.persistence.repositories.base_repository import BaseRepository
 
@@ -23,7 +23,7 @@ class MaterialRepository(BaseRepository[Material, MaterialModel]):
             tenant_id=model.tenant_id,
             code=model.code,
             name=model.name,
-            material_type=model.material_type,
+            material_type=MaterialType(model.material_type),
             description=model.description,
             category_id=model.category_id,
             base_unit_id=model.base_unit_id,
@@ -33,6 +33,8 @@ class MaterialRepository(BaseRepository[Material, MaterialModel]):
             location_id=model.location_id,
             is_batch_tracked=model.is_batch_tracked,
             is_serialized=model.is_serialized,
+            inspection_required=model.inspection_required,
+            inspection_template_id=model.inspection_template_id,
             is_active=model.is_active,
             created_at=model.created_at,
             updated_at=model.updated_at,
@@ -56,6 +58,8 @@ class MaterialRepository(BaseRepository[Material, MaterialModel]):
             location_id=entity.location_id,
             is_batch_tracked=entity.is_batch_tracked,
             is_serialized=entity.is_serialized,
+            inspection_required=entity.inspection_required,
+            inspection_template_id=entity.inspection_template_id,
             is_active=entity.is_active,
             is_deleted=entity.is_deleted,
             deleted_at=entity.deleted_at,
