@@ -34,6 +34,15 @@ from backend.app.infrastructure.persistence.models import (  # noqa: F401
     workstation_model,
     operation_model,
     bom_operation_model,
+    work_order_model,
+    sales_models,
+    quality_model,
+    purchase_order_model,
+    supplier_model,
+    po_sequence_model,
+    material_request_model,
+    subcontract_model,
+    finance_models,
 )
 
 config = context.config

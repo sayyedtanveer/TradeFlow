@@ -32,7 +32,7 @@ BASE_URL   = "http://127.0.0.1:8000/api/v1"
 ADMIN_EMAIL    = "admin@synapse-erp-v16.com"
 ADMIN_PASSWORD = "Erp@1234"
 TENANT_NAME    = "Synapse Manufacturing Pvt Ltd"
-TENANT_SLUG    = "synapse-mfg-v16"
+TENANT_SLUG    = "synapse-mfg-v18"
 
 SEP = "─" * 65
 

@@ -85,7 +85,7 @@ export default function SalesOrderDetailPage() {
     try {
       const updated = await ordersApi.addLine(order.id, {
         product_id: newLine.product_id,
-        product_type: newLine.product_type,
+        product_type: newLine.product_type as 'variant' | 'finished_product',
         uom_id: newLine.uom_id,
         quantity: newLine.quantity,
         tax_rate: newLine.tax_rate,

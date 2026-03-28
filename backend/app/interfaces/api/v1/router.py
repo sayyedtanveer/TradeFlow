@@ -18,6 +18,9 @@ from backend.app.interfaces.api.sales import router as sales_router
 from backend.app.interfaces.api.v1.routes.work_orders import router as work_orders_router
 from backend.app.interfaces.api.v1.routes.supply_chain import router as supply_chain_router
 from backend.app.interfaces.api.v1.routes.inspection_templates import router as inspection_templates_router
+from backend.app.interfaces.api.v1.routes.finance import router as finance_router
+from backend.app.interfaces.api.v1.routes.reports import router as reports_router
+from backend.app.interfaces.api.v1.routes.notifications import router as notifications_router
 
 api_v1_router = APIRouter()
 
@@ -35,6 +38,9 @@ api_v1_router.include_router(sales_router)
 api_v1_router.include_router(work_orders_router)
 api_v1_router.include_router(supply_chain_router)
 api_v1_router.include_router(inspection_templates_router)
+api_v1_router.include_router(finance_router)
+api_v1_router.include_router(reports_router)
+api_v1_router.include_router(notifications_router)
 
 # --- Dynamic Module Registration ---
 module_registry.register(
@@ -125,6 +131,26 @@ module_registry.register(
     roles=["ADMIN", "MANAGER", "OPERATOR"],
     status="active",
     icon="Truck"
+)
+
+module_registry.register(
+    id="finance",
+    name="Finance & Accounting",
+    route="/finance",
+    dependencies=["sales", "procurement"],
+    roles=["ADMIN", "ACCOUNTANT", "MANAGER"],
+    status="active",
+    icon="DollarSign"
+)
+
+module_registry.register(
+    id="reports",
+    name="Reports & Analytics",
+    route="/reports",
+    dependencies=[],
+    roles=["ADMIN", "MANAGER", "ACCOUNTANT", "SALES", "QC", "OPERATOR"],
+    status="active",
+    icon="BarChart2"
 )
 
 # --- System API Map ---
