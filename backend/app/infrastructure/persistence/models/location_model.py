@@ -20,7 +20,8 @@ class LocationModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    type: Mapped[str] = mapped_column(String(20), nullable=False)   # warehouse, rack, bin
+    code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)   # warehouse, rack, bin, quarantine, subcontractor, ...
     parent_location_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("locations.id"), nullable=True
     )

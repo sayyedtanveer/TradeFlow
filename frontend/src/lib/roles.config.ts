@@ -85,6 +85,7 @@ export const MODULE_ROLES: Record<string, UserRole[]> = {
   manufacturing: [UserRole.ADMIN, UserRole.MANAGER],
   inventory: [UserRole.ADMIN, UserRole.MANAGER, UserRole.OPERATOR, UserRole.VIEWER],
   workOrders: [UserRole.ADMIN, UserRole.MANAGER, UserRole.OPERATOR],
+  procurement: [UserRole.ADMIN, UserRole.MANAGER, UserRole.OPERATOR],
   sales: [UserRole.ADMIN, UserRole.MANAGER, UserRole.VIEWER],
   reports: [UserRole.ADMIN, UserRole.MANAGER],
   users: [UserRole.ADMIN],

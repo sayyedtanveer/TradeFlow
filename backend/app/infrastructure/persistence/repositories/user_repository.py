@@ -61,6 +61,17 @@ class UserRepository(BaseRepository[User, UserModel], IUserRepository):
         model = result.scalar_one_or_none()
         return self._to_entity(model) if model else None
 
+    async def get_supplier_id_for_user(
+        self, user_id: uuid.UUID, tenant_id: uuid.UUID
+    ) -> Optional[uuid.UUID]:
+        stmt = select(UserModel.supplier_id).where(
+            UserModel.id == user_id,
+            UserModel.tenant_id == tenant_id,
+            UserModel.is_deleted.is_(False),
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def email_exists(self, email: Email, tenant_id: uuid.UUID) -> bool:
         stmt = select(UserModel.id).where(
             UserModel.email == str(email),

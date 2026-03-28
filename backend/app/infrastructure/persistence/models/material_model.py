@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, Column, DateTime, Numeric, String, ForeignKey, Index
+from sqlalchemy import Boolean, Column, DateTime, Integer, Numeric, String, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.schema import UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -41,6 +41,12 @@ class MaterialModel(Base):
     location_id = Column(UUID(as_uuid=True), ForeignKey("locations.id"), nullable=True)
     is_batch_tracked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_serialized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    inspection_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    inspection_template_id = Column(UUID(as_uuid=True), ForeignKey("inspection_templates.id"), nullable=True)
+    safety_stock: Mapped[Optional[float]] = mapped_column(Numeric(18, 4), nullable=True)
+    lead_time_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     # Soft delete

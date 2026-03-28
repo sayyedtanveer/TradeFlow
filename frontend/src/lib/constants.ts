@@ -10,6 +10,7 @@ import {
   Layers,
   PackageSearch,
   Network,
+  Truck,
   LucideIcon
 } from "lucide-react"
 import { UserRole, getRolesForModule } from "@/lib/roles.config"
@@ -64,6 +65,12 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/work-orders",
     icon: ClipboardList,
     roles: getRolesForModule("workOrders"),
+  },
+  {
+    title: "Procurement",
+    href: "/procurement",
+    icon: Truck,
+    roles: getRolesForModule("procurement"),
   },
   {
     title: "Sales",

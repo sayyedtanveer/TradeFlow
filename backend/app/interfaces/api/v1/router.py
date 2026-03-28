@@ -16,6 +16,7 @@ from backend.app.interfaces.api.v1.workstations import router as workstations_ro
 from backend.app.interfaces.api.v1.operations import router as operations_router
 from backend.app.interfaces.api.sales import router as sales_router
 from backend.app.interfaces.api.v1.routes.work_orders import router as work_orders_router
+from backend.app.interfaces.api.v1.routes.supply_chain import router as supply_chain_router
 
 api_v1_router = APIRouter()
 
@@ -31,6 +32,7 @@ api_v1_router.include_router(workstations_router)
 api_v1_router.include_router(operations_router)
 api_v1_router.include_router(sales_router)
 api_v1_router.include_router(work_orders_router)
+api_v1_router.include_router(supply_chain_router)
 
 # --- Dynamic Module Registration ---
 module_registry.register(
@@ -111,6 +113,16 @@ module_registry.register(
     roles=["ADMIN", "MANAGER", "OPERATOR"],
     status="active",
     icon="Factory"
+)
+
+module_registry.register(
+    id="procurement",
+    name="Procurement & Quality",
+    route="/procurement",
+    dependencies=["inventory"],
+    roles=["ADMIN", "MANAGER", "OPERATOR"],
+    status="active",
+    icon="Truck"
 )
 
 # --- System API Map ---

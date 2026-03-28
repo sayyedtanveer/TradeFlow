@@ -66,8 +66,11 @@ export interface UnitOfMeasure {
 export interface Location {
   id: string;
   name: string;
+  /** API may return `location_type` instead of `type` */
   type: string;
+  location_type?: string;
   parent_id: string | null;
+  parent_location_id?: string | null;
   is_active: boolean;
 }
 
