@@ -16,7 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.app.config import settings
 from backend.app.main import app
-from backend.app.infrastructure.context.tenant_context import TenantContext
+from backend.app.infrastructure.context.request_context import RequestContext
 from backend.app.infrastructure.persistence.models.base import Base
 from backend.app.infrastructure.persistence.session import get_session
 from backend.app.infrastructure.security.auth import create_access_token, hash_password
@@ -131,11 +131,13 @@ def token_headers(test_user_id: uuid.UUID, test_tenant_id: uuid.UUID) -> dict:
 
 
 @pytest.fixture
-def tenant_context(test_tenant_id: uuid.UUID, test_user_id: uuid.UUID) -> TenantContext:
-    """Return a TenantContext for the test."""
-    return TenantContext(
-        tenant_id=test_tenant_id,
-        user_id=test_user_id,
+def tenant_context(test_tenant_id: uuid.UUID, test_user_id: uuid.UUID) -> RequestContext:
+    """Return a request context object for the test tenant/user."""
+    return RequestContext(
+        correlation_id=None,
+        tenant_id=str(test_tenant_id),
+        user_id=str(test_user_id),
+        ip_address=None,
     )
 
 
