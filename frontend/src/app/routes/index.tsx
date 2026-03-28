@@ -62,6 +62,11 @@ export const router = createBrowserRouter([
         errorElement: <RouteErrorFallback />,
         children: [
           { index: true, element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
+          { path: "dashboard/planner", element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
+          { path: "dashboard/storekeeper", element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
+          { path: "dashboard/sales", element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
+          { path: "dashboard/qc", element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
+          { path: "dashboard/client", element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
           { path: "system-map", element: <Suspense fallback={<PageLoading />}><SystemMapPage /></Suspense> },
           ...inventoryRoutes,
           ...usersRoutes,

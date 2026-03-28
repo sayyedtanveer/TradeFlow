@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query"
 import { authService } from "@/services/auth.service"
 import { useAuthStore } from "@/app/store/authStore"
+import { getPostLoginPath } from "@/lib/roles.config"
 import { useTenantStore } from "@/app/store/tenantStore"
 import { useNavigate } from "react-router-dom"
 import { useToast } from "@/hooks/use-toast"
@@ -25,9 +26,9 @@ export function useAuth() {
         setTenantInfo(meResult.tenant.name, meResult.tenant.slug, meResult.tenant.plan)
         
         toast({ title: "Welcome back!" })
-        
-        // 3. Redirect to dashboard
-        navigate("/", { replace: true })
+
+        const home = getPostLoginPath(meResult.user.role)
+        navigate(home, { replace: true })
       } catch (err) {
         clearAuthStore()
         toast({ title: "Failed to fetch profile", variant: "destructive" })

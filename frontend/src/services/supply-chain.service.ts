@@ -146,6 +146,8 @@ export const supplyChainApi = {
   quarantineStock: () => apiClient.get<QuarantineRow[]>(`${BASE}/quarantine-stock`),
 
   listInspectionTemplates: () => apiClient.get<InspectionTemplate[]>(`${BASE}/inspection-templates`),
+  getInspectionTemplate: (id: string) =>
+    apiClient.get<InspectionTemplate>(`${BASE}/inspection-templates/${id}`),
   createInspectionTemplate: (body: {
     name: string
     parameters?: Record<string, unknown>[]

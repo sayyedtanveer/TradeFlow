@@ -1,41 +1,56 @@
 import { useAuthStore } from "@/app/store/authStore"
 import { UserRole, normalizeRole } from "@/lib/roles.config"
+import { hasPermission as checkPermission, Permission } from "@/lib/permissions.config"
 
 /**
- * Hook for permission checking
- * Uses centralized role configuration from roles.config.ts
+ * Permission checks mirror backend domain/shared/permissions.py — use hasPermission(), not raw role strings.
  */
 export function usePermissions() {
   const { user } = useAuthStore()
+  const roleRaw = user?.role
 
   const hasRole = (roles: (UserRole | string)[]): boolean => {
     if (!user) return false
     const normalized = normalizeRole(user.role)
-    return roles.some(role => 
-      normalizeRole(role as string) === normalized
-    )
+    return roles.some((r) => normalizeRole(r as string) === normalized)
   }
 
-  const isAdmin = (): boolean => hasRole([UserRole.ADMIN])
+  const hasPermission = (permission: string): boolean => checkPermission(roleRaw, permission)
+
+  const isAdmin = (): boolean => hasRole([UserRole.ADMIN, UserRole.TENANT_ADMIN])
   const isManager = (): boolean => hasRole([UserRole.MANAGER])
-  const isOperator = (): boolean => hasRole([UserRole.OPERATOR])
+  const isOperator = (): boolean => hasRole([UserRole.OPERATOR, UserRole.STOREKEEPER])
   const isViewer = (): boolean => hasRole([UserRole.VIEWER])
-  
-  const canWrite = (): boolean => hasRole([UserRole.ADMIN, UserRole.MANAGER, UserRole.OPERATOR])
-  const canDelete = (): boolean => hasRole([UserRole.ADMIN, UserRole.MANAGER])
-  const canEditBOM = (): boolean => hasRole([UserRole.ADMIN, UserRole.MANAGER])
+  const isQc = (): boolean => hasRole([UserRole.QC])
+
+  const canWrite = (): boolean =>
+    hasPermission(Permission.INVENTORY_WRITE) || hasPermission(Permission.PROCUREMENT_WRITE)
+  const canDelete = (): boolean => hasRole([UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER])
+  const canEditBOM = (): boolean => hasRole([UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER])
   const canViewBOM = (): boolean => !!user
+
+  /** Subcontract receive / GRN / PO write (storekeeper + admin). */
+  const canProcurementWrite = (): boolean => hasPermission(Permission.PROCUREMENT_WRITE)
+  /** Manage inspection templates & record inspections. */
+  const canQualityWrite = (): boolean => hasPermission(Permission.QUALITY_WRITE)
+  /** Manage master locations (quarantine bins). */
+  const canInventoryWrite = (): boolean => hasPermission(Permission.INVENTORY_WRITE)
 
   return {
     hasRole,
+    hasPermission,
     isAdmin,
     isManager,
     isOperator,
     isViewer,
+    isQc,
     canWrite,
     canDelete,
     canEditBOM,
     canViewBOM,
-    role: user?.role,
+    canProcurementWrite,
+    canQualityWrite,
+    canInventoryWrite,
+    role: roleRaw,
   }
 }

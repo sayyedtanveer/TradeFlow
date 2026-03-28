@@ -11,9 +11,17 @@ class Role(str, Enum):
     """
 
     ADMIN = "admin"
+    TENANT_ADMIN = "tenant_admin"
     MANAGER = "manager"
     OPERATOR = "operator"
     VIEWER = "viewer"
+    STOREKEEPER = "storekeeper"
+    QC = "qc"
+    PLANNER = "planner"
+    SALES = "sales"
+    WORKER = "worker"
+    CLIENT = "client"
+    SUPPLIER = "supplier"
 
     def __str__(self) -> str:
         return self.value

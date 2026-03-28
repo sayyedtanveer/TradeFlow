@@ -38,8 +38,21 @@ def require_role(required_role: Role) -> Callable:
         except ValueError:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unknown role")
 
-        role_hierarchy = {Role.ADMIN: 4, Role.MANAGER: 3, Role.OPERATOR: 2, Role.VIEWER: 1}
-        if role_hierarchy.get(user_role, 0) < role_hierarchy.get(required_role, 4):
+        role_hierarchy = {
+            Role.ADMIN: 100,
+            Role.TENANT_ADMIN: 99,
+            Role.MANAGER: 50,
+            Role.PLANNER: 45,
+            Role.SALES: 40,
+            Role.STOREKEEPER: 35,
+            Role.OPERATOR: 30,
+            Role.QC: 28,
+            Role.WORKER: 25,
+            Role.VIEWER: 10,
+            Role.CLIENT: 8,
+            Role.SUPPLIER: 5,
+        }
+        if role_hierarchy.get(user_role, 0) < role_hierarchy.get(required_role, 100):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Role '{required_role.value}' or higher required",

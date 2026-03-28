@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from backend.app.infrastructure.persistence.models.quality_model import InspectionTemplateModel
 from backend.app.interfaces.api.v1.dependencies.auth import get_container, get_current_tenant_id
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 
 router = APIRouter(prefix="/inspection-templates", tags=["Quality"])
 
@@ -68,7 +69,12 @@ async def list_inspection_templates(
     return [_to_response(m) for m in rows]
 
 
-@router.post("", response_model=InspectionTemplateResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=InspectionTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("quality:write"))],
+)
 async def create_inspection_template(
     body: InspectionTemplateCreate,
     request: Request,
@@ -107,7 +113,11 @@ async def get_inspection_template(
     return _to_response(m)
 
 
-@router.put("/{template_id}", response_model=InspectionTemplateResponse)
+@router.put(
+    "/{template_id}",
+    response_model=InspectionTemplateResponse,
+    dependencies=[Depends(require_permission("quality:write"))],
+)
 async def update_inspection_template(
     template_id: uuid.UUID,
     body: InspectionTemplateUpdate,
@@ -131,7 +141,11 @@ async def update_inspection_template(
     return _to_response(m)
 
 
-@router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{template_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("quality:write"))],
+)
 async def delete_inspection_template(
     template_id: uuid.UUID,
     request: Request,

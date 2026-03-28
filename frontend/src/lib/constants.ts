@@ -11,7 +11,8 @@ import {
   PackageSearch,
   Network,
   Truck,
-  LucideIcon
+  ShieldAlert,
+  LucideIcon,
 } from "lucide-react"
 import { UserRole, getRolesForModule } from "@/lib/roles.config"
 
@@ -19,10 +20,9 @@ export type NavItem = {
   title: string
   href: string
   icon: LucideIcon
-  roles: UserRole[] // Use enum values instead of strings
+  roles: UserRole[]
 }
 
-// Use getRolesForModule() helper to get roles instead of hardcoding them
 export const NAV_ITEMS: NavItem[] = [
   {
     title: "Dashboard",
@@ -34,7 +34,7 @@ export const NAV_ITEMS: NavItem[] = [
     title: "System Map",
     href: "/system-map",
     icon: Network,
-    roles: getRolesForModule("dashboard"),
+    roles: getRolesForModule("systemMap"),
   },
   {
     title: "Products",
@@ -73,16 +73,34 @@ export const NAV_ITEMS: NavItem[] = [
     roles: getRolesForModule("procurement"),
   },
   {
+    title: "Quality & QC",
+    href: "/procurement/quality",
+    icon: ShieldAlert,
+    roles: getRolesForModule("quality"),
+  },
+  {
     title: "Sales",
     href: "/sales",
     icon: ShoppingCart,
     roles: getRolesForModule("sales"),
   },
   {
+    title: "Shop floor",
+    href: "/shop-floor",
+    icon: Factory,
+    roles: getRolesForModule("shopFloor"),
+  },
+  {
     title: "Reports",
     href: "/reports",
     icon: BarChart3,
     roles: getRolesForModule("reports"),
+  },
+  {
+    title: "Supplier portal",
+    href: "/supplier-portal",
+    icon: Truck,
+    roles: getRolesForModule("supplierPortal"),
   },
   {
     title: "Users",
@@ -116,4 +134,3 @@ export const ROUTE_PATHS = {
   TRANSACTIONS: "/inventory/transactions",
   USERS: "/users",
 }
-

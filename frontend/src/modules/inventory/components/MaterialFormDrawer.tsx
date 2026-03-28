@@ -12,6 +12,8 @@ import { Save } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Drawer } from "@/components/shared/Drawer"
 import { useEffect } from "react"
+import { supplyChainApi } from "@/services/supply-chain.service"
+import { Checkbox } from "@/components/ui/checkbox"
 
 const materialSchema = z.object({
   code: z.string().min(1, "Code must be at least 1 character").max(100),
@@ -24,6 +26,8 @@ const materialSchema = z.object({
   location_id: z.string().uuid("Please select a valid location").nullable().optional(),
   is_batch_tracked: z.boolean().default(false).optional(),
   is_serialized: z.boolean().default(false).optional(),
+  inspection_required: z.boolean().optional(),
+  inspection_template_id: z.string().uuid().nullable().optional(),
 })
 
 type MaterialFormValues = z.infer<typeof materialSchema>
@@ -59,6 +63,12 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
     queryFn: () => materialService.getLocations(),
   })
 
+  const { data: inspectionTemplates } = useQuery({
+    queryKey: ["inspection-templates"],
+    queryFn: () => supplyChainApi.listInspectionTemplates().then((r) => r.data),
+    enabled: open && isEditing,
+  })
+
   const isFetching = isFetchingMaterial || isFetchingCategories || isFetchingUnits || isFetchingLocations;
 
   const { register, handleSubmit, formState: { errors }, setValue, watch, reset } = useForm<MaterialFormValues>({
@@ -74,6 +84,8 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
       location_id: null,
       is_batch_tracked: false,
       is_serialized: false,
+      inspection_required: false,
+      inspection_template_id: null,
     }
   })
 
@@ -91,6 +103,8 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
         location_id: material.location_id || null,
         is_batch_tracked: material.is_batch_tracked ?? false,
         is_serialized: material.is_serialized ?? false,
+        inspection_required: material.inspection_required ?? false,
+        inspection_template_id: material.inspection_template_id || null,
       })
     } else if (materialId === "new") {
       reset({
@@ -104,6 +118,8 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
         location_id: null,
         is_batch_tracked: false,
         is_serialized: false,
+        inspection_required: false,
+        inspection_template_id: null,
       })
     }
   }, [material, materialId, reset])
@@ -121,6 +137,8 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
           location_id: data.location_id,
           is_batch_tracked: data.is_batch_tracked,
           is_serialized: data.is_serialized,
+          inspection_required: data.inspection_required,
+          inspection_template_id: data.inspection_template_id ?? null,
         })
       } else {
         return await materialService.createMaterial({
@@ -262,6 +280,43 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
               <Input id="reorder_level" type="number" min="0" step="0.01" {...register("reorder_level")} />
               {errors.reorder_level && <p className="text-xs text-destructive">{errors.reorder_level.message}</p>}
             </div>
+
+            {isEditing && (
+              <div className="space-y-3 border-t pt-4">
+                <p className="text-sm font-medium">Receiving / inspection</p>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="insp_req"
+                    checked={watch("inspection_required")}
+                    onCheckedChange={(v) => setValue("inspection_required", v === true, { shouldValidate: true })}
+                  />
+                  <Label htmlFor="insp_req" className="font-normal cursor-pointer">
+                    Inspection required
+                  </Label>
+                </div>
+                <div className="space-y-2">
+                  <Label>Inspection template</Label>
+                  <Select
+                    value={watch("inspection_template_id") || "__none__"}
+                    onValueChange={(v) =>
+                      setValue("inspection_template_id", v === "__none__" ? null : v, { shouldValidate: true })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">(none)</SelectItem>
+                      {(inspectionTemplates ?? []).map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
           </div>
           
           <div className="pt-4 flex gap-3 w-full sm:justify-end">

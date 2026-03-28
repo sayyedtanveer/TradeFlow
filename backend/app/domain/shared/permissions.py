@@ -52,8 +52,18 @@ class Permission(str, Enum):
 
 # ── Role → Permissions mapping ────────────────────────────────────────────────
 # Import Role here would create circular deps, so we use string keys.
+_mfg_inv_quality = frozenset({
+    Permission.INVENTORY_READ,
+    Permission.INVENTORY_WRITE,
+    Permission.MANUFACTURING_READ,
+    Permission.MANUFACTURING_WRITE,
+    Permission.QUALITY_READ,
+    Permission.QUALITY_WRITE,
+})
+
 ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
     "admin": frozenset({Permission.ALL}),
+    "tenant_admin": frozenset({Permission.ALL}),
     "manager": frozenset({
         Permission.TENANT_READ,
         Permission.USER_READ,
@@ -70,13 +80,55 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
         Permission.QUALITY_WRITE,
         Permission.REPORTS_READ,
     }),
-    "operator": frozenset({
+    # Shop / warehouse: inventory + manufacturing + procurement (GRN, subcontract) + quality execution
+    "operator": frozenset(
+        _mfg_inv_quality
+        | {
+            Permission.PROCUREMENT_READ,
+            Permission.PROCUREMENT_WRITE,
+        }
+    ),
+    "storekeeper": frozenset(
+        _mfg_inv_quality
+        | {
+            Permission.PROCUREMENT_READ,
+            Permission.PROCUREMENT_WRITE,
+        }
+    ),
+    "planner": frozenset({
         Permission.INVENTORY_READ,
-        Permission.INVENTORY_WRITE,
         Permission.MANUFACTURING_READ,
         Permission.MANUFACTURING_WRITE,
+        Permission.PROCUREMENT_READ,
+        Permission.PROCUREMENT_WRITE,
+        Permission.QUALITY_READ,
+        Permission.REPORTS_READ,
+    }),
+    "qc": frozenset({
+        Permission.INVENTORY_READ,
         Permission.QUALITY_READ,
         Permission.QUALITY_WRITE,
+        Permission.PROCUREMENT_READ,
+    }),
+    "sales": frozenset({
+        Permission.INVENTORY_READ,
+        Permission.SALES_READ,
+        Permission.SALES_WRITE,
+        Permission.MANUFACTURING_READ,
+        Permission.REPORTS_READ,
+    }),
+    "worker": frozenset({
+        Permission.MANUFACTURING_READ,
+        Permission.MANUFACTURING_WRITE,
+        Permission.INVENTORY_READ,
+    }),
+    "client": frozenset({
+        Permission.SALES_READ,
+        Permission.INVENTORY_READ,
+    }),
+    "supplier": frozenset({
+        Permission.PROCUREMENT_READ,
+        Permission.PROCUREMENT_WRITE,
     }),
     "viewer": frozenset({
         Permission.INVENTORY_READ,

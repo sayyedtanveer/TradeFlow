@@ -6,6 +6,7 @@ import uuid
 from sqlalchemy import select
 
 from backend.app.interfaces.api.v1.dependencies.auth import get_current_tenant_id, get_container
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
 
 from backend.app.infrastructure.persistence.repositories.material_category_repository import MaterialCategoryRepository
@@ -106,7 +107,12 @@ async def list_locations(
             locations = await repo.list(tenant_id, page_size=500)
     return [_location_to_response(loc) for loc in locations]
 
-@router.post("/locations", response_model=LocationResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/locations",
+    response_model=LocationResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("inventory:write"))],
+)
 async def create_location(
     req: CreateLocationRequest,
     request: Request,
@@ -135,7 +141,11 @@ async def create_location(
     return _location_to_response(location)
 
 
-@router.put("/locations/{location_id}", response_model=LocationResponse)
+@router.put(
+    "/locations/{location_id}",
+    response_model=LocationResponse,
+    dependencies=[Depends(require_permission("inventory:write"))],
+)
 async def update_location(
     location_id: uuid.UUID,
     req: UpdateLocationRequest,

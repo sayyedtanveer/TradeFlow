@@ -26,6 +26,7 @@ from backend.app.infrastructure.persistence.models.stock_level_model import Stoc
 from backend.app.infrastructure.persistence.models.subcontract_model import SubcontractMaterialIssueModel, SubcontractOrderModel
 from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel
 from backend.app.interfaces.api.v1.dependencies.auth import get_container, get_current_tenant_id, get_current_user_id
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.interfaces.api.v1.dependencies.supplier_portal import require_supplier_id
 from backend.app.interfaces.api.v1.schemas.supply_chain_schemas import (
     GoodsReceiptRequest,
@@ -131,7 +132,12 @@ async def list_suppliers(
     return [SupplierResponse.model_validate(x) for x in rows]
 
 
-@router.post("/suppliers", response_model=SupplierResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/suppliers",
+    response_model=SupplierResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
 async def create_supplier(
     body: SupplierCreate,
     request: Request,
@@ -166,7 +172,11 @@ async def create_supplier(
     return SupplierResponse.model_validate(s)
 
 
-@router.put("/suppliers/{supplier_id}", response_model=SupplierResponse)
+@router.put(
+    "/suppliers/{supplier_id}",
+    response_model=SupplierResponse,
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
 async def update_supplier(
     supplier_id: uuid.UUID,
     body: SupplierUpdate,
@@ -232,7 +242,11 @@ async def get_purchase_order(
     return _po_to_dict(p)
 
 
-@router.post("/purchase-orders", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/purchase-orders",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
 async def create_purchase_order(
     body: PurchaseOrderCreate,
     request: Request,
@@ -279,7 +293,10 @@ async def create_purchase_order(
     return {"id": str(po.id), "po_number": po.po_number}
 
 
-@router.put("/purchase-orders/{po_id}/send")
+@router.put(
+    "/purchase-orders/{po_id}/send",
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
 async def send_purchase_order(
     po_id: uuid.UUID,
     request: Request,
@@ -298,7 +315,10 @@ async def send_purchase_order(
     return {"status": "ok"}
 
 
-@router.put("/purchase-orders/{po_id}/acknowledge")
+@router.put(
+    "/purchase-orders/{po_id}/acknowledge",
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
 async def acknowledge_purchase_order(
     po_id: uuid.UUID,
     request: Request,
@@ -317,7 +337,10 @@ async def acknowledge_purchase_order(
     return {"status": "ok"}
 
 
-@router.put("/purchase-orders/{po_id}/receive")
+@router.put(
+    "/purchase-orders/{po_id}/receive",
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
 async def receive_goods(
     po_id: uuid.UUID,
     body: GoodsReceiptRequest,
@@ -404,7 +427,7 @@ async def receive_goods(
 # ── Quality ───────────────────────────────────────────────────────────────────
 
 
-@router.post("/quality/inspect")
+@router.post("/quality/inspect", dependencies=[Depends(require_permission("quality:write"))])
 async def quality_inspect(
     body: QualityInspectRequest,
     request: Request,
@@ -469,7 +492,7 @@ async def quality_inspect(
     return {"inspection_id": str(qi.id)}
 
 
-@router.post("/quality/ncr")
+@router.post("/quality/ncr", dependencies=[Depends(require_permission("quality:write"))])
 async def create_ncr(
     body: NCRCreateRequest,
     request: Request,
@@ -557,7 +580,11 @@ async def quarantine_stock(
 # ── Subcontract ───────────────────────────────────────────────────────────────
 
 
-@router.post("/subcontract/orders", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/subcontract/orders",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
 async def create_subcontract_order(
     body: SubcontractOrderCreate,
     request: Request,
@@ -651,7 +678,10 @@ async def get_subcontract_order(
     }
 
 
-@router.post("/subcontract/orders/{order_id}/issue")
+@router.post(
+    "/subcontract/orders/{order_id}/issue",
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
 async def issue_subcontract_material(
     order_id: uuid.UUID,
     body: SubcontractIssueRequest,
@@ -693,7 +723,10 @@ async def issue_subcontract_material(
     return {"status": "ok"}
 
 
-@router.post("/subcontract/orders/{order_id}/receive")
+@router.post(
+    "/subcontract/orders/{order_id}/receive",
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
 async def receive_subcontract(
     order_id: uuid.UUID,
     body: SubcontractReceiveRequest,
@@ -752,7 +785,10 @@ async def list_material_requests(
     ]
 
 
-@router.post("/material-requests/run-mrp")
+@router.post(
+    "/material-requests/run-mrp",
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
 async def run_mrp(
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),

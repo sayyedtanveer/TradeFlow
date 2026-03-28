@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
+import { usePermissions } from "@/hooks/usePermissions"
 import { ProductVariantSelector } from "@/modules/procurement/components/ProductVariantSelector"
 
 function locKind(l: Location & { location_type?: string }) {
@@ -24,6 +25,8 @@ function locKind(l: Location & { location_type?: string }) {
 export default function SubcontractOrderDetailPage() {
   const { orderId } = useParams<{ orderId: string }>()
   const { toast } = useToast()
+  const { canProcurementWrite } = usePermissions()
+  const allowOps = canProcurementWrite()
   const [order, setOrder] = useState<SubcontractOrderDetail | null>(null)
   const [materials, setMaterials] = useState<Material[]>([])
   const [locations, setLocations] = useState<(Location & { location_type?: string })[]>([])
@@ -60,6 +63,7 @@ export default function SubcontractOrderDetailPage() {
   }, [orderId, toast])
 
   const issue = async () => {
+    if (!allowOps) return
     if (!orderId || !issueMat || !issueFrom) return
     try {
       await supplyChainApi.issueSubcontract(orderId, {
@@ -77,6 +81,7 @@ export default function SubcontractOrderDetailPage() {
   }
 
   const receive = async () => {
+    if (!allowOps) return
     if (!orderId || !recvMat || !recvWh) return
     try {
       await supplyChainApi.receiveSubcontract(orderId, {
@@ -108,14 +113,19 @@ export default function SubcontractOrderDetailPage() {
         </p>
       </div>
 
-      <section className="border rounded-lg p-4 space-y-3">
+      <section className="border rounded-lg p-4 space-y-3 opacity-100">
         <h2 className="font-medium">Issue raw material</h2>
         <p className="text-xs text-muted-foreground">Moves available stock from your warehouse to the subcontractor location.</p>
+        {!allowOps && (
+          <p className="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 rounded px-2 py-1">
+            You do not have permission to issue stock (requires procurement access).
+          </p>
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Material</Label>
-            <Select value={issueMat} onValueChange={setIssueMat}>
-              <SelectTrigger>
+            <Select value={issueMat} onValueChange={setIssueMat} disabled={!allowOps}>
+              <SelectTrigger disabled={!allowOps}>
                 <SelectValue placeholder="RM" />
               </SelectTrigger>
               <SelectContent>
@@ -129,12 +139,12 @@ export default function SubcontractOrderDetailPage() {
           </div>
           <div className="space-y-2">
             <Label>Quantity</Label>
-            <Input type="number" value={issueQty} onChange={(e) => setIssueQty(e.target.value)} />
+            <Input type="number" value={issueQty} onChange={(e) => setIssueQty(e.target.value)} disabled={!allowOps} />
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label>From location (warehouse)</Label>
-            <Select value={issueFrom} onValueChange={setIssueFrom}>
-              <SelectTrigger>
+            <Select value={issueFrom} onValueChange={setIssueFrom} disabled={!allowOps}>
+              <SelectTrigger disabled={!allowOps}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -148,25 +158,32 @@ export default function SubcontractOrderDetailPage() {
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label>Batch (optional)</Label>
-            <Input value={batch} onChange={(e) => setBatch(e.target.value)} />
+            <Input value={batch} onChange={(e) => setBatch(e.target.value)} disabled={!allowOps} />
           </div>
         </div>
-        <Button onClick={issue}>Issue to subcontractor</Button>
+        <Button onClick={issue} disabled={!allowOps}>
+          Issue to subcontractor
+        </Button>
       </section>
 
       <section className="border rounded-lg p-4 space-y-3">
         <h2 className="font-medium">Receive finished goods</h2>
         <p className="text-xs text-muted-foreground">Adds FG material into warehouse available stock.</p>
+        {!allowOps && (
+          <p className="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 rounded px-2 py-1">
+            Receive is restricted to roles with procurement write access (e.g. storekeeper, admin).
+          </p>
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
-          <ProductVariantSelector value={recvMat} onChange={setRecvMat} />
+          <ProductVariantSelector value={recvMat} onChange={setRecvMat} disabled={!allowOps} />
           <div className="space-y-2">
             <Label>Quantity</Label>
-            <Input type="number" value={recvQty} onChange={(e) => setRecvQty(e.target.value)} />
+            <Input type="number" value={recvQty} onChange={(e) => setRecvQty(e.target.value)} disabled={!allowOps} />
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label>Warehouse</Label>
-            <Select value={recvWh} onValueChange={setRecvWh}>
-              <SelectTrigger>
+            <Select value={recvWh} onValueChange={setRecvWh} disabled={!allowOps}>
+              <SelectTrigger disabled={!allowOps}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -179,7 +196,9 @@ export default function SubcontractOrderDetailPage() {
             </Select>
           </div>
         </div>
-        <Button onClick={receive}>Receive FG</Button>
+        <Button onClick={receive} disabled={!allowOps}>
+          Receive FG
+        </Button>
       </section>
 
       <section>

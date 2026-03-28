@@ -23,13 +23,28 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
+import { usePermissions } from "@/hooks/usePermissions"
+import { UserRole } from "@/lib/roles.config"
+import { QuarantineLocationList } from "@/modules/procurement/components/QuarantineLocationList"
 
 function locKind(l: Location & { location_type?: string }) {
   return l.location_type ?? (l as { type?: string }).type ?? ""
 }
 
+type DetailRow = {
+  parameter: string
+  measured_value: string
+  tolerance_min?: number
+  tolerance_max?: number
+  is_passed: boolean
+}
+
 export default function QualityModulePage() {
   const { toast } = useToast()
+  const { hasRole, canQualityWrite, canInventoryWrite } = usePermissions()
+  const canManageQuarantine =
+    hasRole([UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.QC, UserRole.MANAGER]) && canInventoryWrite()
+  const canManageTemplates = canQualityWrite()
   const [inspections, setInspections] = useState<InspectionRow[]>([])
   const [ncrs, setNcrs] = useState<NCRRow[]>([])
   const [quarantine, setQuarantine] = useState<QuarantineRow[]>([])
@@ -49,28 +64,26 @@ export default function QualityModulePage() {
   const [ncrAction, setNcrAction] = useState("")
 
   const [templates, setTemplates] = useState<InspectionTemplate[]>([])
-  const [qLocations, setQLocations] = useState<(Location & { location_type?: string })[]>([])
 
   const [tplName, setTplName] = useState("")
-  const [tplParamsText, setTplParamsText] = useState('[{"name": "dimension", "tolerance_min": null, "tolerance_max": null}]')
+  const [tplParamsText, setTplParamsText] = useState(
+    '[{"name": "dimension", "tolerance_min": null, "tolerance_max": null, "required": true}]'
+  )
 
-  const [qLocName, setQLocName] = useState("")
-  const [qLocCode, setQLocCode] = useState("")
-  const [qLocParent, setQLocParent] = useState("")
+  const [detailRows, setDetailRows] = useState<DetailRow[]>([])
 
   const [qcMat, setQcMat] = useState("")
   const [qcInspReq, setQcInspReq] = useState(false)
   const [qcTpl, setQcTpl] = useState("")
 
   const loadAll = async () => {
-    const [insp, n, q, mats, locs, tpls, qLocs] = await Promise.all([
+    const [insp, n, q, mats, locs, tpls] = await Promise.all([
       supplyChainApi.listInspections(),
       supplyChainApi.listNCRs(),
       supplyChainApi.quarantineStock(),
       materialService.getMaterials({ page: 1, page_size: 300 }),
       materialService.getLocations(),
       supplyChainApi.listInspectionTemplates(),
-      materialService.getLocations({ type: "quarantine" }),
     ])
     setInspections(insp.data)
     setNcrs(n.data)
@@ -78,7 +91,6 @@ export default function QualityModulePage() {
     setMaterials(mats.items)
     setLocations(locs as (Location & { location_type?: string })[])
     setTemplates(tpls.data)
-    setQLocations(qLocs as (Location & { location_type?: string })[])
     const wh = locs.find((l) => locKind(l as Location & { location_type?: string }) === "warehouse")
     if (wh) setWhId(wh.id)
   }
@@ -99,6 +111,41 @@ export default function QualityModulePage() {
   }, [qcMat])
 
   useEffect(() => {
+    if (!matId) {
+      setDetailRows([])
+      return
+    }
+    let cancelled = false
+    materialService
+      .getMaterial(matId)
+      .then((m) => {
+        if (!m.inspection_template_id) {
+          if (!cancelled) setDetailRows([])
+          return Promise.resolve(null)
+        }
+        return supplyChainApi.getInspectionTemplate(m.inspection_template_id)
+      })
+      .then((res) => {
+        if (cancelled || !res) return
+        const tpl = res.data
+        const raw = (tpl.parameters ?? []) as Record<string, unknown>[]
+        setDetailRows(
+          raw.map((row) => ({
+            parameter: String(row.name ?? row.parameter ?? ""),
+            measured_value: "",
+            tolerance_min: row.tolerance_min != null ? Number(row.tolerance_min) : undefined,
+            tolerance_max: row.tolerance_max != null ? Number(row.tolerance_max) : undefined,
+            is_passed: false,
+          }))
+        )
+      })
+      .catch(() => setDetailRows([]))
+    return () => {
+      cancelled = true
+    }
+  }, [matId])
+
+  useEffect(() => {
     loadAll().catch(() => toast({ title: "Failed to load quality data", variant: "destructive" }))
   }, [toast])
 
@@ -114,8 +161,18 @@ export default function QualityModulePage() {
         material_id: matId,
         quantity: Number(qty),
         warehouse_location_id: whId,
-        result,
+        result: result === "pass" ? "pass" : "fail",
         remarks: remarks || undefined,
+        details:
+          detailRows.length > 0
+            ? detailRows.map((d) => ({
+                parameter: d.parameter,
+                measured_value: d.measured_value || null,
+                tolerance_min: d.tolerance_min,
+                tolerance_max: d.tolerance_max,
+                is_passed: d.is_passed,
+              }))
+            : undefined,
       })
       toast({ title: "Inspection recorded" })
       await loadAll()
@@ -126,6 +183,7 @@ export default function QualityModulePage() {
   }
 
   const createTemplate = async () => {
+    if (!canManageTemplates) return
     if (!tplName.trim()) {
       toast({ title: "Template name required", variant: "destructive" })
       return
@@ -148,27 +206,29 @@ export default function QualityModulePage() {
     }
   }
 
-  const createQuarantineLocation = async () => {
-    if (!qLocName.trim()) {
-      toast({ title: "Location name required", variant: "destructive" })
-      return
-    }
+  const deleteTemplate = async (id: string) => {
+    if (!canManageTemplates) return
     try {
-      await materialService.createLocation({
-        name: qLocName.trim(),
-        type: "quarantine",
-        code: qLocCode.trim() || undefined,
-        parent_id: qLocParent || undefined,
+      await supplyChainApi.deleteInspectionTemplate(id)
+      toast({ title: "Template removed" })
+      await loadAll()
+    } catch {
+      toast({ title: "Delete failed", variant: "destructive" })
+    }
+  }
+
+  const duplicateTemplate = async (t: InspectionTemplate) => {
+    if (!canManageTemplates) return
+    try {
+      await supplyChainApi.createInspectionTemplate({
+        name: `${t.name} (copy)`,
+        parameters: Array.isArray(t.parameters) ? [...t.parameters] : [],
         is_active: true,
       })
-      toast({ title: "Quarantine location created" })
-      setQLocName("")
-      setQLocCode("")
-      setQLocParent("")
+      toast({ title: "Template duplicated" })
       await loadAll()
-    } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast({ title: detail || "Create failed", variant: "destructive" })
+    } catch {
+      toast({ title: "Duplicate failed", variant: "destructive" })
     }
   }
 
@@ -210,12 +270,6 @@ export default function QualityModulePage() {
   }
 
   const warehouses = locations.filter((l) => locKind(l) === "warehouse" && l.is_active)
-
-  const parentName = (pid: string | null | undefined) => {
-    if (!pid) return "—"
-    const p = locations.find((x) => x.id === pid)
-    return p?.name ?? pid.slice(0, 8)
-  }
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -286,11 +340,50 @@ export default function QualityModulePage() {
               Fail → quarantine
             </Button>
           </div>
+          {detailRows.length > 0 && (
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Parameters (from material template)</Label>
+              <div className="border rounded-md divide-y">
+                {detailRows.map((row, idx) => (
+                  <div key={`${row.parameter}-${idx}`} className="p-2 grid gap-2 sm:grid-cols-3 text-sm">
+                    <div className="font-medium">{row.parameter}</div>
+                    <Input
+                      placeholder="Measured value"
+                      value={row.measured_value}
+                      onChange={(e) => {
+                        const next = [...detailRows]
+                        next[idx] = { ...row, measured_value: e.target.value }
+                        setDetailRows(next)
+                      }}
+                    />
+                    <div className="text-xs text-muted-foreground flex items-center gap-2">
+                      <Checkbox
+                        checked={row.is_passed}
+                        onCheckedChange={(v) => {
+                          const next = [...detailRows]
+                          next[idx] = { ...row, is_passed: v === true }
+                          setDetailRows(next)
+                        }}
+                      />
+                      <span>Pass</span>
+                      {(row.tolerance_min != null || row.tolerance_max != null) && (
+                        <span>
+                          tol: {row.tolerance_min ?? "—"} … {row.tolerance_max ?? "—"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="space-y-2">
             <Label>Remarks</Label>
             <Textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} rows={2} />
           </div>
-          <Button onClick={submitInspection}>Submit inspection</Button>
+          <Button onClick={submitInspection} disabled={!canQualityWrite()}>
+            Submit inspection
+          </Button>
         </TabsContent>
 
         <TabsContent value="history">
@@ -392,85 +485,40 @@ export default function QualityModulePage() {
         </TabsContent>
 
         <TabsContent value="q-locations" className="space-y-6">
-          <div className="border rounded-lg p-4 space-y-3 max-w-lg">
-            <h3 className="font-medium">Create quarantine location</h3>
-            <p className="text-xs text-muted-foreground">
-              Used when inspection fails and stock must move to a quarantine bucket.
-            </p>
-            <div className="space-y-2">
-              <Label>Name</Label>
-              <Input value={qLocName} onChange={(e) => setQLocName(e.target.value)} placeholder="e.g. Q1 — incoming hold" />
-            </div>
-            <div className="space-y-2">
-              <Label>Code (optional)</Label>
-              <Input value={qLocCode} onChange={(e) => setQLocCode(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Parent warehouse (optional)</Label>
-              <Select value={qLocParent || "__none__"} onValueChange={(v) => setQLocParent(v === "__none__" ? "" : v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">(none)</SelectItem>
-                  {warehouses.map((l) => (
-                    <SelectItem key={l.id} value={l.id}>
-                      {l.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button type="button" onClick={createQuarantineLocation}>
-              Create location
-            </Button>
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Code</TableHead>
-                <TableHead>Parent</TableHead>
-                <TableHead>Active</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {qLocations.map((l) => (
-                <TableRow key={l.id}>
-                  <TableCell>{l.name}</TableCell>
-                  <TableCell className="font-mono text-xs">{l.code || "—"}</TableCell>
-                  <TableCell>{parentName(l.parent_location_id ?? l.parent_id)}</TableCell>
-                  <TableCell>{l.is_active ? "yes" : "no"}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {qLocations.length === 0 && (
-            <p className="text-sm text-muted-foreground">No quarantine locations yet.</p>
-          )}
+          <QuarantineLocationList canManage={canManageQuarantine} allLocations={locations} />
         </TabsContent>
 
         <TabsContent value="templates" className="space-y-6">
-          <div className="border rounded-lg p-4 space-y-3 max-w-xl">
-            <h3 className="font-medium">New template</h3>
-            <div className="space-y-2">
-              <Label>Name</Label>
-              <Input value={tplName} onChange={(e) => setTplName(e.target.value)} />
+          {canManageTemplates ? (
+            <div className="border rounded-lg p-4 space-y-3 max-w-xl">
+              <h3 className="font-medium">New template</h3>
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input value={tplName} onChange={(e) => setTplName(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>Parameters (JSON array)</Label>
+                <Textarea
+                  value={tplParamsText}
+                  onChange={(e) => setTplParamsText(e.target.value)}
+                  rows={5}
+                  className="font-mono text-xs"
+                />
+              </div>
+              <Button type="button" onClick={createTemplate}>
+                Create template
+              </Button>
             </div>
-            <div className="space-y-2">
-              <Label>Parameters (JSON array)</Label>
-              <Textarea value={tplParamsText} onChange={(e) => setTplParamsText(e.target.value)} rows={5} className="font-mono text-xs" />
-            </div>
-            <Button type="button" onClick={createTemplate}>
-              Create template
-            </Button>
-          </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">You can view templates; editing requires quality write access.</p>
+          )}
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Parameters</TableHead>
                 <TableHead>Active</TableHead>
+                {canManageTemplates && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -481,6 +529,16 @@ export default function QualityModulePage() {
                     {Array.isArray(t.parameters) ? `${t.parameters.length} row(s)` : "—"}
                   </TableCell>
                   <TableCell>{t.is_active ? "yes" : "no"}</TableCell>
+                  {canManageTemplates && (
+                    <TableCell className="text-right space-x-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => duplicateTemplate(t)}>
+                        Duplicate
+                      </Button>
+                      <Button type="button" variant="destructive" size="sm" onClick={() => deleteTemplate(t.id)}>
+                        Delete
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -536,7 +594,7 @@ export default function QualityModulePage() {
               </SelectContent>
             </Select>
           </div>
-          <Button type="button" onClick={saveMaterialQc}>
+          <Button type="button" onClick={saveMaterialQc} disabled={!canQualityWrite()}>
             Save
           </Button>
         </TabsContent>
