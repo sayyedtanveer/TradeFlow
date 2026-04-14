@@ -11,6 +11,7 @@ from backend.app.infrastructure.storage.storage_interface import IStorageService
 from backend.app.infrastructure.storage.local_storage_service import LocalStorageService
 from backend.app.infrastructure.events.event_bus import InMemoryEventBus
 from backend.app.infrastructure.events.event_dispatcher import EventDispatcher
+from backend.app.infrastructure.websocket.connection_manager import ConnectionManager
 from backend.app.infrastructure.tasks.background_task_service import BackgroundTaskService
 from backend.app.infrastructure.audit.audit_service import AuditService
 from backend.app.infrastructure.external.email_service import IEmailService, StubEmailService
@@ -42,7 +43,8 @@ class Container:
     # ── Events ────────────────────────────────────────────────────────────
     event_bus: InMemoryEventBus
     event_dispatcher: EventDispatcher
-
+    # ── WebSocket ──────────────────────────────────────────────────────────
+    connection_manager: ConnectionManager
     # ── Tasks ─────────────────────────────────────────────────────────────
     task_service: BackgroundTaskService
 
@@ -77,6 +79,9 @@ class Container:
         event_bus = InMemoryEventBus()
         event_dispatcher = EventDispatcher(bus=event_bus)
 
+        # WebSocket
+        connection_manager = ConnectionManager()
+
         # Tasks
         task_service = BackgroundTaskService()
 
@@ -94,6 +99,7 @@ class Container:
             storage_service=storage_service,
             event_bus=event_bus,
             event_dispatcher=event_dispatcher,
+            connection_manager=connection_manager,
             task_service=task_service,
             audit_service=audit_service,
             email_service=email_service,

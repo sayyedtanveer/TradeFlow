@@ -182,4 +182,113 @@ export const supplyChainApi = {
   supplierPortalPO: (id: string) => apiClient.get<PurchaseOrder>(`${BASE}/supplier/purchase-orders/${id}`),
   supplierAckPO: (id: string) => apiClient.put(`${BASE}/supplier/purchase-orders/${id}/acknowledge`),
   supplierQuotation: (body: Record<string, unknown>) => apiClient.post(`${BASE}/supplier/quotations`, body),
+
+  // ── RFQ ─────────────────────────────────────────────────────────────────
+  listRFQs: () => apiClient.get<RFQSummary[]>(`${BASE}/rfq`),
+  getRFQ: (id: string) => apiClient.get<RFQDetail>(`${BASE}/rfq/${id}`),
+  createRFQ: (body: RFQCreateInput) =>
+    apiClient.post<{ id: string; rfq_number: string }>(`${BASE}/rfq`, body),
+  sendRFQ: (id: string) => apiClient.post(`${BASE}/rfq/${id}/send`),
+  awardRFQ: (id: string, body: RFQAwardInput) =>
+    apiClient.post<{ po_id: string; po_number: string }>(`${BASE}/rfq/${id}/award`, body),
+
+  // ── Supplier performance (buyer view) ────────────────────────────────────
+  listSupplierPerformance: () => apiClient.get<SupplierPerformance[]>(`${BASE}/supplier-performance`),
+  getSupplierPerformance: (supplierId: string) =>
+    apiClient.get<SupplierPerformance>(`${BASE}/supplier-performance/${supplierId}`),
+
+  // ── Supplier portal extras ───────────────────────────────────────────────
+  supplierListRFQs: () => apiClient.get<RFQSummary[]>(`${BASE}/supplier/rfq`),
+  supplierSubmitRFQQuote: (rfqId: string, body: Record<string, unknown>) =>
+    apiClient.post<{ id: string }>(`${BASE}/supplier/rfq/${rfqId}/quote`, body),
+  supplierOwnPerformance: () => apiClient.get<SupplierPerformance>(`${BASE}/supplier/performance`),
+  supplierDisputeInvoice: (invoiceId: string, body: { disputed_amount: number; reason: string }) =>
+    apiClient.post<{ id: string; status: string }>(`${BASE}/supplier/invoices/${invoiceId}/dispute`, body),
+  supplierGetInvoiceDisputes: (invoiceId: string) =>
+    apiClient.get<InvoiceDispute[]>(`${BASE}/supplier/invoices/${invoiceId}/disputes`),
+  resolveDispute: (disputeId: string, body: { resolution: string; resolution_notes?: string }) =>
+    apiClient.put(`${BASE}/invoices/${disputeId}/dispute/resolve`, body),
 }
+
+// ── Additional types ─────────────────────────────────────────────────────────
+
+export type RFQLine = {
+  id: string
+  material_id: string
+  quantity: number
+  description?: string | null
+}
+
+export type RFQSupplierInvite = {
+  id: string
+  supplier_id: string
+  status: "invited" | "responded" | "declined"
+  quotation_id?: string | null
+}
+
+export type RFQSummary = {
+  id: string
+  rfq_number: string
+  title?: string | null
+  status: "draft" | "sent" | "closed" | "awarded"
+  deadline?: string | null
+  material_request_id?: string | null
+  awarded_supplier_id?: string | null
+  awarded_po_id?: string | null
+  created_at: string
+  supplier_invites: RFQSupplierInvite[]
+  lines?: RFQLine[]
+}
+
+export type RFQDetail = RFQSummary & {
+  lines: RFQLine[]
+  notes?: string | null
+  quotation_details: Record<
+    string,
+    { unit_price: number; quantity: number; valid_until?: string | null; status: string }
+  >
+}
+
+export type RFQCreateInput = {
+  title?: string
+  material_request_id?: string
+  deadline?: string
+  notes?: string
+  lines: { material_id: string; quantity: number; description?: string }[]
+  supplier_ids: string[]
+}
+
+export type RFQAwardInput = {
+  supplier_id: string
+  lines: { material_id: string; quantity: number; unit_price: number }[]
+  expected_delivery?: string
+  notes?: string
+}
+
+export type SupplierPerformance = {
+  supplier_id: string
+  supplier_name: string
+  supplier_code: string
+  on_time_delivery_pct?: number | null
+  quality_acceptance_pct?: number | null
+  avg_lead_time_days?: number | null
+  performance_rating?: number | null
+  price_history: {
+    material_id: string
+    material_code: string
+    material_name: string
+    unit_price: number
+    effective_from?: string | null
+  }[]
+}
+
+export type InvoiceDispute = {
+  id: string
+  disputed_amount: number
+  reason: string
+  status: "open" | "approved" | "rejected"
+  resolution_notes?: string | null
+  resolved_at?: string | null
+  created_at: string
+}
+

@@ -111,3 +111,41 @@ class SupplierQuotationCreate(BaseModel):
     unit_price: Decimal
     valid_until: Optional[date] = None
     purchase_order_id: Optional[uuid.UUID] = None
+    rfq_id: Optional[uuid.UUID] = None
+
+
+# ── RFQ schemas ───────────────────────────────────────────────────────────────
+
+class RFQLineIn(BaseModel):
+    material_id: uuid.UUID
+    quantity: Decimal
+    description: Optional[str] = None
+
+
+class RFQCreate(BaseModel):
+    title: Optional[str] = None
+    material_request_id: Optional[uuid.UUID] = None
+    deadline: Optional[date] = None
+    notes: Optional[str] = None
+    lines: List[RFQLineIn] = Field(default_factory=list)
+    supplier_ids: List[uuid.UUID] = Field(default_factory=list)
+
+
+class RFQAwardRequest(BaseModel):
+    supplier_id: uuid.UUID
+    # Lines for the resulting PO
+    lines: List[POLineIn] = Field(default_factory=list)
+    expected_delivery: Optional[date] = None
+    notes: Optional[str] = None
+
+
+# ── Invoice dispute schemas ───────────────────────────────────────────────────
+
+class InvoiceDisputeCreate(BaseModel):
+    disputed_amount: Decimal
+    reason: str
+
+
+class InvoiceDisputeResolve(BaseModel):
+    resolution: str = Field(..., pattern="^(approved|rejected)$")
+    resolution_notes: Optional[str] = None

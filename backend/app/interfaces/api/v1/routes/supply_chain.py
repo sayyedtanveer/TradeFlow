@@ -980,3 +980,520 @@ async def list_inspections(
         }
         for x in rows
     ]
+
+
+# ── RFQ (Request For Quotation) ───────────────────────────────────────────────
+
+from backend.app.application.supply_chain.rfq_service import RFQNumberService
+from backend.app.application.supply_chain.supplier_performance_service import SupplierPerformanceService
+from backend.app.infrastructure.persistence.models.rfq_model import (
+    InvoiceDisputeModel,
+    RFQLineModel,
+    RFQModel,
+    RFQSupplierModel,
+)
+from backend.app.infrastructure.persistence.models.finance_models import SupplierInvoiceModel
+from backend.app.interfaces.api.v1.schemas.supply_chain_schemas import (
+    InvoiceDisputeCreate,
+    InvoiceDisputeResolve,
+    RFQAwardRequest,
+    RFQCreate,
+)
+
+
+def _rfq_to_dict(r: RFQModel, include_lines: bool = True) -> dict:
+    d: dict = {
+        "id": str(r.id),
+        "rfq_number": r.rfq_number,
+        "title": r.title,
+        "status": r.status,
+        "deadline": r.deadline.isoformat() if r.deadline else None,
+        "notes": r.notes,
+        "material_request_id": str(r.material_request_id) if r.material_request_id else None,
+        "awarded_supplier_id": str(r.awarded_supplier_id) if r.awarded_supplier_id else None,
+        "awarded_po_id": str(r.awarded_po_id) if r.awarded_po_id else None,
+        "created_at": r.created_at.isoformat(),
+        "supplier_invites": [
+            {
+                "id": str(i.id),
+                "supplier_id": str(i.supplier_id),
+                "status": i.status,
+                "quotation_id": str(i.quotation_id) if i.quotation_id else None,
+            }
+            for i in r.supplier_invites
+        ],
+    }
+    if include_lines:
+        d["lines"] = [
+            {
+                "id": str(l.id),
+                "material_id": str(l.material_id),
+                "quantity": float(l.quantity),
+                "description": l.description,
+            }
+            for l in r.lines
+        ]
+    return d
+
+
+@router.post(
+    "/rfq",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("procurement:write"))],
+    tags=["RFQ"],
+)
+async def create_rfq(
+    body: RFQCreate,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Buyer creates a new Request For Quotation."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        rfq_svc = RFQNumberService(session)
+        rfq_number = await rfq_svc.generate(tenant_id)
+        rfq = RFQModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            rfq_number=rfq_number,
+            title=body.title,
+            material_request_id=body.material_request_id,
+            deadline=body.deadline,
+            notes=body.notes,
+            status="draft",
+            created_by=user_id,
+        )
+        session.add(rfq)
+        await session.flush()
+
+        for line in body.lines:
+            session.add(
+                RFQLineModel(
+                    id=uuid.uuid4(),
+                    tenant_id=tenant_id,
+                    rfq_id=rfq.id,
+                    material_id=line.material_id,
+                    quantity=float(line.quantity),
+                    description=line.description,
+                )
+            )
+
+        for sid in body.supplier_ids:
+            session.add(
+                RFQSupplierModel(
+                    id=uuid.uuid4(),
+                    tenant_id=tenant_id,
+                    rfq_id=rfq.id,
+                    supplier_id=sid,
+                    status="invited",
+                )
+            )
+
+        await session.commit()
+    return {"id": str(rfq.id), "rfq_number": rfq_number}
+
+
+@router.get("/rfq", tags=["RFQ"])
+async def list_rfqs(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """List all RFQs for this tenant."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from sqlalchemy.orm import selectinload
+        stmt = (
+            select(RFQModel)
+            .options(
+                selectinload(RFQModel.lines),
+                selectinload(RFQModel.supplier_invites),
+            )
+            .where(RFQModel.tenant_id == tenant_id, RFQModel.is_deleted.is_(False))
+            .order_by(RFQModel.created_at.desc())
+        )
+        r = await session.execute(stmt)
+        rows = r.scalars().unique().all()
+    return [_rfq_to_dict(row) for row in rows]
+
+
+@router.get("/rfq/{rfq_id}", tags=["RFQ"])
+async def get_rfq(
+    rfq_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Get a single RFQ with full line and supplier-invite details."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from sqlalchemy.orm import selectinload
+        stmt = (
+            select(RFQModel)
+            .options(
+                selectinload(RFQModel.lines),
+                selectinload(RFQModel.supplier_invites),
+            )
+            .where(
+                RFQModel.id == rfq_id,
+                RFQModel.tenant_id == tenant_id,
+                RFQModel.is_deleted.is_(False),
+            )
+        )
+        r = await session.execute(stmt)
+        rfq = r.scalar_one_or_none()
+        if not rfq:
+            raise HTTPException(status_code=404, detail="RFQ not found")
+
+        # Enrich supplier invites with quotation data
+        quotation_details: dict = {}
+        for invite in rfq.supplier_invites:
+            if invite.quotation_id:
+                q = await session.get(SupplierQuotationModel, invite.quotation_id)
+                if q:
+                    quotation_details[str(invite.supplier_id)] = {
+                        "unit_price": float(q.unit_price),
+                        "quantity": float(q.quantity),
+                        "valid_until": q.valid_until.isoformat() if q.valid_until else None,
+                        "status": q.status,
+                    }
+
+    result = _rfq_to_dict(rfq)
+    result["quotation_details"] = quotation_details
+    return result
+
+
+@router.post(
+    "/rfq/{rfq_id}/send",
+    dependencies=[Depends(require_permission("procurement:write"))],
+    tags=["RFQ"],
+)
+async def send_rfq(
+    rfq_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Send an RFQ to all invited suppliers (status: draft → sent)."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        rfq = await session.get(RFQModel, rfq_id)
+        if not rfq or rfq.tenant_id != tenant_id or rfq.is_deleted:
+            raise HTTPException(status_code=404, detail="RFQ not found")
+        if rfq.status != "draft":
+            raise HTTPException(status_code=400, detail="Only draft RFQs can be sent")
+        rfq.status = "sent"
+        rfq.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+    return {"status": "sent"}
+
+
+@router.post(
+    "/rfq/{rfq_id}/award",
+    dependencies=[Depends(require_permission("procurement:write"))],
+    tags=["RFQ"],
+)
+async def award_rfq(
+    rfq_id: uuid.UUID,
+    body: RFQAwardRequest,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Award an RFQ to a supplier and auto-create a Purchase Order."""
+    from decimal import Decimal
+
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from sqlalchemy.orm import selectinload
+        rfq_stmt = (
+            select(RFQModel)
+            .options(selectinload(RFQModel.supplier_invites))
+            .where(
+                RFQModel.id == rfq_id,
+                RFQModel.tenant_id == tenant_id,
+                RFQModel.is_deleted.is_(False),
+            )
+        )
+        r = await session.execute(rfq_stmt)
+        rfq = r.scalar_one_or_none()
+        if not rfq:
+            raise HTTPException(status_code=404, detail="RFQ not found")
+        if rfq.status not in ("sent", "closed"):
+            raise HTTPException(status_code=400, detail="RFQ must be sent before awarding")
+        if not body.lines:
+            raise HTTPException(status_code=400, detail="At least one PO line required")
+
+        # Generate PO
+        po_svc = PONumberService(session)
+        po_number = await po_svc.generate(tenant_id)
+        total = Decimal("0")
+        po = PurchaseOrderModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            po_number=po_number,
+            supplier_id=body.supplier_id,
+            order_date=date.today(),
+            expected_delivery=body.expected_delivery,
+            status="draft",
+            total_amount=0,
+            notes=body.notes or rfq.notes,
+            created_by=user_id,
+        )
+        session.add(po)
+        await session.flush()
+
+        for line in body.lines:
+            lt = Decimal(str(line.quantity)) * Decimal(str(line.unit_price))
+            total += lt
+            session.add(
+                PurchaseOrderLineModel(
+                    id=uuid.uuid4(),
+                    tenant_id=tenant_id,
+                    purchase_order_id=po.id,
+                    material_id=line.material_id,
+                    quantity=float(line.quantity),
+                    received_quantity=0,
+                    unit_price=float(line.unit_price),
+                    line_total=float(lt),
+                )
+            )
+        po.total_amount = float(total)
+
+        rfq.status = "awarded"
+        rfq.awarded_supplier_id = body.supplier_id
+        rfq.awarded_po_id = po.id
+        rfq.updated_at = datetime.now(timezone.utc)
+
+        await session.commit()
+    return {"po_id": str(po.id), "po_number": po_number}
+
+
+# ── Supplier performance ───────────────────────────────────────────────────────
+
+
+@router.get("/supplier-performance", tags=["Supplier Performance"])
+async def list_supplier_performance(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Aggregate performance metrics for all active suppliers."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        svc = SupplierPerformanceService(session)
+        data = await svc.list_all_performance(tenant_id)
+    return data
+
+
+@router.get("/supplier-performance/{supplier_id}", tags=["Supplier Performance"])
+async def get_supplier_performance(
+    supplier_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Detailed performance metrics for a single supplier."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        svc = SupplierPerformanceService(session)
+        data = await svc.get_performance(tenant_id, supplier_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    return data
+
+
+# ── Supplier portal — RFQ view ────────────────────────────────────────────────
+
+
+@router.get("/supplier/rfq", tags=["Supplier Portal"])
+async def supplier_list_rfqs(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    """Supplier sees RFQs they were invited to respond to."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from sqlalchemy.orm import selectinload
+        stmt = (
+            select(RFQModel)
+            .join(RFQSupplierModel, RFQSupplierModel.rfq_id == RFQModel.id)
+            .options(
+                selectinload(RFQModel.lines),
+                selectinload(RFQModel.supplier_invites),
+            )
+            .where(
+                RFQModel.tenant_id == tenant_id,
+                RFQModel.is_deleted.is_(False),
+                RFQSupplierModel.supplier_id == supplier_id,
+            )
+            .order_by(RFQModel.created_at.desc())
+        )
+        r = await session.execute(stmt)
+        rows = r.scalars().unique().all()
+    return [_rfq_to_dict(row) for row in rows]
+
+
+@router.post("/supplier/rfq/{rfq_id}/quote", status_code=status.HTTP_201_CREATED, tags=["Supplier Portal"])
+async def supplier_submit_rfq_quote(
+    rfq_id: uuid.UUID,
+    body: SupplierQuotationCreate,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    """Supplier submits a quotation in response to an RFQ."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        # Validate invite exists
+        stmt = select(RFQSupplierModel).where(
+            RFQSupplierModel.rfq_id == rfq_id,
+            RFQSupplierModel.supplier_id == supplier_id,
+            RFQSupplierModel.tenant_id == tenant_id,
+        )
+        r = await session.execute(stmt)
+        invite = r.scalar_one_or_none()
+        if not invite:
+            raise HTTPException(status_code=403, detail="Not invited to this RFQ")
+
+        q = SupplierQuotationModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            supplier_id=supplier_id,
+            purchase_order_id=body.purchase_order_id,
+            material_id=body.material_id,
+            quantity=float(body.quantity),
+            unit_price=float(body.unit_price),
+            valid_until=body.valid_until,
+            status="submitted",
+        )
+        session.add(q)
+        await session.flush()
+
+        invite.quotation_id = q.id
+        invite.status = "responded"
+        invite.updated_at = datetime.now(timezone.utc)
+
+        await session.commit()
+    return {"id": str(q.id)}
+
+
+# ── Supplier performance (portal view) ────────────────────────────────────────
+
+
+@router.get("/supplier/performance", tags=["Supplier Portal"])
+async def supplier_own_performance(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    """Supplier views their own performance scorecard."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        svc = SupplierPerformanceService(session)
+        data = await svc.get_performance(tenant_id, supplier_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    return data
+
+
+# ── Invoice disputes ───────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/supplier/invoices/{invoice_id}/dispute",
+    status_code=status.HTTP_201_CREATED,
+    tags=["Supplier Portal"],
+)
+async def supplier_dispute_invoice(
+    invoice_id: uuid.UUID,
+    body: InvoiceDisputeCreate,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    """Supplier raises a dispute against a supplier invoice amount."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        inv = await session.get(SupplierInvoiceModel, invoice_id)
+        if not inv or inv.tenant_id != tenant_id or inv.is_deleted:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        if inv.supplier_id != supplier_id:
+            raise HTTPException(status_code=403, detail="Not your invoice")
+
+        dispute = InvoiceDisputeModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            supplier_invoice_id=invoice_id,
+            disputed_amount=float(body.disputed_amount),
+            reason=body.reason,
+            status="open",
+            raised_by_supplier=True,
+        )
+        session.add(dispute)
+        await session.commit()
+    return {"id": str(dispute.id), "status": "open"}
+
+
+@router.get("/supplier/invoices/{invoice_id}/disputes", tags=["Supplier Portal"])
+async def get_invoice_disputes(
+    invoice_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    """List all disputes for a specific invoice."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        inv = await session.get(SupplierInvoiceModel, invoice_id)
+        if not inv or inv.tenant_id != tenant_id or inv.is_deleted:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        if inv.supplier_id != supplier_id:
+            raise HTTPException(status_code=403, detail="Not your invoice")
+
+        stmt = select(InvoiceDisputeModel).where(
+            InvoiceDisputeModel.supplier_invoice_id == invoice_id,
+            InvoiceDisputeModel.tenant_id == tenant_id,
+        ).order_by(InvoiceDisputeModel.created_at.desc())
+        r = await session.execute(stmt)
+        rows = r.scalars().all()
+    return [
+        {
+            "id": str(d.id),
+            "disputed_amount": float(d.disputed_amount),
+            "reason": d.reason,
+            "status": d.status,
+            "resolution_notes": d.resolution_notes,
+            "resolved_at": d.resolved_at.isoformat() if d.resolved_at else None,
+            "created_at": d.created_at.isoformat(),
+        }
+        for d in rows
+    ]
+
+
+@router.put(
+    "/invoices/{dispute_id}/dispute/resolve",
+    dependencies=[Depends(require_permission("procurement:write"))],
+    tags=["Supplier Performance"],
+)
+async def resolve_invoice_dispute(
+    dispute_id: uuid.UUID,
+    body: InvoiceDisputeResolve,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Buyer approves or rejects a supplier invoice dispute."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        dispute = await session.get(InvoiceDisputeModel, dispute_id)
+        if not dispute or dispute.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Dispute not found")
+        if dispute.status != "open":
+            raise HTTPException(status_code=400, detail="Dispute already resolved")
+
+        dispute.status = body.resolution
+        dispute.resolution_notes = body.resolution_notes
+        dispute.resolved_by = user_id
+        dispute.resolved_at = datetime.now(timezone.utc)
+        dispute.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+    return {"status": body.resolution}
+

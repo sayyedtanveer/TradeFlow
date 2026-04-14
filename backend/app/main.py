@@ -11,10 +11,20 @@ from fastapi.staticfiles import StaticFiles
 from backend.app.config import get_settings
 from backend.app.infrastructure.container import Container
 from backend.app.infrastructure.logging.logger import get_logger
+from backend.app.infrastructure.websocket.event_handlers import (
+    OrderStatusChangeHandler,
+    InventoryLowStockAlert,
+    WorkOrderReleased,
+    WorkOrderStarted,
+    WorkOrderCompleted,
+    InvoiceOverdue,
+    QualityInspectionFailed,
+)
 from backend.app.interfaces.api.v1.middleware.logging_middleware import RequestLoggingMiddleware
 from backend.app.interfaces.api.v1.middleware.tenant_middleware import TenantMiddleware
 from backend.app.interfaces.api.v1.middleware.audit_middleware import AuditMiddleware
 from backend.app.interfaces.api.v1.router import api_v1_router
+from backend.app.interfaces.api.v1.routes.websocket import router as websocket_router
 from backend.app.core.module_registry import module_registry
 
 logger = get_logger(__name__)
@@ -33,6 +43,34 @@ async def lifespan(app: FastAPI):
     # Create upload directory
     import os
     os.makedirs(settings.upload_dir, exist_ok=True)
+
+    # Register WebSocket event handlers with event dispatcher
+    event_dispatcher = container.event_dispatcher
+    connection_manager = container.connection_manager
+
+    event_dispatcher.event_bus.subscribe(
+        "order.status_changed", OrderStatusChangeHandler(connection_manager)
+    )
+    event_dispatcher.event_bus.subscribe(
+        "inventory.low_stock_alert", InventoryLowStockAlert(connection_manager)
+    )
+    event_dispatcher.event_bus.subscribe(
+        "work_order.released", WorkOrderReleased(connection_manager)
+    )
+    event_dispatcher.event_bus.subscribe(
+        "work_order.started", WorkOrderStarted(connection_manager)
+    )
+    event_dispatcher.event_bus.subscribe(
+        "work_order.completed", WorkOrderCompleted(connection_manager)
+    )
+    event_dispatcher.event_bus.subscribe(
+        "invoice.overdue", InvoiceOverdue(connection_manager)
+    )
+    event_dispatcher.event_bus.subscribe(
+        "quality.inspection_failed", QualityInspectionFailed(connection_manager)
+    )
+
+    logger.info("WebSocket event handlers registered")
     
     # Freeze the system map to prevent mutations and ensure dependencies are valid
     module_registry.lock()
@@ -74,6 +112,10 @@ def create_application() -> FastAPI:
     app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
     # ── Routers ───────────────────────────────────────
+    # WebSocket routes (no prefix, as they use specific path pattern)
+    app.include_router(websocket_router)
+    
+    # REST API routes
     app.include_router(api_v1_router, prefix="/api/v1")
 
     # ── Exception handlers ─────────────────────────────
