@@ -17,9 +17,17 @@ from sqlalchemy.pool import StaticPool
 from backend.app.config import settings
 from backend.app.main import app
 from backend.app.infrastructure.context.request_context import RequestContext
-from backend.app.infrastructure.persistence.models.base import Base
-from backend.app.infrastructure.persistence.session import get_session
-from backend.app.infrastructure.security.auth import create_access_token, hash_password
+from backend.app.infrastructure.persistence.database import Base
+from backend.app.infrastructure.security.jwt_handler import JWTHandler
+from backend.app.infrastructure.security.password_hasher import BcryptPasswordHasher
+
+
+password_hasher = BcryptPasswordHasher()
+jwt_handler = JWTHandler(
+    secret_key=settings.jwt_secret_key,
+    algorithm=settings.jwt_algorithm,
+    expiry_minutes=settings.jwt_expiry_minutes,
+)
 
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -104,7 +112,7 @@ def test_user_data(test_user_id: uuid.UUID, test_user_email: str, test_user_pass
     return {
         "id": test_user_id,
         "email": test_user_email,
-        "password_hash": hash_password(test_user_password),
+        "password_hash": password_hasher.hash(test_user_password),
         "role": "admin",
         "is_active": True,
         "is_superuser": False,
@@ -118,11 +126,10 @@ def test_user_data(test_user_id: uuid.UUID, test_user_email: str, test_user_pass
 @pytest.fixture
 def token_headers(test_user_id: uuid.UUID, test_tenant_id: uuid.UUID) -> dict:
     """Return authorization headers with valid JWT token."""
-    access_token = create_access_token(
+    access_token = jwt_handler.create_access_token(
         user_id=str(test_user_id),
         tenant_id=str(test_tenant_id),
         role="admin",
-        expires_delta=timedelta(hours=24),
     )
     return {
         "Authorization": f"Bearer {access_token}",
@@ -157,15 +164,8 @@ async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, 
     Provide an async HTTP client for testing with dependency injection.
     Injects test database session into the app.
     """
-    async def override_get_session() -> AsyncGenerator[AsyncSession, None]:
-        yield db_session
-    
-    app.dependency_overrides[get_session] = override_get_session
-    
     async with AsyncClient(app=app, base_url="http://test") as client:
         yield client
-    
-    app.dependency_overrides.clear()
 
 
 # ───────────────────────────────────────────────────────────────────────────────

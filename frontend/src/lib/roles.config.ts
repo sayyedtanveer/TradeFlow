@@ -102,7 +102,7 @@ export const ROLE_DASHBOARD_PATHS: Partial<Record<UserRole, string>> = {
   [UserRole.SALES]: "/dashboard/sales",
   [UserRole.QC]: "/procurement/quality",
   [UserRole.WORKER]: "/shop-floor",
-  [UserRole.CLIENT]: "/dashboard/client",
+  [UserRole.CLIENT]: "/client",
   [UserRole.SUPPLIER]: "/supplier-portal",
   [UserRole.OPERATOR]: "/dashboard/storekeeper",
 }

@@ -21,6 +21,7 @@ from backend.app.interfaces.api.v1.routes.inspection_templates import router as 
 from backend.app.interfaces.api.v1.routes.finance import router as finance_router
 from backend.app.interfaces.api.v1.routes.reports import router as reports_router
 from backend.app.interfaces.api.v1.routes.notifications import router as notifications_router
+from backend.app.interfaces.api.v1.routes.client_portal import router as client_portal_router
 
 api_v1_router = APIRouter()
 
@@ -41,6 +42,7 @@ api_v1_router.include_router(inspection_templates_router)
 api_v1_router.include_router(finance_router)
 api_v1_router.include_router(reports_router)
 api_v1_router.include_router(notifications_router)
+api_v1_router.include_router(client_portal_router)
 
 # --- Dynamic Module Registration ---
 module_registry.register(

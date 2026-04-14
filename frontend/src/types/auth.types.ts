@@ -2,7 +2,9 @@ export enum UserRole {
   ADMIN = "ADMIN",
   MANAGER = "MANAGER",
   OPERATOR = "OPERATOR",
-  VIEWER = "VIEWER"
+  VIEWER = "VIEWER",
+  CLIENT = "CLIENT",
+  SUPPLIER = "SUPPLIER",
 }
 
 export interface User {
@@ -11,6 +13,8 @@ export interface User {
   first_name: string
   last_name: string
   role: UserRole | string
+  client_id?: string | null
+  supplier_id?: string | null
   tenant_id?: string
   is_active: boolean
   created_at?: string

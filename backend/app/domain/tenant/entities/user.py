@@ -26,6 +26,8 @@ class User(BaseEntity):
         first_name: str,
         last_name: str,
         role: Role = Role.OPERATOR,
+        supplier_id: Optional[uuid.UUID] = None,
+        client_id: Optional[uuid.UUID] = None,
         is_active: bool = True,
         id: Optional[uuid.UUID] = None,
         created_at: Optional[datetime] = None,
@@ -46,6 +48,8 @@ class User(BaseEntity):
         self._first_name = first_name
         self._last_name = last_name
         self._role = role
+        self._supplier_id = supplier_id
+        self._client_id = client_id
         self._is_active = is_active
 
         self._validate()
@@ -74,6 +78,14 @@ class User(BaseEntity):
     @property
     def role(self) -> Role:
         return self._role
+
+    @property
+    def supplier_id(self) -> Optional[uuid.UUID]:
+        return self._supplier_id
+
+    @property
+    def client_id(self) -> Optional[uuid.UUID]:
+        return self._client_id
 
     @property
     def is_active(self) -> bool:

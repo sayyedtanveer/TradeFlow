@@ -38,6 +38,10 @@ class LoginUserHandler(ICommandHandler[LoginUserCommand, LoginResult]):
             sid = await self._user_repo.get_supplier_id_for_user(user.id, command.tenant_id)  # type: ignore[union-attr]
             if sid:
                 extra["sid"] = str(sid)
+        if hasattr(self._user_repo, "get_client_id_for_user"):
+            cid = await self._user_repo.get_client_id_for_user(user.id, command.tenant_id)  # type: ignore[union-attr]
+            if cid:
+                extra["cid"] = str(cid)
 
         access_token = self._jwt_handler.create_access_token(
             user_id=str(user.id),

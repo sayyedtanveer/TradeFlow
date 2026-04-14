@@ -7,6 +7,9 @@ interface User {
   first_name: string
   last_name: string
   role: string
+  client_id?: string | null
+  supplier_id?: string | null
+  tenant_id?: string | null
 }
 
 interface AuthState {

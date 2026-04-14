@@ -13,6 +13,7 @@ import { workOrderRoutes } from "@/modules/work-orders/routes"
 import { shopFloorRoutes } from "@/modules/shop-floor/routes"
 import { procurementRoutes } from "@/modules/procurement/routes"
 import { financeRoutes } from "@/modules/finance/routes"
+import { clientRoutes } from "@/modules/client/routes"
 import { NotFoundPage, ForbiddenPage } from "@/components/layout/ErrorPages"
 
 // Lazy loaded modules
@@ -36,6 +37,7 @@ const RouteErrorFallback = () => (
 const PageLoading = () => <div className="p-8 flex items-center justify-center">Loading...</div>
 
 export const router = createBrowserRouter([
+  ...clientRoutes,
   {
     path: "/login",
     element: <AuthLayout />,

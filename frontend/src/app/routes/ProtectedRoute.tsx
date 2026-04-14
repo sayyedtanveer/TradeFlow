@@ -19,6 +19,13 @@ export function ProtectedRoute({ allowedRoles, roles, children }: ProtectedRoute
     return <Navigate to="/login" replace />
   }
 
+  if (!effectiveRoles && user) {
+    const normalizedUserRole = normalizeRole(user.role)
+    if (normalizedUserRole === "CLIENT") {
+      return <Navigate to="/client" replace />
+    }
+  }
+
   if (effectiveRoles && effectiveRoles.length > 0 && user) {
     // Normalize backend role (lowercase) to uppercase for comparison
     const normalizedUserRole = normalizeRole(user.role)

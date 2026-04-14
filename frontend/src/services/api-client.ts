@@ -77,8 +77,9 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401) {
       const { logout } = useAuthStore.getState()
       logout()
-      if (window.location.pathname !== "/login") {
-        window.location.href = "/login"
+      const loginPath = window.location.pathname.startsWith("/client") ? "/client/login" : "/login"
+      if (window.location.pathname !== loginPath) {
+        window.location.href = loginPath
       }
       return Promise.reject(error)
     }
@@ -100,4 +101,3 @@ apiClient.interceptors.response.use(
     return Promise.reject(enhancedError)
   }
 )
-

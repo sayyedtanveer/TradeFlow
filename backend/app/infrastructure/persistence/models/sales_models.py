@@ -13,6 +13,7 @@ from sqlalchemy import (
     Index,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -91,6 +92,12 @@ class ClientModel(Base):
     # Relationships
     sales_orders: Mapped[List["SalesOrderModel"]] = relationship(
         "SalesOrderModel",
+        back_populates="client",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    addresses: Mapped[List["ClientAddressModel"]] = relationship(
+        "ClientAddressModel",
         back_populates="client",
         cascade="all, delete-orphan",
         lazy="selectin",
@@ -405,4 +412,53 @@ class PriceListLineModel(Base):
             f"<PriceListLineModel id={self.id} "
             f"product={self.product_id} price={self.unit_price}>"
         )
+
+
+class ClientAddressModel(Base):
+    """Billing and shipping addresses for client portal self-service."""
+
+    __tablename__ = "client_addresses"
+    __table_args__ = (
+        Index("ix_client_addresses_tenant", "tenant_id"),
+        Index("ix_client_addresses_client", "client_id"),
+        Index("ix_client_addresses_default", "client_id", "type", "is_default"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False
+    )
+    client_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sales_clients.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    label: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    contact_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    address_line1: Mapped[str] = mapped_column(Text, nullable=False)
+    address_line2: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    state: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    postal_code: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    country: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    client: Mapped["ClientModel"] = relationship("ClientModel", back_populates="addresses", lazy="selectin")
+
+    def __repr__(self) -> str:
+        return f"<ClientAddressModel id={self.id} type={self.type} client={self.client_id}>"
 

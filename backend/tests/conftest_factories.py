@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.app.infrastructure.persistence.models.base import Base
+from backend.app.infrastructure.persistence.database import Base
 
 
 # ───────────────────────────────────────────────────────────────────────────────

@@ -28,6 +28,8 @@ class UserRepository(BaseRepository[User, UserModel], IUserRepository):
             first_name=model.first_name,
             last_name=model.last_name,
             role=Role(model.role),
+            supplier_id=model.supplier_id,
+            client_id=model.client_id,
             is_active=model.is_active,
             created_at=model.created_at,
             updated_at=model.updated_at,
@@ -44,6 +46,8 @@ class UserRepository(BaseRepository[User, UserModel], IUserRepository):
             first_name=entity.first_name,
             last_name=entity.last_name,
             role=entity.role.value,
+            supplier_id=entity.supplier_id,
+            client_id=entity.client_id,
             is_active=entity.is_active,
             is_deleted=entity.is_deleted,
             deleted_at=entity.deleted_at,
@@ -65,6 +69,17 @@ class UserRepository(BaseRepository[User, UserModel], IUserRepository):
         self, user_id: uuid.UUID, tenant_id: uuid.UUID
     ) -> Optional[uuid.UUID]:
         stmt = select(UserModel.supplier_id).where(
+            UserModel.id == user_id,
+            UserModel.tenant_id == tenant_id,
+            UserModel.is_deleted.is_(False),
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_client_id_for_user(
+        self, user_id: uuid.UUID, tenant_id: uuid.UUID
+    ) -> Optional[uuid.UUID]:
+        stmt = select(UserModel.client_id).where(
             UserModel.id == user_id,
             UserModel.tenant_id == tenant_id,
             UserModel.is_deleted.is_(False),
