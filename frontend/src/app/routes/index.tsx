@@ -14,6 +14,7 @@ import { shopFloorRoutes } from "@/modules/shop-floor/routes"
 import { procurementRoutes } from "@/modules/procurement/routes"
 import { financeRoutes } from "@/modules/finance/routes"
 import { clientRoutes } from "@/modules/client/routes"
+import { mrpRoutes } from "@/modules/mrp/routes"
 import { NotFoundPage, ForbiddenPage } from "@/components/layout/ErrorPages"
 
 // Lazy loaded modules
@@ -81,6 +82,7 @@ export const router = createBrowserRouter([
           ...shopFloorRoutes,
           ...procurementRoutes,
           ...financeRoutes,
+          ...mrpRoutes,
           { path: "403", element: <ForbiddenPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],

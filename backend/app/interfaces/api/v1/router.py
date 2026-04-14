@@ -22,6 +22,7 @@ from backend.app.interfaces.api.v1.routes.finance import router as finance_route
 from backend.app.interfaces.api.v1.routes.reports import router as reports_router
 from backend.app.interfaces.api.v1.routes.notifications import router as notifications_router
 from backend.app.interfaces.api.v1.routes.client_portal import router as client_portal_router
+from backend.app.interfaces.api.v1.routes.mrp import router as mrp_router
 
 api_v1_router = APIRouter()
 
@@ -43,6 +44,7 @@ api_v1_router.include_router(finance_router)
 api_v1_router.include_router(reports_router)
 api_v1_router.include_router(notifications_router)
 api_v1_router.include_router(client_portal_router)
+api_v1_router.include_router(mrp_router)
 
 # --- Dynamic Module Registration ---
 module_registry.register(
@@ -153,6 +155,16 @@ module_registry.register(
     roles=["ADMIN", "MANAGER", "ACCOUNTANT", "SALES", "QC", "OPERATOR"],
     status="active",
     icon="BarChart2"
+)
+
+module_registry.register(
+    id="mrp",
+    name="Capacity & MRP",
+    route="/mrp",
+    dependencies=["work-orders", "inventory"],
+    roles=["ADMIN", "MANAGER", "OPERATOR"],
+    status="active",
+    icon="BarChart3"
 )
 
 # --- System API Map ---

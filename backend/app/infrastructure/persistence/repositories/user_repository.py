@@ -94,3 +94,24 @@ class UserRepository(BaseRepository[User, UserModel], IUserRepository):
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def get_by_email_and_tenant(self, email: str, tenant_id: uuid.UUID) -> Optional[User]:
+        """
+        Convenience method to get user by email (string) and tenant_id.
+        Used primarily by 2FA and login flows.
+        
+        Args:
+            email: User email address (string)
+            tenant_id: Tenant UUID
+            
+        Returns:
+            User entity if found and not deleted, None otherwise
+        """
+        stmt = select(UserModel).where(
+            UserModel.email == email,
+            UserModel.tenant_id == tenant_id,
+            UserModel.is_deleted.is_(False),
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return self._to_entity(model) if model else None

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.infrastructure.persistence.database import Base
@@ -30,6 +30,11 @@ class UserModel(Base):
         UUID(as_uuid=True), ForeignKey("sales_clients.id", ondelete="SET NULL"), nullable=True, index=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Two-Factor Authentication
+    totp_secret: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    backup_codes: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
 
     # Soft delete
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)

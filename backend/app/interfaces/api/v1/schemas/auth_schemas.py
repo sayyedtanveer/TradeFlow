@@ -73,3 +73,54 @@ class LoginResponse(BaseModel):
     email: str
     role: str
     full_name: str
+
+
+# ── 2FA Setup & Verification ───────────────────────────────────────────────────
+class Enable2FARequest(BaseModel):
+    """Request to enable 2FA for user"""
+    pass  # No parameters needed - just triggers setup
+
+
+class Enable2FAResponse(BaseModel):
+    """Response with QR code and backup codes"""
+    totp_secret: str  # Base32 encoded secret (for manual entry)
+    qr_code_base64: str  # Base64 encoded PNG image
+    backup_codes: list[str]  # One-time backup codes
+
+
+class Verify2FASetupRequest(BaseModel):
+    """Request to verify 2FA setup with code"""
+    code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$", description="6-digit TOTP code")
+
+
+class Disable2FARequest(BaseModel):
+    """Request to disable 2FA - requires password verification"""
+    password: str = Field(..., min_length=1, description="User's password for security")
+
+
+class TwoFactorLoginRequest(BaseModel):
+    """Complete login with email, password, and 2FA verification"""
+    email: EmailStr
+    password: str = Field(..., min_length=1)
+    tenant_id: str = Field(..., description="UUID of the tenant")
+    code: Optional[str] = Field(None, min_length=6, max_length=6, pattern=r"^\d{6}$|^[A-Z0-9\-]{11}$", description="6-digit TOTP code OR backup code")
+    remember_device: bool = Field(False, description="Remember this device for 30 days")
+    device_name: Optional[str] = Field(None, max_length=255, description="Friendly name for device (e.g., 'Chrome on Windows')")
+
+
+class BackupCodesResponse(BaseModel):
+    """List of unused backup codes"""
+    backup_codes: list[str]
+
+
+class TwoFactorRecoveryRequest(BaseModel):
+    """Request to recover account using email verification"""
+    email: EmailStr
+    tenant_id: str
+
+
+class TwoFactorRecoveryVerifyRequest(BaseModel):
+    """Verify recovery code sent to email"""
+    email: EmailStr
+    recovery_code: str = Field(..., min_length=1, description="Recovery code sent to email")
+    tenant_id: str

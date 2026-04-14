@@ -48,25 +48,25 @@ async def lifespan(app: FastAPI):
     event_dispatcher = container.event_dispatcher
     connection_manager = container.connection_manager
 
-    event_dispatcher.event_bus.subscribe(
+    event_dispatcher.subscribe(
         "order.status_changed", OrderStatusChangeHandler(connection_manager)
     )
-    event_dispatcher.event_bus.subscribe(
+    event_dispatcher.subscribe(
         "inventory.low_stock_alert", InventoryLowStockAlert(connection_manager)
     )
-    event_dispatcher.event_bus.subscribe(
+    event_dispatcher.subscribe(
         "work_order.released", WorkOrderReleased(connection_manager)
     )
-    event_dispatcher.event_bus.subscribe(
+    event_dispatcher.subscribe(
         "work_order.started", WorkOrderStarted(connection_manager)
     )
-    event_dispatcher.event_bus.subscribe(
+    event_dispatcher.subscribe(
         "work_order.completed", WorkOrderCompleted(connection_manager)
     )
-    event_dispatcher.event_bus.subscribe(
+    event_dispatcher.subscribe(
         "invoice.overdue", InvoiceOverdue(connection_manager)
     )
-    event_dispatcher.event_bus.subscribe(
+    event_dispatcher.subscribe(
         "quality.inspection_failed", QualityInspectionFailed(connection_manager)
     )
 

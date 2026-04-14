@@ -73,6 +73,12 @@ export const NAV_ITEMS: NavItem[] = [
     roles: getRolesForModule("procurement"),
   },
   {
+    title: "Capacity & MRP",
+    href: "/mrp",
+    icon: BarChart3,
+    roles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.OPERATOR],
+  },
+  {
     title: "Quality & QC",
     href: "/procurement/quality",
     icon: ShieldAlert,
