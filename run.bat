@@ -19,8 +19,8 @@ call .\.venv\Scripts\activate.bat
 
 REM Start Backend
 echo.
-echo [1/2] Starting Backend API on http://localhost:8001
-start "MedTrack Backend" cmd /k "python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8001 --reload"
+echo [1/2] Starting Backend API on http://localhost:8000
+start "MedTrack Backend" cmd /k "python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload"
 
 REM Wait for backend to start
 timeout /t 3 /nobreak
@@ -38,8 +38,8 @@ echo ==========================================
 echo   ✅ Services Started
 echo ==========================================
 echo.
-echo   Backend API  : http://localhost:8001
-echo   Frontend     : http://localhost:3003
+echo   Backend API  : http://localhost:8000
+echo   Frontend     : http://localhost:3000
 echo.
 echo   Login with:
 echo   Email  : admin@medtrack-demo.com

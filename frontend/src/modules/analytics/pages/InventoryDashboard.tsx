@@ -1,4 +1,4 @@
-"""Inventory Dashboard Page."""
+// Inventory Dashboard Page.
 
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -113,7 +113,7 @@ export const InventoryDashboard: React.FC = () => {
         <KPICard
           title="Turnover Rate"
           value="2.5x"
-          trends={5}
+          trend={5}
         />
       </div>
     </div>

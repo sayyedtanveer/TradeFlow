@@ -8,6 +8,8 @@ export const apiClient = axios.create({
   },
 })
 
+export default apiClient
+
 /**
  * Extract user-friendly error message from API response
  * Handles Pydantic validation errors, standard error responses, etc.

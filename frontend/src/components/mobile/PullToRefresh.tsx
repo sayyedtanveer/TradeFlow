@@ -71,14 +71,14 @@ export const PullToRefresh = ({
       }
     }
 
-    container.addEventListener('touchstart', handleTouchStart)
-    container.addEventListener('touchmove', handleTouchMove, { passive: false })
-    container.addEventListener('touchend', handleTouchEnd)
+    container.addEventListener('touchstart' as any, handleTouchStart)
+    container.addEventListener('touchmove' as any, handleTouchMove, { passive: false })
+    container.addEventListener('touchend' as any, handleTouchEnd)
 
     return () => {
-      container.removeEventListener('touchstart', handleTouchStart)
-      container.removeEventListener('touchmove', handleTouchMove)
-      container.removeEventListener('touchend', handleTouchEnd)
+      container.removeEventListener('touchstart' as any, handleTouchStart)
+      container.removeEventListener('touchmove' as any, handleTouchMove)
+      container.removeEventListener('touchend' as any, handleTouchEnd)
     }
   }, [pullDistance, threshold, isRefreshing, onRefresh])
 
@@ -91,7 +91,7 @@ export const PullToRefresh = ({
       className={`relative overflow-y-auto ${className}`}
       style={{
         WebkitOverscrollBehavior: 'contain',
-      }}
+      } as any}
     >
       {/* Pull-to-refresh header */}
       <div

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+// Inventory Dashboard Page
 import { useQuery } from "@tanstack/react-query"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from "@/components/ui/table"
@@ -23,7 +23,7 @@ export default function InventoryDashboard() {
     return <div className="p-8">Loading Dashboard...</div>
   }
 
-  const lowStockItems = realtimeStock?.filter(s => s.available_stock <= 10) || []
+  const lowStockItems = realtimeStock?.filter((s: any) => s.available_stock <= 10) || []
 
   return (
     <div className="space-y-6">
@@ -68,7 +68,7 @@ export default function InventoryDashboard() {
           <CardContent>
             <div className="flex items-center">
               <span className="text-3xl font-bold">
-                {realtimeStock?.filter(s => s.reserved_stock > 0).length || 0}
+                {realtimeStock?.filter((s: any) => s.reserved_stock > 0).length || 0}
               </span>
             </div>
           </CardContent>
@@ -98,7 +98,7 @@ export default function InventoryDashboard() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {lowStockItems.map(item => (
+              {lowStockItems.map((item: any) => (
                 <div key={item.material_id} className="flex justify-between items-center p-3 bg-white rounded-md shadow-sm border border-red-100">
                   <span className="font-medium text-sm">{item.material_name} ({item.material_code})</span>
                   <Badge variant="destructive">{item.available_stock.toFixed(2)} left</Badge>
@@ -171,7 +171,7 @@ export default function InventoryDashboard() {
                     </TableCell>
                     <TableCell>
                       <Badge variant={
-                        entry.transaction_type === 'in' ? 'success' : 
+                        entry.transaction_type === 'in' ? 'outline' : 
                         entry.transaction_type === 'out' ? 'destructive' : 'secondary'
                       }>
                         {entry.transaction_type.toUpperCase()}

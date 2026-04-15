@@ -1,4 +1,4 @@
-"""Analytics module exports."""
+// Analytics module exports.
 
 export { AnalyticsPage } from './pages/AnalyticsPage';
 export { SalesDashboard } from './pages/SalesDashboard';

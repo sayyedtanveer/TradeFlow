@@ -1,4 +1,4 @@
-"""Analytics API service."""
+// Analytics API service.
 
 import { API_BASE_URL } from '../../../config/constants';
 

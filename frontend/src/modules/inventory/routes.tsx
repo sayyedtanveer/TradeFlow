@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react"
-import { RouteObject, Navigate } from "react-router-dom"
+import { RouteObject } from "react-router-dom"
 
 const MaterialListPage = lazy(() => import("./pages/MaterialListPage"))
 const TransactionHistoryPage = lazy(() => import("./pages/TransactionHistoryPage"))

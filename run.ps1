@@ -15,7 +15,7 @@ $pythonCmd = '.\.venv\Scripts\python.exe'
 
 # Step 1: Start Backend (new terminal tab)
 Write-Host "[1/2] Starting Backend API..." -ForegroundColor Blue
-$backendArgs = "-NoExit", "-Command", "cd '$PWD'; $pythonCmd -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8001 --reload"
+$backendArgs = "-NoExit", "-Command", "cd '$PWD'; $pythonCmd -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload"
 Start-Process powershell -ArgumentList $backendArgs -WindowStyle Normal
 
 # Wait for backend to start
@@ -35,8 +35,8 @@ Write-Host "==========================================" -ForegroundColor Green
 Write-Host "  ✅ All Services Started" -ForegroundColor Green
 Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Backend API  : http://localhost:8001" -ForegroundColor Yellow
-Write-Host "  Frontend     : http://localhost:3003 (or next available port)" -ForegroundColor Yellow
+Write-Host "  Backend API  : http://localhost:8000" -ForegroundColor Yellow
+Write-Host "  Frontend     : http://localhost:3000" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  Login Credentials:" -ForegroundColor Yellow
 Write-Host "  Email        : admin@medtrack-demo.com" -ForegroundColor Cyan

@@ -1,1 +1,1 @@
-"""Analytics components exports."""
+// Analytics components exports.

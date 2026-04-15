@@ -1,13 +1,12 @@
-"""Sales Dashboard Page."""
+// Sales Dashboard Page.
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   MetricGrid,
   RevenueChart,
   OrdersChart,
   CategoryBreakdownChart,
-  KPICard,
 } from '../components/Charts';
 import { analyticsAPI } from '../../../services/api';
 
@@ -134,7 +133,7 @@ export const SalesDashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {salestReport?.data?.map((item: any, idx: number) => (
+              {salesReport?.data?.map((item: any, idx: number) => (
                 <tr key={idx}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     {item.group}

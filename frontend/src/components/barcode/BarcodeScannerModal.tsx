@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { X, AlertCircle } from 'lucide-react'
-import { useBarcodeScanner } from '../hooks/useBarcodeScanner'
+import { useBarcodeScanner } from '../../hooks/useBarcodeScanner'
 
 export interface BarcodeScannerModalProps {
   isOpen: boolean
@@ -26,7 +26,7 @@ export const BarcodeScannerModal = ({
 
   const { isScanning, hasPermission, usesBarcodeDetectorAPI, startScanning, stopScanning, videoRef, canvasRef } =
     useBarcodeScanner({
-      onScan: (result) => {
+      onScan: (result: any) => {
         setScannedValue(result.value)
         onScan(result.value)
         // Auto-close after successful scan
@@ -35,7 +35,7 @@ export const BarcodeScannerModal = ({
           setScannedValue(null)
         }, 500)
       },
-      onError: (error) => {
+      onError: (error: any) => {
         console.error('Scanner error:', error)
       },
     })

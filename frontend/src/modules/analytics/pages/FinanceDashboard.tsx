@@ -1,4 +1,4 @@
-"""Finance Dashboard Page."""
+// Finance Dashboard Page.
 
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -26,7 +26,7 @@ export const FinanceDashboard: React.FC = () => {
   });
 
   // Fetch dashboard summary
-  const { data: dashboard } = useQuery({
+  const { data: _dashboard } = useQuery({
     queryKey: ['dashboard-summary', dateRange],
     queryFn: () =>
       analyticsAPI.getDashboardSummary(dateRange.start, dateRange.end),

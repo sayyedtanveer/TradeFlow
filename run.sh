@@ -39,16 +39,16 @@ fi
 cd ..
 
 # Step 2: Start Backend
-run_step "Starting Backend API (port 8001)..."
+run_step "Starting Backend API (port 8000)..."
 python -m venv .venv 2>/dev/null
 source .venv/Scripts/activate 2>/dev/null || . .venv/Scripts/activate
-python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8001 &
+python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 sleep 3
 success "Backend started (PID: $BACKEND_PID)"
 
 # Step 3: Start Frontend Dev Server
-run_step "Starting Frontend Dev Server (port 3003+)..."
+run_step "Starting Frontend Dev Server (port 3000)..."
 cd "$FRONTEND_DIR"
 npm run dev &
 FRONTEND_PID=$!
@@ -61,9 +61,9 @@ echo ""
 echo "=========================================="
 echo "  ${GREEN}Services Running${NC}"
 echo "=========================================="
-echo "  Backend API  : http://localhost:8001"
-echo "  Frontend     : http://localhost:3003"
-echo "  Login URL    : http://localhost:3003"
+echo "  Backend API  : http://localhost:8000"
+echo "  Frontend     : http://localhost:3000"
+echo "  Login URL    : http://localhost:3000"
 echo ""
 echo "  Credentials:"
 echo "  Email        : admin@medtrack-demo.com"

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { useAuthStore } from '../../../stores/authStore';
+import { useAuthStore } from '../../../app/store/authStore';
 import { AlertCircle, Check, Lock, Shield } from 'lucide-react';
 import TwoFactorSetup from '../../auth/pages/TwoFactorSetup';
-import api from '../../../services/api';
+import api from '../../../services/api-client';
 
 export const SecuritySettingsPage: React.FC = () => {
-  const { user } = useAuthStore();
+  const { user: _user } = useAuthStore();
   const [twoFAEnabled, setTwoFAEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showTwoFASetup, setShowTwoFASetup] = useState(false);
@@ -201,7 +201,6 @@ export const SecuritySettingsPage: React.FC = () => {
                 </div>
                 <TwoFactorSetup
                   onComplete={handleSetupComplete}
-                  onCancel={() => setShowTwoFASetup(false)}
                 />
               </div>
             </div>

@@ -1,7 +1,6 @@
-"""Main Analytics Index Page."""
+// Main Analytics Index Page.
 
 import React, { useState } from 'react';
-import { NavLink } from 'react-router-dom';
 import { ReportBuilder } from '../components/ReportBuilder';
 import { SalesDashboard } from './SalesDashboard';
 import { ProductionDashboard } from './ProductionDashboard';

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { ChevronLeft, Download, Upload, MoreVertical, Trash2, Loader2 } from "lucide-react"
+import { ChevronLeft, Download, Upload, Loader2 } from "lucide-react"
 import { productService } from "@/services/product.service"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -39,19 +39,19 @@ export default function ProductDetailPage() {
   // Load images
   const { data: images } = useQuery({
     queryKey: ["products", "template", id, "images"],
-    queryFn: () => productService.getTemplateImages(id!),
+    queryFn: () => (productService as any).getTemplateImages(id!),
     enabled: !!id,
   })
 
   // Get import template
   const getTemplateMutation = useMutation({
-    mutationFn: () => productService.getImportTemplate(id!),
-    onSuccess: (data) => {
-      const blob = new Blob([data.csv_content], { type: "text/csv" })
+    mutationFn: () => (productService as any).getImportTemplate(id!),
+    onSuccess: (data: any) => {
+      const blob = new Blob([(data as any).csv_content], { type: "text/csv" })
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = data.file_name
+      a.download = (data as any).file_name
       a.click()
       window.URL.revokeObjectURL(url)
     },
@@ -59,17 +59,17 @@ export default function ProductDetailPage() {
 
   // Import variants
   const importMutation = useMutation({
-    mutationFn: (csv: string) => productService.bulkImportVariants(id!, { csv_data: csv }),
-    onSuccess: (result) => {
+    mutationFn: (csv: string) => (productService as any).bulkImportVariants(id!, { csv_data: csv }),
+    onSuccess: (result: any) => {
       qc.invalidateQueries({ queryKey: ["products", "template", id, "variants"] })
       setShowImport(false)
       setCsvContent("")
-      if (result.error_count > 0) {
-        setImportErrors(result.errors)
+      if ((result as any).error_count > 0) {
+        setImportErrors((result as any).errors)
         setShowErrors(true)
-        toast.warning(`Imported ${result.success_count} variants with ${result.error_count} errors`)
+        toast.warning(`Imported ${(result as any).success_count} variants with ${(result as any).error_count} errors`)
       } else {
-        toast.success(`Successfully imported ${result.success_count} variants`)
+        toast.success(`Successfully imported ${(result as any).success_count} variants`)
       }
     },
     onError: (err: any) => toast.error(err?.response?.data?.detail || "Import failed"),
@@ -77,19 +77,19 @@ export default function ProductDetailPage() {
 
   // Bulk activate
   const activateMutation = useMutation({
-    mutationFn: (variantIds: string[]) => productService.bulkActivateVariants(id!, variantIds),
-    onSuccess: (result) => {
+    mutationFn: (variantIds: string[]) => (productService as any).bulkActivateVariants(id!, variantIds),
+    onSuccess: (result: any) => {
       qc.invalidateQueries({ queryKey: ["products", "template", id, "variants"] })
-      toast.success(`Activated ${result.success_count} variants`)
+      toast.success(`Activated ${(result as any).success_count} variants`)
     },
   })
 
   // Bulk deactivate
   const deactivateMutation = useMutation({
-    mutationFn: (variantIds: string[]) => productService.bulkDeactivateVariants(id!, variantIds),
-    onSuccess: (result) => {
+    mutationFn: (variantIds: string[]) => (productService as any).bulkDeactivateVariants(id!, variantIds),
+    onSuccess: (result: any) => {
       qc.invalidateQueries({ queryKey: ["products", "template", id, "variants"] })
-      toast.success(`Deactivated ${result.success_count} variants`)
+      toast.success(`Deactivated ${(result as any).success_count} variants`)
     },
   })
 
@@ -149,7 +149,7 @@ export default function ProductDetailPage() {
         <div className="rounded-lg border bg-card p-6">
           <h2 className="text-lg font-semibold mb-4">Product Images ({images.items.length})</h2>
           <div className="grid grid-cols-6 gap-4">
-            {images.items.map(img => (
+            {images.items.map((img: any) => (
               <div key={img.id} className="relative group rounded-lg overflow-hidden bg-muted aspect-square flex items-center justify-center">
                 <img src={img.file_path} alt={img.file_name} className="w-full h-full object-cover" />
                 {img.is_primary && (

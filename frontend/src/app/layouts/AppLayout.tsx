@@ -1,42 +1,31 @@
 import { useState } from "react"
 import { Outlet } from "react-router-dom"
 import { Barcode } from "lucide-react"
-import { useUIStore } from "@/app/store/uiStore"
-import { Sidebar } from "@/components/layout/Sidebar"
-import { TopBar } from "@/components/layout/TopBar"
-import { Breadcrumb } from "@/components/layout/Breadcrumb"
+import { Toaster } from "@/components/ui/toaster"
+import { OfflineIndicator } from "@/components/offline/OfflineIndicator"
 import { BottomNavigation } from "@/components/navigation/BottomNavigation"
 import { FloatingActionButton } from "@/components/mobile/FloatingActionButton"
 import { BarcodeScannerModal } from "@/components/barcode/BarcodeScannerModal"
-import { Toaster } from "@/components/ui/toaster"
-import { OfflineIndicator } from "@/components/offline/OfflineIndicator"
 import { InstallPrompt } from "@/components/pwa/InstallPrompt"
-import { cn } from "@/lib/utils"
 
-export default function DefaultLayout() {
-  const { isSidebarOpen } = useUIStore()
+export function AppLayout() {
   const [scannerOpen, setScannerOpen] = useState(false)
 
   const handleBarcodeScan = (barcode: string) => {
+    // Log the scanned barcode - can be extended to route to specific handlers
     console.log("Scanned barcode:", barcode)
+    // TODO: Implement barcode action routing
+    // - If material code: show stock and location
+    // - If work order code: show requirements and operations
+    // - If product code: show inventory details
   }
 
   return (
     <>
-      <div className="flex min-h-screen w-full flex-col bg-muted/40">
-        <Sidebar />
+      {/* Main page content */}
+      <Outlet />
 
-        <div className={cn("flex flex-col sm:gap-4 sm:py-4 transition-all duration-300", isSidebarOpen ? "sm:pl-64" : "sm:pl-14")}>
-          <TopBar />
-          
-          <main className="grid flex-1 items-start gap-4 p-4 sm:px-6 sm:py-0 md:gap-8">
-            <Breadcrumb />
-            <Outlet />
-          </main>
-        </div>
-      </div>
-
-      {/* Global UI Components */}
+      {/* Global Providers */}
       <Toaster />
       <OfflineIndicator />
       <BottomNavigation />
@@ -60,4 +49,3 @@ export default function DefaultLayout() {
     </>
   )
 }
-

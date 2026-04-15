@@ -1,1 +1,1 @@
-"""Analytics pages exports."""
+// Analytics pages exports.

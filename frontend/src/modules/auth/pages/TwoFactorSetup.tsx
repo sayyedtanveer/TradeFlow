@@ -1,18 +1,16 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, AlertCircle, Copy, Check, ChevronLeft } from 'lucide-react'
-import QRCode from 'qrcode'
 
 interface TwoFactorSetupProps {
   onComplete?: () => void
-  onBack?: () => void
 }
 
 /**
  * TwoFactorSetupPage
  * Step-by-step 2FA setup wizard
  */
-export const TwoFactorSetup = ({ onComplete, onBack }: TwoFactorSetupProps) => {
+export const TwoFactorSetup = ({ onComplete }: TwoFactorSetupProps) => {
   const navigate = useNavigate()
   const [step, setStep] = useState<'intro' | 'scan' | 'verify' | 'backup'>('intro')
   const [loading, setLoading] = useState(false)

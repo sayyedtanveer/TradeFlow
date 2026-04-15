@@ -21,6 +21,7 @@
     "noFallthroughCasesInSwitch": true,
 
     /* Base URL & Paths for @/* alias */
+    "ignoreDeprecations": "5.0",
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]

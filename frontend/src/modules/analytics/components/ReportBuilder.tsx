@@ -1,4 +1,4 @@
-"""Report Builder and Scheduler Component."""
+// Report Builder and Scheduler Component.
 
 import React, { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';

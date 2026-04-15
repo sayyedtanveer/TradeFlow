@@ -1,4 +1,4 @@
-"""Chart components for analytics dashboards."""
+// Chart components for analytics dashboards.
 
 import React from 'react';
 import {
@@ -35,7 +35,7 @@ export const RevenueChart: React.FC<ChartProps> = ({ data, title = 'Revenue', he
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" />
           <YAxis />
-          <Tooltip formatter={(value) => `$${value.toLocaleString()}`} />
+          <Tooltip formatter={(value: any) => `$${value.toLocaleString()}`} />
           <Legend />
           <Line 
             type="monotone" 
@@ -97,7 +97,7 @@ export const InventoryChart: React.FC<ChartProps> = ({ data, title = 'Inventory 
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" />
           <YAxis />
-          <Tooltip formatter={(value) => `$${value.toLocaleString()}`} />
+          <Tooltip formatter={(value: any) => `$${value.toLocaleString()}`} />
           <Legend />
           <Line 
             type="monotone" 
@@ -126,16 +126,16 @@ export const CategoryBreakdownChart: React.FC<{ data: any[]; title?: string }> =
             cx="50%"
             cy="50%"
             labelLine={false}
-            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+            label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
             outerRadius={80}
             fill="#8884d8"
             dataKey="value"
           >
-            {data.map((entry, index) => (
+            {data.map((_entry, index) => (
               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
             ))}
           </Pie>
-          <Tooltip formatter={(value) => value.toLocaleString()} />
+          <Tooltip formatter={(value: any) => value.toLocaleString()} />
         </PieChart>
       </ResponsiveContainer>
     </div>
