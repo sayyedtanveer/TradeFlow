@@ -28,6 +28,7 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_tenant_id,
     get_current_user_id,
 )
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.application.manufacturing.services.capacity_service import CapacityService
 from backend.app.application.supply_chain.mrp_service import MRPService
 
@@ -116,7 +117,7 @@ async def get_schedule(
     return data
 
 
-@router.post("/capacity/schedule", status_code=status.HTTP_200_OK)
+@router.post("/capacity/schedule", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("procurement:write"))])
 async def reschedule_work_order(
     body: RescheduleRequest,
     request: Request,
@@ -145,7 +146,7 @@ async def reschedule_work_order(
 # ── MRP endpoints ─────────────────────────────────────────────────────────── #
 
 
-@router.post("/mrp/run", status_code=status.HTTP_200_OK)
+@router.post("/mrp/run", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("procurement:write"))])
 async def run_mrp(
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
@@ -182,7 +183,7 @@ async def list_suggestions(
     return suggestions
 
 
-@router.post("/mrp/suggestions/{suggestion_id}/approve", status_code=status.HTTP_200_OK)
+@router.post("/mrp/suggestions/{suggestion_id}/approve", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("procurement:write"))])
 async def approve_suggestion(
     suggestion_id: str,
     request: Request,
@@ -202,7 +203,7 @@ async def approve_suggestion(
     return result
 
 
-@router.post("/mrp/suggestions/{suggestion_id}/reject", status_code=status.HTTP_200_OK)
+@router.post("/mrp/suggestions/{suggestion_id}/reject", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("procurement:write"))])
 async def reject_suggestion(
     suggestion_id: str,
     request: Request,
@@ -222,7 +223,7 @@ async def reject_suggestion(
     return result
 
 
-@router.post("/mrp/suggestions/bulk-approve", status_code=status.HTTP_200_OK)
+@router.post("/mrp/suggestions/bulk-approve", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("procurement:write"))])
 async def bulk_approve(
     body: BulkApproveRequest,
     request: Request,
@@ -236,7 +237,7 @@ async def bulk_approve(
     return result
 
 
-@router.post("/mrp/suggestions/convert-to-po", status_code=status.HTTP_200_OK)
+@router.post("/mrp/suggestions/convert-to-po", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("procurement:write"))])
 async def convert_to_po(
     body: ConvertToPORequest,
     request: Request,

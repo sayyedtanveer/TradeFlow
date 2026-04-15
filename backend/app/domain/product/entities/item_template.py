@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from backend.app.domain.shared.base_entity import BaseEntity
+from backend.app.domain.product.value_objects.product_status import ProductStatus
 
 
 class ItemTemplate(BaseEntity):
@@ -31,6 +32,7 @@ class ItemTemplate(BaseEntity):
         category_id: Optional[uuid.UUID] = None,
         base_unit_id: Optional[uuid.UUID] = None,
         attributes: Optional[List[Dict[str, Any]]] = None,
+        status: Optional[ProductStatus] = None,
         is_active: bool = True,
         is_deleted: bool = False,
         deleted_at: Optional[datetime] = None,
@@ -60,6 +62,9 @@ class ItemTemplate(BaseEntity):
         self._category_id = category_id
         self._base_unit_id = base_unit_id
         self._attributes: List[Dict[str, Any]] = attributes or []
+        # Status: use provided status or ACTIVE if is_active=True, else INACTIVE
+        self._status = status or (ProductStatus.ACTIVE if is_active else ProductStatus.INACTIVE)
+        # Keep is_active for backward compatibility
         self._is_active = is_active
 
         self._validate_attributes()
@@ -120,6 +125,10 @@ class ItemTemplate(BaseEntity):
     def is_active(self) -> bool:
         return self._is_active
 
+    @property
+    def status(self) -> ProductStatus:
+        return self._status
+
     # ── Behaviour ─────────────────────────────────────────────────────────────
 
     def update(
@@ -131,6 +140,7 @@ class ItemTemplate(BaseEntity):
         base_unit_id: Optional[uuid.UUID] = None,
         attributes: Optional[List[Dict[str, Any]]] = None,
         is_active: Optional[bool] = None,
+        status: Optional[ProductStatus] = None,
     ) -> None:
         if name is not None:
             if not name.strip():
@@ -145,9 +155,41 @@ class ItemTemplate(BaseEntity):
         if attributes is not None:
             self._attributes = attributes
             self._validate_attributes()
-        if is_active is not None:
-            self._is_active = is_active
+        if status is not None:
+            self.transition_to(status)
+        elif is_active is not None:
+            # For backward compatibility: is_active flag maps to status
+            target_status = ProductStatus.ACTIVE if is_active else ProductStatus.INACTIVE
+            self.transition_to(target_status)
         self._touch()
+
+    def transition_to(self, new_status: ProductStatus) -> None:
+        """
+        Transition to a new status if allowed by business rules.
+        Raises ValueError if transition is invalid.
+        """
+        ProductStatus.validate_transition(self._status, new_status)
+        self._status = new_status
+        # Keep is_active in sync
+        self._is_active = (new_status in {ProductStatus.ACTIVE, ProductStatus.DRAFT})
+        self._touch()
+
+    def activate(self) -> None:
+        """Transition to ACTIVE status."""
+        self.transition_to(ProductStatus.ACTIVE)
+
+    def deactivate(self) -> None:
+        """Transition to INACTIVE status."""
+        self.transition_to(ProductStatus.INACTIVE)
+
+    def archive(self) -> None:
+        """Transition to ARCHIVED status (terminal state)."""
+        self.transition_to(ProductStatus.ARCHIVED)
+
+    def can_delete_product(self) -> bool:
+        """Check if product can be deleted based on status."""
+        # Can only delete DRAFT or ARCHIVED products
+        return self._status in {ProductStatus.DRAFT, ProductStatus.ARCHIVED}
 
     def attribute_keys(self) -> List[str]:
         """Return attribute keys in template-defined order."""

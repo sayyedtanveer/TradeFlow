@@ -191,7 +191,7 @@ def _serialize_supplier_invoice(si) -> dict:
 
 # ── Invoice Endpoints ──────────────────────────────────────────────────
 
-@router.post("/invoices/from-so", status_code=status.HTTP_201_CREATED)
+@router.post("/invoices/from-so", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("finance:write"))])
 async def create_invoice_from_so(
     body: InvoiceCreateFromSO,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
@@ -216,7 +216,7 @@ async def create_invoice_from_so(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/invoices", status_code=status.HTTP_201_CREATED)
+@router.post("/invoices", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("finance:write"))])
 async def create_invoice_manual(
     body: InvoiceCreateManual,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
@@ -289,7 +289,7 @@ async def get_invoice(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post("/invoices/{invoice_id}/send")
+@router.post("/invoices/{invoice_id}/send", dependencies=[Depends(require_permission("finance:write"))])
 async def send_invoice(
     invoice_id: uuid.UUID,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
@@ -306,7 +306,7 @@ async def send_invoice(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/invoices/{invoice_id}/void")
+@router.post("/invoices/{invoice_id}/void", dependencies=[Depends(require_permission("finance:write"))])
 async def void_invoice(
     invoice_id: uuid.UUID,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
@@ -325,7 +325,7 @@ async def void_invoice(
 
 # ── Payment Endpoints ──────────────────────────────────────────────────
 
-@router.post("/payments", status_code=status.HTTP_201_CREATED)
+@router.post("/payments", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("finance:write"))])
 async def record_payment(
     body: PaymentCreate,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
@@ -370,7 +370,7 @@ async def list_payments(
 
 # ── Supplier Invoice Endpoints ────────────────────────────────────────
 
-@router.post("/supplier-invoices", status_code=status.HTTP_201_CREATED)
+@router.post("/supplier-invoices", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("finance:write"))])
 async def create_supplier_invoice(
     body: SupplierInvoiceCreate,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
@@ -417,7 +417,7 @@ async def list_supplier_invoices(
     return {**result, "items": [_serialize_supplier_invoice(si) for si in result["items"]]}
 
 
-@router.post("/supplier-payments", status_code=status.HTTP_201_CREATED)
+@router.post("/supplier-payments", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("finance:write"))])
 async def record_supplier_payment(
     body: SupplierPaymentCreate,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),

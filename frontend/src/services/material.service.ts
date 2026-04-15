@@ -109,4 +109,40 @@ export const materialService = {
     const { data } = await apiClient.get("/inventory/master-data/units");
     return data;
   },
+
+  // ── Inventory Extended ──────────────────────────────────────────────────
+  async getStockLedger(params?: { material_id?: string; limit?: number }) {
+    const { data } = await apiClient.get("/inventory/ledger", { params });
+    return data;
+  },
+
+  async getRealtimeStock() {
+    const { data } = await apiClient.get("/inventory/realtime");
+    return data;
+  },
+
+  async getWarehouseZones(params?: { warehouse_id?: string }) {
+    const { data } = await apiClient.get("/inventory/zones", { params });
+    return data;
+  },
+
+  async createWarehouseZone(payload: any) {
+    const { data } = await apiClient.post("/inventory/zones", payload);
+    return data;
+  },
+
+  async reserveStock(payload: { material_id: string; location_id?: string; quantity: number; notes?: string }) {
+    const { data } = await apiClient.post("/inventory/reservations", payload);
+    return data;
+  },
+
+  async consumeReservation(id: string) {
+    const { data } = await apiClient.post(`/inventory/reservations/${id}/consume`);
+    return data;
+  },
+
+  async cancelReservation(id: string) {
+    const { data } = await apiClient.post(`/inventory/reservations/${id}/cancel`);
+    return data;
+  }
 };

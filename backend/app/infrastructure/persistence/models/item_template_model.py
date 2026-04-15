@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import UniqueConstraint
 
 from backend.app.infrastructure.persistence.database import Base
+from backend.app.domain.product.value_objects.product_status import ProductStatus
 
 
 class ItemTemplateModel(Base):
@@ -35,6 +36,8 @@ class ItemTemplateModel(Base):
     # Attribute definitions — list of {key, label} dicts
     attributes: Mapped[Any] = mapped_column(JSONB, nullable=False, default=list)
 
+    # Status lifecycle: DRAFT, ACTIVE, INACTIVE, ARCHIVED
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default=ProductStatus.ACTIVE.value)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

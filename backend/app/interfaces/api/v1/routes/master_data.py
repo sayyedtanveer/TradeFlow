@@ -57,7 +57,7 @@ async def list_categories(
         categories = await repo.list(tenant_id, page_size=100)
     return categories
 
-@router.post("/categories", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/categories", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("inventory:write"))])
 async def create_category(
     req: CreateCategoryRequest,
     request: Request,
@@ -184,7 +184,7 @@ async def list_units(
         units = await repo.list(tenant_id, page_size=100)
     return units
 
-@router.post("/units", response_model=UnitResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/units", response_model=UnitResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("inventory:write"))])
 async def create_unit(
     req: CreateUnitRequest,
     request: Request,

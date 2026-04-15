@@ -13,6 +13,7 @@ import uuid
 from backend.app.application.product.commands.product_commands import (
     CreateItemTemplateCommand,
     UpdateItemTemplateCommand,
+    ChangeProductStatusCommand,
     CreateItemVariantCommand,
     UpdateItemVariantCommand,
 )
@@ -37,6 +38,7 @@ class ItemTemplateResult:
     category_id: Optional[str]
     base_unit_id: Optional[str]
     attributes: List[Dict[str, Any]]
+    status: str  # ProductStatus string value
     is_active: bool
 
 
@@ -76,6 +78,7 @@ class CreateItemTemplateHandler:
             category_id=cmd.category_id,
             base_unit_id=cmd.base_unit_id,
             attributes=cmd.attributes,
+            status=cmd.status,
         )
         await self._repo.save(template)
         await self._uow.commit()
@@ -192,6 +195,25 @@ class UpdateItemVariantHandler:
         return _to_variant_result(variant)
 
 
+class ChangeProductStatusHandler:
+    """Handler for changing product template status with validation."""
+    def __init__(self, template_repo, uow: SQLAlchemyUnitOfWork) -> None:
+        self._repo = template_repo
+        self._uow = uow
+
+    async def handle(self, cmd: ChangeProductStatusCommand) -> ItemTemplateResult:
+        template = await self._repo.get_by_id(cmd.id, cmd.tenant_id)
+        if not template:
+            raise ValueError(f"Item template '{cmd.id}' not found.")
+
+        # Attempt transition (validates business rules)
+        template.transition_to(cmd.new_status)
+        
+        await self._repo.save(template)
+        await self._uow.commit()
+        return _to_template_result(template)
+
+
 # ── Helper converters ─────────────────────────────────────────────────────────
 
 def _to_template_result(t: ItemTemplate) -> ItemTemplateResult:
@@ -204,6 +226,7 @@ def _to_template_result(t: ItemTemplate) -> ItemTemplateResult:
         category_id=str(t.category_id) if t.category_id else None,
         base_unit_id=str(t.base_unit_id) if t.base_unit_id else None,
         attributes=t.attributes,
+        status=t.status.value,
         is_active=t.is_active,
     )
 

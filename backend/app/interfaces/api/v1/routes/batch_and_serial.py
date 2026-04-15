@@ -45,6 +45,7 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_tenant_id,
     get_current_user_id,
 )
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.interfaces.api.v1.schemas.inventory_schemas import (
     AddSerialStockRequest,
     AddStockWithBatchRequest,
@@ -86,6 +87,7 @@ def _batch_to_response(result: BatchResult) -> BatchResponse:
     response_model=BatchResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Add stock to a batch-tracked material (creates or updates the batch)",
+    dependencies=[Depends(require_permission("inventory:write"))],
 )
 async def add_stock_with_batch(
     body: AddStockWithBatchRequest,
@@ -130,6 +132,7 @@ async def add_stock_with_batch(
     response_model=BatchResponse,
     status_code=status.HTTP_200_OK,
     summary="Remove stock from a specific batch",
+    dependencies=[Depends(require_permission("inventory:write"))],
 )
 async def remove_stock_from_batch(
     body: RemoveStockFromBatchRequest,
@@ -217,6 +220,7 @@ async def list_expiring_batches(
     response_model=List[SerialNumberResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Register serial numbers for a serialised material",
+    dependencies=[Depends(require_permission("inventory:write"))],
 )
 async def add_serial_stock(
     body: AddSerialStockRequest,
@@ -269,6 +273,7 @@ async def add_serial_stock(
     response_model=SerialNumberResponse,
     status_code=status.HTTP_200_OK,
     summary="Issue a serial number (IN_STOCK/RETURNED → ISSUED)",
+    dependencies=[Depends(require_permission("inventory:write"))],
 )
 async def issue_serial(
     body: IssueSerialRequest,
@@ -318,6 +323,7 @@ async def issue_serial(
     response_model=SerialNumberResponse,
     status_code=status.HTTP_200_OK,
     summary="Return a serial number (ISSUED → RETURNED)",
+    dependencies=[Depends(require_permission("inventory:write"))],
 )
 async def return_serial(
     body: ReturnSerialRequest,

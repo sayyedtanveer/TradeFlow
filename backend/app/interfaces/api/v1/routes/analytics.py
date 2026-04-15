@@ -14,6 +14,7 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_user_id,
     get_current_role,
 )
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 
 router = APIRouter(prefix="/analytics", tags=["Analytics & Reporting"])
 
@@ -85,7 +86,7 @@ class DashboardSummary(BaseModel):
 # Endpoints: Saved Reports Management
 # ============================================================================
 
-@router.post("/reports", response_model=SavedReportResponse)
+@router.post("/reports", response_model=SavedReportResponse, dependencies=[Depends(require_permission("reports:read"))])
 async def create_saved_report(
     request_body: CreateSavedReportRequest,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
@@ -181,7 +182,7 @@ async def get_saved_report(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/reports/{report_id}")
+@router.delete("/reports/{report_id}", dependencies=[Depends(require_permission("reports:read"))])
 async def delete_report(
     report_id: uuid.UUID,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),

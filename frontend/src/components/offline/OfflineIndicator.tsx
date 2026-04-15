@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, Check, Loader2, Wifi, WifiOff } from 'lucide-react'
-import { useOfflineSync } from '../hooks/useOfflineSync'
+import { useOfflineSync } from '../../hooks/useOfflineSync'
 
 /**
  * OfflineIndicator Component

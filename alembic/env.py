@@ -43,6 +43,7 @@ from backend.app.infrastructure.persistence.models import (  # noqa: F401
     material_request_model,
     subcontract_model,
     finance_models,
+    inventory_management_models,
 )
 
 config = context.config

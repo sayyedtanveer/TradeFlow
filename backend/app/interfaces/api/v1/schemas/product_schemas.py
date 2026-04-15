@@ -33,6 +33,15 @@ class UpdateItemTemplateRequest(BaseModel):
     is_active: Optional[bool] = None
 
 
+class ChangeProductStatusRequest(BaseModel):
+    new_status: str = Field(..., description="Target status: DRAFT, ACTIVE, INACTIVE, or ARCHIVED")
+
+    class Config:
+        examples = [{
+            "new_status": "ACTIVE"
+        }]
+
+
 class ItemTemplateResponse(BaseModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
@@ -42,6 +51,7 @@ class ItemTemplateResponse(BaseModel):
     category_id: Optional[uuid.UUID]
     base_unit_id: Optional[uuid.UUID]
     attributes: List[Dict[str, Any]]
+    status: str = Field(..., description="Product lifecycle status: DRAFT, ACTIVE, INACTIVE, ARCHIVED")
     is_active: bool
 
     model_config = {"from_attributes": True}
@@ -109,3 +119,89 @@ class ItemVariantSearchListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ── Product Images ────────────────────────────────────────────────────────────
+
+class ProductImageResponse(BaseModel):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    template_id: uuid.UUID
+    variant_id: Optional[uuid.UUID]
+    file_name: str
+    file_path: str
+    file_size: int
+    file_mime_type: str
+    image_order: int
+    is_primary: bool
+
+    model_config = {"from_attributes": True}
+
+
+class ProductImageListResponse(BaseModel):
+    items: List[ProductImageResponse]
+    primary_image: Optional[ProductImageResponse] = None
+
+
+class SetPrimaryImageRequest(BaseModel):
+    image_id: uuid.UUID = Field(..., description="ID of the image to set as primary")
+
+
+class ReorderImageRequest(BaseModel):
+    new_order: int = Field(..., ge=0, description="New display order (0 = first)")
+
+
+class UploadImageResponse(BaseModel):
+    id: uuid.UUID
+    file_name: str
+    file_path: str
+    file_size: int
+    is_primary: bool
+    message: str = "Image uploaded successfully"
+
+
+# ── Bulk Operations ───────────────────────────────────────────────────────────
+
+class ImportError(BaseModel):
+    row_number: int
+    field: str
+    message: str
+
+
+class BulkImportRequest(BaseModel):
+    csv_data: str = Field(..., description="CSV content with variant data")
+
+
+class BulkImportResponse(BaseModel):
+    success_count: int
+    error_count: int
+    errors: List[ImportError] = []
+    variant_ids: List[uuid.UUID] = []
+    message: str
+
+
+class BulkUpdateVariantRequest(BaseModel):
+    variant_id: uuid.UUID
+    standard_cost: Optional[Decimal] = None
+    selling_price: Optional[Decimal] = None
+    is_active: Optional[bool] = None
+
+
+class BulkOperationResponse(BaseModel):
+    success_count: int
+    message: str
+
+
+class VariantTemplateCsvResponse(BaseModel):
+    csv_content: str
+    file_name: str = "variant_import_template.csv"
+
+
+class ExportVariantsRequest(BaseModel):
+    variant_ids: List[uuid.UUID] = Field(default_factory=list, description="Leave empty to export all")
+
+
+class ExportVariantsResponse(BaseModel):
+    csv_content: str
+    file_name: str
+    record_count: int

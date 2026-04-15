@@ -3,6 +3,7 @@ import { RouteObject, Navigate } from "react-router-dom"
 
 const MaterialListPage = lazy(() => import("./pages/MaterialListPage"))
 const TransactionHistoryPage = lazy(() => import("./pages/TransactionHistoryPage"))
+const InventoryDashboard = lazy(() => import("./pages/InventoryDashboard"))
 
 // Simple fallback
 const PageLoading = () => <div className="p-8 flex items-center justify-center">Loading...</div>
@@ -10,7 +11,7 @@ const PageLoading = () => <div className="p-8 flex items-center justify-center">
 export const inventoryRoutes: RouteObject[] = [
   {
     path: "inventory",
-    element: <Navigate to="/inventory/materials" replace />,
+    element: <Suspense fallback={<PageLoading />}><InventoryDashboard /></Suspense>,
   },
   {
     path: "inventory/materials",

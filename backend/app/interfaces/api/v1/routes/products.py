@@ -3,23 +3,49 @@ from __future__ import annotations
 import uuid
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import select
 
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.infrastructure.persistence.models.unit_of_measure_model import UnitOfMeasureModel
 
+from backend.app.application.product.handlers.bulk_handlers import (
+    BulkCreateVariantsHandler,
+    BulkUpdateVariantsHandler,
+    BulkActivateVariantsHandler,
+    BulkDeactivateVariantsHandler,
+)
+from backend.app.application.product.commands.bulk_commands import (
+    BulkCreateVariantsCommand,
+    BulkUpdateVariantsCommand,
+    BulkActivateVariantsCommand,
+    BulkDeactivateVariantsCommand,
+)
+from backend.app.application.product.services.import_export_service import (
+    VariantImportParser,
+    VariantExportService,
+)
+
 from backend.app.application.product.commands.product_commands import (
     CreateItemTemplateCommand,
     UpdateItemTemplateCommand,
+    ChangeProductStatusCommand,
     CreateItemVariantCommand,
     UpdateItemVariantCommand,
 )
 from backend.app.application.product.handlers.product_handlers import (
     CreateItemTemplateHandler,
     UpdateItemTemplateHandler,
+    ChangeProductStatusHandler,
     CreateItemVariantHandler,
     UpdateItemVariantHandler,
+)
+from backend.app.application.product.handlers.product_image_handlers import (
+    UploadProductImageHandler,
+    DeleteProductImageHandler,
+    SetPrimaryImageHandler,
+    ReorderImageHandler,
+    _to_image_result,
 )
 from backend.app.application.product.handlers.product_handlers import ItemVariantResult
 from backend.app.application.product.handlers.product_query_handler import ProductQueryHandler
@@ -32,15 +58,18 @@ from backend.app.application.product.queries.product_queries import (
 )
 from backend.app.infrastructure.persistence.repositories.item_template_repository import ItemTemplateRepository
 from backend.app.infrastructure.persistence.repositories.item_variant_repository import ItemVariantRepository
+from backend.app.infrastructure.persistence.repositories.product_image_repository import ProductImageRepository
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
 from backend.app.interfaces.api.v1.dependencies.auth import (
     get_container,
     get_current_tenant_id,
     get_current_user_id,
 )
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.interfaces.api.v1.schemas.product_schemas import (
     CreateItemTemplateRequest,
     UpdateItemTemplateRequest,
+    ChangeProductStatusRequest,
     ItemTemplateResponse,
     ItemTemplateListResponse,
     CreateItemVariantRequest,
@@ -49,6 +78,11 @@ from backend.app.interfaces.api.v1.schemas.product_schemas import (
     ItemVariantListResponse,
     ItemVariantSearchItem,
     ItemVariantSearchListResponse,
+    ProductImageResponse,
+    ProductImageListResponse,
+    SetPrimaryImageRequest,
+    ReorderImageRequest,
+    UploadImageResponse,
 )
 
 router = APIRouter(prefix="/products", tags=["Product Master"])
@@ -150,6 +184,7 @@ async def _batch_unit_codes(
     response_model=ItemTemplateResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new Item Template",
+    dependencies=[Depends(require_permission("sales:write"))],
 )
 async def create_template(
     body: CreateItemTemplateRequest,
@@ -242,6 +277,7 @@ async def get_template(
     "/templates/{template_id}",
     response_model=ItemTemplateResponse,
     summary="Update an Item Template",
+    dependencies=[Depends(require_permission("sales:write"))],
 )
 async def update_template(
     template_id: uuid.UUID,
@@ -281,6 +317,7 @@ async def update_template(
     response_model=ItemVariantResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a variant for a template",
+    dependencies=[Depends(require_permission("sales:write"))],
 )
 async def create_variant(
     template_id: uuid.UUID,
@@ -427,6 +464,7 @@ async def get_variant(
     "/variants/{variant_id}",
     response_model=ItemVariantResponse,
     summary="Update variant pricing and status",
+    dependencies=[Depends(require_permission("sales:write"))],
 )
 async def update_variant(
     variant_id: uuid.UUID,
@@ -452,3 +490,498 @@ async def update_variant(
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return _variant_from_result(result)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Product Lifecycle Management
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post(
+    "/templates/{template_id}/status",
+    response_model=ItemTemplateResponse,
+    summary="Change product template status",
+    dependencies=[Depends(require_permission("sales:write"))],
+)
+async def change_product_status(
+    template_id: uuid.UUID,
+    body: ChangeProductStatusRequest,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Change product template status with validation.
+    
+    Valid status values: DRAFT, ACTIVE, INACTIVE, ARCHIVED
+    
+    State transitions:
+    - DRAFT → ACTIVE or ARCHIVED
+    - ACTIVE → INACTIVE or ARCHIVED
+    - INACTIVE → ACTIVE or ARCHIVED
+    - ARCHIVED → (terminal, no further transitions)
+    """
+    try:
+        new_status = ProductStatus(body.new_status)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status. Must be one of: {', '.join(s.value for s in ProductStatus)}"
+        )
+
+    container = get_container(request)
+    async with container.session_factory() as session:
+        repo = ItemTemplateRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        handler = ChangeProductStatusHandler(template_repo=repo, uow=uow)
+        try:
+            result = await handler.handle(
+                ChangeProductStatusCommand(
+                    id=template_id,
+                    tenant_id=tenant_id,
+                    new_status=new_status,
+                )
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return _template_from_result(result)
+
+
+@router.delete(
+    "/templates/{template_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a product template (soft delete)",
+    dependencies=[Depends(require_permission("sales:write"))],
+)
+async def delete_template(
+    template_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Soft delete a product template.
+    
+    Only DRAFT or ARCHIVED products can be deleted.
+    Active products must first be deactivated.
+    """
+    container = get_container(request)
+    async with container.session_factory() as session:
+        repo = ItemTemplateRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        
+        template = await repo.get_by_id(template_id, tenant_id)
+        if not template:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found.")
+        
+        # Check if deletion is allowed
+        if not template.can_delete_product():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, 
+                detail=f"Cannot delete product in {template.status.value} status. Only DRAFT or ARCHIVED products can be deleted."
+            )
+        
+        # Perform soft delete
+        template.soft_delete()
+        await repo.save(template)
+        await uow.commit()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Product Images Management
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post(
+    "/templates/{template_id}/images",
+    response_model=UploadImageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload an image for a product template",
+)
+async def upload_template_image(
+    template_id: uuid.UUID,
+    file: UploadFile = File(...),
+    request: Request = None,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Upload an image for a product template.
+    
+    Supported formats: JPEG, PNG, WebP, GIF, SVG
+    Max file size: 10MB
+    """
+    # Validate file size (10MB limit)
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    file.file.seek(0, 2)  # Seek to end
+    file_size = file.file.tell()
+    file.file.seek(0)  # Reset to start
+
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File size exceeds 10MB limit."
+        )
+
+    # Validate MIME type
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be an image."
+        )
+
+    supported_types = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"}
+    if file.content_type not in supported_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported image format. Supported: {', '.join(supported_types)}"
+        )
+
+    try:
+        # Read file data
+        file_data = await file.read()
+
+        # Store file
+        storage = get_file_storage()
+        file_path, file_size_stored = await storage.upload(
+            file_data=file_data,
+            file_name=file.filename or "image",
+            tenant_id=tenant_id,
+        )
+
+        # Save image metadata
+        container = get_container(request)
+        async with container.session_factory() as session:
+            img_repo = ProductImageRepository(session)
+            uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+            handler = UploadProductImageHandler(image_repo=img_repo, uow=uow)
+
+            result = await handler.handle(
+                UploadProductImageCommand(
+                    tenant_id=tenant_id,
+                    template_id=template_id,
+                    created_by=user_id,
+                    file_name=file.filename or "image",
+                    file_path=file_path,
+                    file_size=file_size_stored,
+                    file_mime_type=file.content_type,
+                    is_primary=False,  # New images are not primary by default
+                )
+            )
+
+        return UploadImageResponse(
+            id=uuid.UUID(result.id),
+            file_name=result.file_name,
+            file_path=result.file_path,
+            file_size=result.file_size,
+            is_primary=result.is_primary,
+            message="Image uploaded successfully."
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload image: {str(e)}"
+        )
+
+
+@router.post(
+    "/variants/{variant_id}/images",
+    response_model=UploadImageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload an image for a specific variant",
+)
+async def upload_variant_image(
+    variant_id: uuid.UUID,
+    template_id: uuid.UUID = Query(..., description="Parent template ID"),
+    file: UploadFile = File(...),
+    request: Request = None,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Upload an image for a specific product variant.
+    """
+    # Validate file size (10MB limit)
+    MAX_FILE_SIZE = 10 * 1024 * 1024
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File size exceeds 10MB limit.")
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File must be an image.")
+
+    supported_types = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"}
+    if file.content_type not in supported_types:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported image format.")
+
+    try:
+        file_data = await file.read()
+        storage = get_file_storage()
+        file_path, file_size_stored = await storage.upload(
+            file_data=file_data,
+            file_name=file.filename or "image",
+            tenant_id=tenant_id,
+        )
+
+        container = get_container(request)
+        async with container.session_factory() as session:
+            img_repo = ProductImageRepository(session)
+            uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+            handler = UploadProductImageHandler(image_repo=img_repo, uow=uow)
+
+            result = await handler.handle(
+                UploadProductImageCommand(
+                    tenant_id=tenant_id,
+                    template_id=template_id,
+                    variant_id=variant_id,
+                    created_by=user_id,
+                    file_name=file.filename or "image",
+                    file_path=file_path,
+                    file_size=file_size_stored,
+                    file_mime_type=file.content_type,
+                    is_primary=False,
+                )
+            )
+
+        return UploadImageResponse(
+            id=uuid.UUID(result.id),
+            file_name=result.file_name,
+            file_path=result.file_path,
+            file_size=result.file_size,
+            is_primary=result.is_primary,
+            message="Image uploaded successfully."
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to upload image: {str(e)}")
+
+
+@router.get(
+    "/templates/{template_id}/images",
+    response_model=ProductImageListResponse,
+    summary="Get all images for a product template",
+)
+async def get_template_images(
+    template_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Get all images attached to a product template."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        img_repo = ProductImageRepository(session)
+        images = await img_repo.get_template_images(template_id, tenant_id)
+        primary = await img_repo.get_primary_image(template_id, tenant_id)
+
+    items = [
+        ProductImageResponse(
+            id=img.id,
+            tenant_id=img.tenant_id,
+            template_id=img.template_id,
+            variant_id=img.variant_id,
+            file_name=img.file_name,
+            file_path=img.file_path,
+            file_size=img.file_size,
+            file_mime_type=img.file_mime_type,
+            image_order=img.image_order,
+            is_primary=img.is_primary,
+        )
+        for img in images
+    ]
+
+    primary_response = None
+    if primary:
+        primary_response = ProductImageResponse(
+            id=primary.id,
+            tenant_id=primary.tenant_id,
+            template_id=primary.template_id,
+            variant_id=primary.variant_id,
+            file_name=primary.file_name,
+            file_path=primary.file_path,
+            file_size=primary.file_size,
+            file_mime_type=primary.file_mime_type,
+            image_order=primary.image_order,
+            is_primary=primary.is_primary,
+        )
+
+    return ProductImageListResponse(items=items, primary_image=primary_response)
+
+
+@router.get(
+    "/variants/{variant_id}/images",
+    response_model=ProductImageListResponse,
+    summary="Get all images for a variant",
+)
+async def get_variant_images(
+    variant_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Get all images attached to a specific variant."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        img_repo = ProductImageRepository(session)
+        images = await img_repo.get_variant_images(variant_id, tenant_id)
+
+    items = [
+        ProductImageResponse(
+            id=img.id,
+            tenant_id=img.tenant_id,
+            template_id=img.template_id,
+            variant_id=img.variant_id,
+            file_name=img.file_name,
+            file_path=img.file_path,
+            file_size=img.file_size,
+            file_mime_type=img.file_mime_type,
+            image_order=img.image_order,
+            is_primary=img.is_primary,
+        )
+        for img in images
+    ]
+
+    return ProductImageListResponse(items=items)
+
+
+@router.post(
+    "/images/{image_id}/set-primary",
+    response_model=ProductImageResponse,
+    summary="Set an image as the primary/thumbnail",
+)
+async def set_primary_image(
+    image_id: uuid.UUID,
+    body: SetPrimaryImageRequest,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Set an image as the primary thumbnail for the product."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        img_repo = ProductImageRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        
+        # Get the image first to find template ID
+        image = await img_repo.get_by_id(image_id, tenant_id)
+        if not image:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found.")
+
+        handler = SetPrimaryImageHandler(image_repo=img_repo, uow=uow)
+        try:
+            result = await handler.handle(
+                SetPrimaryImageCommand(
+                    id=image_id,
+                    tenant_id=tenant_id,
+                    template_id=image.template_id,
+                    updated_by=user_id,
+                )
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+    return ProductImageResponse(
+        id=uuid.UUID(result.id),
+        tenant_id=uuid.UUID(result.tenant_id),
+        template_id=uuid.UUID(result.template_id),
+        variant_id=uuid.UUID(result.variant_id) if result.variant_id else None,
+        file_name=result.file_name,
+        file_path=result.file_path,
+        file_size=result.file_size,
+        file_mime_type=result.file_mime_type,
+        image_order=result.image_order,
+        is_primary=result.is_primary,
+    )
+
+
+@router.post(
+    "/images/{image_id}/reorder",
+    response_model=ProductImageResponse,
+    summary="Change image display order",
+)
+async def reorder_image(
+    image_id: uuid.UUID,
+    body: ReorderImageRequest,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Reorder an image (change its display position)."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        img_repo = ProductImageRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        handler = ReorderImageHandler(image_repo=img_repo, uow=uow)
+
+        try:
+            result = await handler.handle(
+                ReorderImageCommand(
+                    id=image_id,
+                    tenant_id=tenant_id,
+                    new_order=body.new_order,
+                    updated_by=user_id,
+                )
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+    return ProductImageResponse(
+        id=uuid.UUID(result.id),
+        tenant_id=uuid.UUID(result.tenant_id),
+        template_id=uuid.UUID(result.template_id),
+        variant_id=uuid.UUID(result.variant_id) if result.variant_id else None,
+        file_name=result.file_name,
+        file_path=result.file_path,
+        file_size=result.file_size,
+        file_mime_type=result.file_mime_type,
+        image_order=result.image_order,
+        is_primary=result.is_primary,
+    )
+
+
+@router.delete(
+    "/images/{image_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a product image",
+)
+async def delete_image(
+    image_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Delete a product image and remove it from storage."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        img_repo = ProductImageRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+
+        # Get image first
+        image = await img_repo.get_by_id(image_id, tenant_id)
+        if not image:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found.")
+
+        # Delete from storage
+        storage = get_file_storage()
+        try:
+            await storage.delete(image.file_path, tenant_id)
+        except Exception as e:
+            # Log error but don't fail the request
+            pass
+
+        # Delete from database
+        handler = DeleteProductImageHandler(image_repo=img_repo, uow=uow)
+        success = await handler.handle(
+            DeleteProductImageCommand(
+                id=image_id,
+                tenant_id=tenant_id,
+                deleted_by=user_id,
+            )
+        )
+
+        if not success:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found.")

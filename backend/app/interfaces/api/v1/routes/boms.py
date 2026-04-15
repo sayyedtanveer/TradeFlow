@@ -31,6 +31,7 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_tenant_id,
     get_current_user_id,
 )
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.interfaces.api.v1.schemas.bom_schemas import (
     CreateBOMRequest,
     UpdateBOMRequest,
@@ -116,6 +117,7 @@ async def list_product_boms(
     response_model=BOMResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new BOM version for a product",
+    dependencies=[Depends(require_permission("manufacturing:write"))],
 )
 async def create_bom(
     product_id: uuid.UUID,
@@ -185,7 +187,7 @@ async def get_bom(
     return _bom_to_response(bom)
 
 
-@router.put("/boms/{bom_id}", response_model=BOMResponse, summary="Update a BOM (inactive only)")
+@router.put("/boms/{bom_id}", response_model=BOMResponse, summary="Update a BOM (inactive only)", dependencies=[Depends(require_permission("manufacturing:write"))])
 async def update_bom(
     bom_id: uuid.UUID,
     body: UpdateBOMRequest,
@@ -228,7 +230,7 @@ async def update_bom(
     return _bom_to_response(bom)
 
 
-@router.delete("/boms/{bom_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Soft-delete a BOM")
+@router.delete("/boms/{bom_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Soft-delete a BOM", dependencies=[Depends(require_permission("manufacturing:write"))])
 async def delete_bom(
     bom_id: uuid.UUID,
     request: Request,
@@ -246,7 +248,7 @@ async def delete_bom(
             raise HTTPException(status_code=code, detail=str(e))
 
 
-@router.post("/boms/{bom_id}/activate", response_model=BOMResponse, summary="Activate a BOM (auto-deactivates previous)")
+@router.post("/boms/{bom_id}/activate", response_model=BOMResponse, summary="Activate a BOM (auto-deactivates previous)", dependencies=[Depends(require_permission("manufacturing:write"))])
 async def activate_bom(
     bom_id: uuid.UUID,
     request: Request,
@@ -264,7 +266,7 @@ async def activate_bom(
     return _bom_to_response(bom)
 
 
-@router.post("/boms/{bom_id}/copy", response_model=BOMResponse, status_code=status.HTTP_201_CREATED, summary="Copy a BOM to a new version")
+@router.post("/boms/{bom_id}/copy", response_model=BOMResponse, status_code=status.HTTP_201_CREATED, summary="Copy a BOM to a new version", dependencies=[Depends(require_permission("manufacturing:write"))])
 async def copy_bom(
     bom_id: uuid.UUID,
     body: CopyBOMRequest,
@@ -296,7 +298,7 @@ async def copy_bom(
 # Advanced Endpoints (Routing & Cost)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.post("/boms/{bom_id}/operations", response_model=uuid.UUID, summary="Attach an Operation to BOM")
+@router.post("/boms/{bom_id}/operations", response_model=uuid.UUID, summary="Attach an Operation to BOM", dependencies=[Depends(require_permission("manufacturing:write"))])
 async def attach_operation(
     bom_id: uuid.UUID,
     body: BOMOperationAttach,
@@ -324,7 +326,7 @@ async def attach_operation(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return op_id
 
-@router.post("/boms/{bom_id}/validate", summary="Validate BOM constraints")
+@router.post("/boms/{bom_id}/validate", summary="Validate BOM constraints", dependencies=[Depends(require_permission("manufacturing:write"))])
 async def validate_bom(
     bom_id: uuid.UUID,
     request: Request,

@@ -37,6 +37,7 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_tenant_id,
     get_current_user_id,
 )
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.interfaces.api.v1.schemas.inventory_schemas import (
     AdjustStockRequest,
     CreateMaterialRequest,
@@ -64,6 +65,7 @@ def _get_repos(request: Request):
     response_model=MaterialResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new material",
+    dependencies=[Depends(require_permission("inventory:write"))],
 )
 async def create_material(
     body: CreateMaterialRequest,
@@ -164,6 +166,7 @@ async def get_material(
     "/materials/{material_id}",
     response_model=MaterialResponse,
     summary="Update material metadata (not stock)",
+    dependencies=[Depends(require_permission("inventory:write"))],
 )
 async def update_material(
     material_id: uuid.UUID,
@@ -210,6 +213,7 @@ async def update_material(
     "/materials/{material_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Soft-delete a material",
+    dependencies=[Depends(require_permission("inventory:write"))],
 )
 async def delete_material(
     material_id: uuid.UUID,

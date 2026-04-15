@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import JSONResponse
 
 from backend.app.interfaces.api.v1.dependencies.auth import get_current_tenant_id, get_current_user_id
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.interfaces.api.v1.schemas.work_order_schemas import (
     WorkOrderCreateRequest, IssueMaterialRequest, RecordProductionRequest,
     StartJobCardRequest, CompleteJobCardRequest,
@@ -51,7 +52,7 @@ async def _error_response(exc: Exception) -> JSONResponse:
     )
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("manufacturing:write"))])
 async def create_work_order(
     body: WorkOrderCreateRequest,
     request: Request,
@@ -125,7 +126,7 @@ async def get_work_order(
         return WorkOrderDetail.model_validate(wo)
 
 
-@router.post("/{work_order_id}/release", status_code=status.HTTP_200_OK)
+@router.post("/{work_order_id}/release", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("manufacturing:write"))])
 async def release_work_order(
     work_order_id: uuid.UUID,
     request: Request,
@@ -143,7 +144,7 @@ async def release_work_order(
             return await _error_response(e)
 
 
-@router.post("/{work_order_id}/start", status_code=status.HTTP_200_OK)
+@router.post("/{work_order_id}/start", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("manufacturing:write"))])
 async def start_work_order(
     work_order_id: uuid.UUID,
     request: Request,
@@ -161,7 +162,7 @@ async def start_work_order(
             return await _error_response(e)
 
 
-@router.post("/{work_order_id}/issue-materials", status_code=status.HTTP_200_OK)
+@router.post("/{work_order_id}/issue-materials", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("manufacturing:write"))])
 async def issue_materials(
     work_order_id: uuid.UUID,
     body: IssueMaterialRequest,
@@ -184,7 +185,7 @@ async def issue_materials(
             return await _error_response(e)
 
 
-@router.post("/{work_order_id}/record-production", status_code=status.HTTP_200_OK)
+@router.post("/{work_order_id}/record-production", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("manufacturing:write"))])
 async def record_production(
     work_order_id: uuid.UUID,
     body: RecordProductionRequest,
@@ -207,7 +208,7 @@ async def record_production(
             return await _error_response(e)
 
 
-@router.post("/{work_order_id}/complete", status_code=status.HTTP_200_OK)
+@router.post("/{work_order_id}/complete", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("manufacturing:write"))])
 async def complete_work_order(
     work_order_id: uuid.UUID,
     request: Request,
@@ -225,7 +226,7 @@ async def complete_work_order(
             return await _error_response(e)
 
 
-@router.post("/{work_order_id}/close", status_code=status.HTTP_200_OK)
+@router.post("/{work_order_id}/close", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("manufacturing:write"))])
 async def close_work_order(
     work_order_id: uuid.UUID,
     request: Request,

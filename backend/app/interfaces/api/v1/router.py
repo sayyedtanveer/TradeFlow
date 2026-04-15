@@ -24,12 +24,17 @@ from backend.app.interfaces.api.v1.routes.notifications import router as notific
 from backend.app.interfaces.api.v1.routes.client_portal import router as client_portal_router
 from backend.app.interfaces.api.v1.routes.mrp import router as mrp_router
 
+from backend.app.interfaces.api.v1.routes.inventory_extended import router as inventory_extended_router
+from backend.app.interfaces.api.v1.routes.rbac_admin import router as rbac_admin_router
+
 api_v1_router = APIRouter()
 
+api_v1_router.include_router(rbac_admin_router)
 api_v1_router.include_router(auth_router)
 api_v1_router.include_router(tenants_router)
 api_v1_router.include_router(files_router)
 api_v1_router.include_router(inventory_router)
+api_v1_router.include_router(inventory_extended_router)
 api_v1_router.include_router(master_data_router)
 api_v1_router.include_router(batch_and_serial_router)
 api_v1_router.include_router(products_router)
@@ -45,6 +50,7 @@ api_v1_router.include_router(reports_router)
 api_v1_router.include_router(notifications_router)
 api_v1_router.include_router(client_portal_router)
 api_v1_router.include_router(mrp_router)
+
 
 # --- Dynamic Module Registration ---
 module_registry.register(

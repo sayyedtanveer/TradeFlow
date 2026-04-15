@@ -38,10 +38,20 @@ async def get_current_user_payload(
         )
 
     # Update context vars with authenticated user info
+    user_id = payload.get("sub")
+    tenant_id = payload.get("tid")
+    user_role = payload.get("role", "viewer")
+    
     set_request_context(
-        user_id=payload.get("sub"),
-        tenant_id=payload.get("tid"),
+        user_id=user_id,
+        tenant_id=tenant_id,
     )
+    
+    # ✅ NEW: Inject into request scope for middleware logging
+    request.scope["user_id"] = user_id
+    request.scope["tenant_id"] = tenant_id
+    request.scope["user_role"] = user_role
+    
     return payload
 
 

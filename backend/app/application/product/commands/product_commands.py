@@ -5,6 +5,8 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 import uuid
 
+from backend.app.domain.product.value_objects.product_status import ProductStatus
+
 
 # ── Item Template Commands ────────────────────────────────────────────────────
 
@@ -18,6 +20,7 @@ class CreateItemTemplateCommand:
     category_id: Optional[uuid.UUID] = None
     base_unit_id: Optional[uuid.UUID] = None
     attributes: List[Dict[str, Any]] = field(default_factory=list)
+    status: ProductStatus = ProductStatus.DRAFT
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,15 @@ class UpdateItemTemplateCommand:
     base_unit_id: Optional[uuid.UUID] = None
     attributes: Optional[List[Dict[str, Any]]] = None
     is_active: Optional[bool] = None
+    status: Optional[ProductStatus] = None
+
+
+@dataclass(frozen=True)
+class ChangeProductStatusCommand:
+    """Command to explicitly change product status."""
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    new_status: ProductStatus
 
 
 # ── Item Variant Commands ─────────────────────────────────────────────────────

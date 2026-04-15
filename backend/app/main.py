@@ -23,6 +23,7 @@ from backend.app.infrastructure.websocket.event_handlers import (
 from backend.app.interfaces.api.v1.middleware.logging_middleware import RequestLoggingMiddleware
 from backend.app.interfaces.api.v1.middleware.tenant_middleware import TenantMiddleware
 from backend.app.interfaces.api.v1.middleware.audit_middleware import AuditMiddleware
+from backend.app.interfaces.api.v1.middleware.rbac_audit import RBACPermissionAuditMiddleware
 from backend.app.interfaces.api.v1.router import api_v1_router
 from backend.app.interfaces.api.v1.routes.websocket import router as websocket_router
 from backend.app.core.module_registry import module_registry
@@ -102,6 +103,7 @@ def create_application() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RBACPermissionAuditMiddleware)  # ✅ NEW: Log 403 denials
     app.add_middleware(AuditMiddleware)
     app.add_middleware(TenantMiddleware)
     app.add_middleware(RequestLoggingMiddleware)

@@ -4,6 +4,7 @@ import { ProtectedRoute } from "@/app/routes/ProtectedRoute"
 
 const ProductTemplateListPage = lazy(() => import("./pages/ProductTemplateListPage"))
 const ProductTemplateFormPage = lazy(() => import("./pages/ProductTemplateFormPage"))
+const ProductDetailPage = lazy(() => import("./pages/ProductDetailPage"))
 
 const PageLoading = () => <div className="p-8 flex items-center justify-center">Loading...</div>
 
@@ -30,6 +31,14 @@ export const productRoutes: RouteObject[] = [
       },
       {
         path: ":id",
+        element: (
+          <Suspense fallback={<PageLoading />}>
+            <ProductDetailPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: ":id/edit",
         element: (
           <Suspense fallback={<PageLoading />}>
             <ProductTemplateFormPage />

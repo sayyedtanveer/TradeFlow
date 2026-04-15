@@ -22,6 +22,9 @@ from backend.app.domain.inventory.entities.inventory_transaction import (
 from backend.app.infrastructure.persistence.repositories.material_repository import MaterialRepository
 from backend.app.infrastructure.persistence.repositories.transaction_repository import TransactionRepository
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
+from backend.app.infrastructure.persistence.models.inventory_management_models import StockLedgerModel
+from datetime import datetime
+from datetime import timezone
 
 
 @dataclass
@@ -164,8 +167,21 @@ class AddStockHandler:
             created_by=cmd.created_by,
         )
 
+        ledger_entry = StockLedgerModel(
+            tenant_id=cmd.tenant_id,
+            material_id=cmd.material_id,
+            location_id=cmd.to_location_id,
+            transaction_date=datetime.now(timezone.utc),
+            transaction_type=TransactionType.IN.value,
+            quantity_change=cmd.quantity,
+            running_balance=material.get_available_stock(),
+            reference_type=ReferenceType.MANUAL.value,
+            reference_id=cmd.reference_id,
+        )
+
         await self._material_repo.save(material)
         await self._tx_repo.save(transaction)
+        self._uow.session.add(ledger_entry)
         await self._uow.commit()
         return _to_result(material)
 
@@ -205,8 +221,21 @@ class RemoveStockHandler:
             created_by=cmd.created_by,
         )
 
+        ledger_entry = StockLedgerModel(
+            tenant_id=cmd.tenant_id,
+            material_id=cmd.material_id,
+            location_id=cmd.from_location_id,
+            transaction_date=datetime.now(timezone.utc),
+            transaction_type=TransactionType.OUT.value,
+            quantity_change=-cmd.quantity,
+            running_balance=material.get_available_stock(),
+            reference_type=ReferenceType.MANUAL.value,
+            reference_id=cmd.reference_id,
+        )
+
         await self._material_repo.save(material)
         await self._tx_repo.save(transaction)
+        self._uow.session.add(ledger_entry)
         await self._uow.commit()
         return _to_result(material)
 
@@ -245,7 +274,20 @@ class AdjustStockHandler:
             created_by=cmd.created_by,
         )
 
+        ledger_entry = StockLedgerModel(
+            tenant_id=cmd.tenant_id,
+            material_id=cmd.material_id,
+            location_id=cmd.location_id,
+            transaction_date=datetime.now(timezone.utc),
+            transaction_type=TransactionType.ADJUSTMENT.value,
+            quantity_change=delta,
+            running_balance=material.get_available_stock(),
+            reference_type=ReferenceType.ADJUSTMENT.value,
+            reference_id=None,
+        )
+
         await self._material_repo.save(material)
         await self._tx_repo.save(transaction)
+        self._uow.session.add(ledger_entry)
         await self._uow.commit()
         return _to_result(material)
