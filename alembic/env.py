@@ -46,6 +46,9 @@ from backend.app.infrastructure.persistence.models import (  # noqa: F401
     inventory_management_models,
 )
 
+# Import error logging models for Alembic autogenerate
+from backend.app.infrastructure.logging.models import ErrorLogModel  # noqa: F401
+
 config = context.config
 settings = get_settings()
 

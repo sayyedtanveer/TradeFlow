@@ -24,6 +24,7 @@ from backend.app.interfaces.api.v1.middleware.logging_middleware import RequestL
 from backend.app.interfaces.api.v1.middleware.tenant_middleware import TenantMiddleware
 from backend.app.interfaces.api.v1.middleware.audit_middleware import AuditMiddleware
 from backend.app.interfaces.api.v1.middleware.rbac_audit import RBACPermissionAuditMiddleware
+from backend.app.interfaces.api.v1.middleware.error_logging_middleware import ErrorLoggingMiddleware
 from backend.app.interfaces.api.v1.router import api_v1_router
 from backend.app.interfaces.api.v1.routes.websocket import router as websocket_router
 from backend.app.core.module_registry import module_registry
@@ -96,6 +97,7 @@ def create_application() -> FastAPI:
     )
 
     # ── Middleware (order matters: outermost first) ──
+    app.add_middleware(ErrorLoggingMiddleware)  # ✅ NEW: Centralized error capture + logging
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,

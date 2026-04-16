@@ -15,6 +15,8 @@ from backend.app.infrastructure.websocket.connection_manager import ConnectionMa
 from backend.app.infrastructure.tasks.background_task_service import BackgroundTaskService
 from backend.app.infrastructure.audit.audit_service import AuditService
 from backend.app.infrastructure.external.email_service import IEmailService, StubEmailService
+from backend.app.infrastructure.logging.error_logger import ErrorLogger
+from backend.app.infrastructure.logging.repository import ErrorLogRepository
 
 
 @dataclass
@@ -50,6 +52,10 @@ class Container:
 
     # ── Audit ─────────────────────────────────────────────────────────────
     audit_service: AuditService
+
+    # ── Error Logging ──────────────────────────────────────────────────────
+    error_log_repository: ErrorLogRepository
+    error_logger: ErrorLogger
 
     # ── External ──────────────────────────────────────────────────────────
     email_service: IEmailService
@@ -88,6 +94,12 @@ class Container:
         # Audit
         audit_service = AuditService(session_factory=session_factory)
 
+        # Error Logging
+        error_log_repository = ErrorLogRepository(session_factory=session_factory)
+        error_logger = ErrorLogger(
+            session_factory=session_factory,
+        )
+
         # External
         email_service = StubEmailService()
 
@@ -102,6 +114,8 @@ class Container:
             connection_manager=connection_manager,
             task_service=task_service,
             audit_service=audit_service,
+            error_log_repository=error_log_repository,
+            error_logger=error_logger,
             email_service=email_service,
         )
 

@@ -35,6 +35,9 @@ from backend.app.infrastructure.persistence.models import (
     finance_models,
 )
 
+# Import error logging models
+from backend.app.infrastructure.logging.models import ErrorLogModel  # noqa: F401
+
 async def init_db():
     print(f"Connecting to database: {settings.database_url}")
     engine = create_async_engine(settings.database_url, echo=True)
