@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react"
 import { RouteObject } from "react-router-dom"
 
 const MaterialListPage = lazy(() => import("./pages/MaterialListPage"))
+const ProductListPage = lazy(() => import("./pages/ProductListPage"))
 const TransactionHistoryPage = lazy(() => import("./pages/TransactionHistoryPage"))
 const InventoryDashboard = lazy(() => import("./pages/InventoryDashboard"))
 
@@ -16,6 +17,10 @@ export const inventoryRoutes: RouteObject[] = [
   {
     path: "inventory/materials",
     element: <Suspense fallback={<PageLoading />}><MaterialListPage /></Suspense>,
+  },
+  {
+    path: "inventory/products",
+    element: <Suspense fallback={<PageLoading />}><ProductListPage /></Suspense>,
   },
   {
     path: "inventory/transactions",

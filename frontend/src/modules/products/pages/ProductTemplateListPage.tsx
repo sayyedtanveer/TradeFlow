@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
-import { PackageSearch, Plus, Search } from "lucide-react"
+import { PackageSearch, Plus, Search, AlertCircle } from "lucide-react"
 import { productService } from "@/services/product.service"
 import { usePermissions } from "@/hooks/usePermissions"
+import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -11,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 export default function ProductTemplateListPage() {
   const navigate = useNavigate()
   const { hasRole } = usePermissions()
+  const { toast } = useToast()
   const canEdit = hasRole(["ADMIN", "MANAGER"])
   
   const [query, setQuery] = useState("")
@@ -26,11 +28,22 @@ export default function ProductTemplateListPage() {
     return () => clearTimeout(handler)
   }, [query])
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, isError } = useQuery({
     queryKey: ["products", "templates", debouncedQuery, page],
     queryFn: () => productService.getTemplates({ query: debouncedQuery, page, page_size: 20 }),
     staleTime: 10_000,
   })
+
+  // Show error toast if query fails
+  useEffect(() => {
+    if (isError && error && !isLoading) {
+      toast({
+        title: "Error loading templates",
+        description: error instanceof Error ? error.message : "Failed to load product templates. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }, [isError, error, isLoading, toast])
 
   return (
     <div className="space-y-6">
@@ -71,7 +84,29 @@ export default function ProductTemplateListPage() {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {isLoading ? (
+            {isError ? (
+              <tr>
+                <td colSpan={5} className="py-10 px-4">
+                  <div className="flex items-start gap-3 max-w-md bg-destructive/10 border border-destructive/50 rounded-md p-4 mx-auto">
+                    <AlertCircle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="font-medium text-destructive">Failed to load templates</p>
+                      <p className="text-sm text-destructive/80 mt-1">
+                        {error instanceof Error ? error.message : "An error occurred while loading product templates."}
+                      </p>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => window.location.reload()}
+                        className="mt-3"
+                      >
+                        Retry
+                      </Button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            ) : isLoading ? (
               <tr>
                 <td colSpan={5} className="py-10 text-center text-muted-foreground">
                   Loading templates...
@@ -96,7 +131,7 @@ export default function ProductTemplateListPage() {
                     </Badge>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Button variant="ghost" size="sm" onClick={() => navigate(`/products/${tpl.id}`)}>
+                    <Button variant="ghost" size="sm" onClick={() => navigate(`/products/${tpl.id}/edit`)}>
                       {canEdit ? "Edit" : "View"}
                     </Button>
                   </td>

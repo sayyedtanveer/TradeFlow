@@ -130,9 +130,9 @@ export interface Notification {
   sent_at: string
 }
 
-const BASE = "/api/v1/finance"
-const REPORTS_BASE = "/api/v1/reports"
-const NOTIF_BASE = "/api/v1/notifications"
+const BASE = "/finance"
+const REPORTS_BASE = "/reports"
+const NOTIF_BASE = "/notifications"
 
 export const financeService = {
   // ── Invoices ──────────────────────────────────────────────────────

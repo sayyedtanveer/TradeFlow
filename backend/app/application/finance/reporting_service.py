@@ -49,13 +49,13 @@ class ReportingService:
                 SELECT
                     m.id,
                     m.name,
-                    m.sku,
+                    m.code,
                     mc.name as category,
                     sl.quantity_on_hand,
                     sl.quantity_reserved,
                     sl.quantity_on_hand - sl.quantity_reserved as available,
-                    m.reorder_point,
-                    CASE WHEN sl.quantity_on_hand <= m.reorder_point THEN true ELSE false END as is_low_stock
+                    m.reorder_level,
+                    CASE WHEN sl.quantity_on_hand <= m.reorder_level THEN true ELSE false END as is_low_stock
                 FROM materials m
                 LEFT JOIN stock_levels sl ON sl.material_id = m.id AND sl.tenant_id = m.tenant_id
                 LEFT JOIN material_categories mc ON mc.id = m.category_id
@@ -74,7 +74,7 @@ class ReportingService:
                     SELECT
                         mvit.material_id,
                         m.name,
-                        m.sku,
+                        m.code,
                         mvit.total_consumed,
                         mvit.months_count,
                         CASE WHEN mvit.months_count > 0

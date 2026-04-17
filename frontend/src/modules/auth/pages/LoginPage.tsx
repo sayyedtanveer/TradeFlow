@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Link } from "react-router-dom"
@@ -8,9 +9,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import ForgotPasswordModal from "@/modules/auth/components/ForgotPasswordModal"
 
 export default function LoginPage() {
   const { login, isLoggingIn } = useAuth()
+  const [showForgotPassword, setShowForgotPassword] = useState(false)
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -51,9 +54,13 @@ export default function LoginPage() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label htmlFor="password">Password</Label>
-              <a href="#" className="text-xs font-medium text-primary hover:underline">
+              <button
+                type="button"
+                onClick={() => setShowForgotPassword(true)}
+                className="text-xs font-medium text-primary hover:underline"
+              >
                 Forgot password?
-              </a>
+              </button>
             </div>
             <Input
               id="password"
@@ -91,6 +98,8 @@ export default function LoginPage() {
           Create one
         </Link>
       </CardFooter>
+
+      <ForgotPasswordModal isOpen={showForgotPassword} onClose={() => setShowForgotPassword(false)} />
     </Card>
   )
 }

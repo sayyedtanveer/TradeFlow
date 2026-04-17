@@ -20,7 +20,7 @@ import {
   SalesListResponse,
 } from '@/types/sales.types';
 
-const BASE_URL = '/api/v1/sales';
+const BASE_URL = '/sales';
 
 /**
  * ============================================================================

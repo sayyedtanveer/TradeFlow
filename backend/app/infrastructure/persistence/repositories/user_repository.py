@@ -27,7 +27,8 @@ class UserRepository(BaseRepository[User, UserModel], IUserRepository):
             hashed_password=model.hashed_password,
             first_name=model.first_name,
             last_name=model.last_name,
-            role=Role(model.role),
+            # Normalize stored role string to Role enum (case-insensitive)
+            role=Role.from_string(model.role) if isinstance(model.role, str) else Role(model.role),
             supplier_id=model.supplier_id,
             client_id=model.client_id,
             is_active=model.is_active,

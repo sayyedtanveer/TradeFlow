@@ -239,11 +239,12 @@ export function getRoleLabel(role: UserRole | string | undefined): string {
 
 export const AVAILABLE_ROLES = Object.entries(ROLE_CONFIG)
   .map(([role, config]) => ({
-    value: role,
+    // send lowercase role values to backend (backend expects e.g. "supplier")
+    value: role.toLowerCase(),
     label: config.label,
     description: config.description,
   }))
-  .sort((a, b) => ROLE_CONFIG[a.value as UserRole].sortOrder - ROLE_CONFIG[b.value as UserRole].sortOrder)
+  .sort((a, b) => ROLE_CONFIG[(a.value as string).toUpperCase() as UserRole].sortOrder - ROLE_CONFIG[(b.value as string).toUpperCase() as UserRole].sortOrder)
 
 /** @deprecated Use MODULE_ROLES + module keys */
 export const MODULE_ROLES: Record<string, UserRole[]> = {

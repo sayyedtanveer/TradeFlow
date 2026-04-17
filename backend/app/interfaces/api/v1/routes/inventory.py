@@ -113,7 +113,7 @@ async def list_materials(
     category: Optional[str] = Query(None),
     is_active: Optional[bool] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
 ):
     container = get_container(request)
     async with container.session_factory() as session:

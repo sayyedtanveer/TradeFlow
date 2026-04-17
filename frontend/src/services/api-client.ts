@@ -14,7 +14,7 @@ export default apiClient
  * Extract user-friendly error message from API response
  * Handles Pydantic validation errors, standard error responses, etc.
  */
-function extractErrorMessage(error: AxiosError<any>): string {
+export function extractErrorMessage(error: AxiosError<any>): string {
   if (!error.response) {
     return error.message || "Network error. Please check your connection."
   }
@@ -59,13 +59,23 @@ function extractErrorMessage(error: AxiosError<any>): string {
   return error.response.statusText || "An error occurred"
 }
 
-// Request interceptor: attach token
+// Request interceptor: attach token and clean up params
 apiClient.interceptors.request.use(
   (config) => {
     const { token } = useAuthStore.getState()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    
+    // Remove empty/null query parameters to prevent backend validation errors
+    if (config.params) {
+      Object.keys(config.params).forEach(key => {
+        if (config.params[key] === null || config.params[key] === undefined || config.params[key] === '') {
+          delete config.params[key]
+        }
+      })
+    }
+    
     return config
   },
   (error) => Promise.reject(error)

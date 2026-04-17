@@ -9,10 +9,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FormSkeleton } from "@/components/shared/LoadingSkeleton"
-import { Save } from "lucide-react"
+import { Save, Copy, Check } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Drawer } from "@/components/shared/Drawer"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
+import { useToast } from "@/hooks/use-toast"
 
 const userSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -32,7 +33,11 @@ interface Props {
 
 export function UserFormDrawer({ userId, open, onClose }: Props) {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
   const isEditing = Boolean(userId && userId !== "new")
+  
+  const [tempPassword, setTempPassword] = useState<string | null>(null)
+  const [copiedPassword, setCopiedPassword] = useState(false)
 
   const { data: user, isLoading: isFetching } = useQuery({
     queryKey: ["user", userId],
@@ -46,7 +51,7 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
       email: "",
       first_name: "",
       last_name: "",
-      role: "OPERATOR",
+      role: "operator",
       is_active: true,
     }
   })
@@ -66,11 +71,27 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
         email: "",
         first_name: "",
         last_name: "",
-        role: "OPERATOR",
+        role: "operator",
         is_active: true,
       })
     }
   }, [user, userId, reset])
+
+  // Reset temp password and copy state when drawer opens/closes
+  useEffect(() => {
+    if (!open) {
+      setTempPassword(null)
+      setCopiedPassword(false)
+    }
+  }, [open])
+
+  const copyToClipboard = () => {
+    if (tempPassword) {
+      navigator.clipboard.writeText(tempPassword)
+      setCopiedPassword(true)
+      setTimeout(() => setCopiedPassword(false), 2000)
+    }
+  }
 
   const saveMutation = useMutation({
     mutationFn: async (data: UserFormValues) => {
@@ -80,11 +101,95 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
         return usersService.createUser(data)
       }
     },
-    onSuccess: () => {
+    onSuccess: (response: any) => {
       queryClient.invalidateQueries({ queryKey: ["users"] })
-      onClose()
+      
+      if (!isEditing && response?.temporary_password) {
+        // Show temporary password for new user
+        setTempPassword(response.temporary_password)
+        toast({
+          title: "User Created Successfully",
+          description: "Share the temporary password with the user. They will be prompted to change it on first login.",
+          variant: "default",
+        })
+      } else {
+        toast({
+          title: "Success",
+          description: isEditing ? "User updated successfully" : "User created successfully",
+        })
+        saveMutation.reset()
+        onClose()
+      }
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.detail || error?.message || "Failed to save user"
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive",
+      })
+      saveMutation.reset()
     }
   })
+
+  // Show temporary password screen
+  if (tempPassword) {
+    return (
+      <Drawer 
+        open={open} 
+        onOpenChange={(v) => !v && onClose()} 
+        title="User Created Successfully"
+        description="Your new team member's login credentials are ready."
+      >
+        <div className="space-y-6 pb-8">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+            <p className="text-sm text-gray-700">
+              Share these credentials with the new user. They will be prompted to change their password on first login.
+            </p>
+            
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Temporary Password</Label>
+              <div className="flex items-center gap-2 bg-white border border-gray-300 rounded px-3 py-2">
+                <code className="flex-1 font-mono text-sm text-gray-800 break-all">{tempPassword}</code>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={copyToClipboard}
+                  className="shrink-0"
+                >
+                  {copiedPassword ? (
+                    <Check className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            <div className="bg-yellow-50 border border-yellow-300 rounded p-3">
+              <p className="text-xs text-yellow-800">
+                <strong>Important:</strong> The password is only shown once. Make sure to share it with the user securely.
+              </p>
+            </div>
+          </div>
+
+          <div className="pt-4 flex gap-3 w-full sm:justify-end">
+            <Button 
+              type="button" 
+              onClick={() => {
+                setTempPassword(null)
+                onClose()
+              }}
+              className="w-full sm:w-auto"
+            >
+              Done
+            </Button>
+          </div>
+        </div>
+      </Drawer>
+    )
+  }
 
   const onSubmit = (data: UserFormValues) => {
     saveMutation.mutate(data)

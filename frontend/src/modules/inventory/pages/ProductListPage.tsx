@@ -8,27 +8,48 @@ import { StatusBadge } from "@/components/shared/StatusBadge"
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Plus, ScanBarcode } from "lucide-react"
+import { Plus, ScanBarcode, AlertCircle } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 import { ColumnDef } from "@tanstack/react-table"
 import { usePermissions } from "@/hooks/usePermissions"
 import { ProductFormDrawer } from "../components/ProductFormDrawer"
+import { useToast } from "@/hooks/use-toast"
 
 export default function ProductListPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { canWrite } = usePermissions()
+  const { toast } = useToast()
   
   const productId = searchParams.get("productId")
+  const filter = searchParams.get("filter")
   const isDrawerOpen = productId !== null
 
   const handleCloseDrawer = () => {
     setSearchParams({})
   }
 
-  const { data: products, isLoading } = useQuery({
+  const { data: products, isLoading, error, isError } = useQuery({
     queryKey: ["products"],
     queryFn: () => inventoryService.getProducts(),
   })
+
+  // Show error toast if query fails
+  if (isError && error && !isLoading) {
+    toast({
+      title: "Error loading products",
+      description: error instanceof Error ? error.message : "Failed to load products. Please try again.",
+      variant: "destructive",
+    })
+  }
+
+  // Filter products based on query parameters
+  const filteredProducts = useMemo(() => {
+    if (!products) return []
+    if (filter === "low-stock") {
+      return products.filter(p => (p.stock_quantity ?? 0) <= p.reorder_point)
+    }
+    return products
+  }, [products, filter])
 
   // Define columns for TanStack Table
   const columns = useMemo<ColumnDef<Product>[]>(() => [
@@ -105,6 +126,26 @@ export default function ProductListPage() {
         action={actionButtons}
       />
 
+      {isError && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 p-4 flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="font-medium text-destructive">Failed to load products</p>
+            <p className="text-sm text-destructive/80 mt-1">
+              {error instanceof Error ? error.message : "An error occurred while loading products. Please try again."}
+            </p>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => window.location.reload()}
+            className="mt-0"
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
       {isLoading ? (
         <TableSkeleton rows={8} />
       ) : (
@@ -112,13 +153,13 @@ export default function ProductListPage() {
           <div className="hidden md:block">
             <DataTable 
               columns={columns} 
-              data={products || []} 
+              data={filteredProducts || []} 
               searchKey="name" 
               searchPlaceholder="Search products by name..."
             />
           </div>
           <div className="md:hidden grid gap-4 grid-cols-1 sm:grid-cols-2">
-            {(products || []).map((product) => {
+            {(filteredProducts || []).map((product) => {
               const qty = product.stock_quantity ?? 0;
               const isLow = qty <= product.reorder_point;
               

@@ -1,6 +1,6 @@
 import { apiClient } from "./api-client"
 
-const BASE = "/api/v1"
+const BASE = ""
 
 export type Supplier = {
   id: string

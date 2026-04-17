@@ -38,6 +38,9 @@ class SupplierResponse(BaseModel):
     contact_person: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    address: Optional[str] = None
+    gst: Optional[str] = None
+    payment_terms: Optional[str] = None
     is_active: bool
 
     class Config:

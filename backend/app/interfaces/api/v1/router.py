@@ -5,6 +5,7 @@ from backend.app.core.module_registry import module_registry
 from backend.app.interfaces.api.v1.dependencies.auth import get_current_role
 
 from backend.app.interfaces.api.v1.routes.auth import router as auth_router
+from backend.app.interfaces.api.v1.routes.self_service_password_reset_router import router as password_reset_router
 from backend.app.interfaces.api.v1.routes.tenants import router as tenants_router
 from backend.app.interfaces.api.v1.routes.files import router as files_router
 from backend.app.interfaces.api.v1.routes.inventory import router as inventory_router
@@ -26,11 +27,14 @@ from backend.app.interfaces.api.v1.routes.mrp import router as mrp_router
 
 from backend.app.interfaces.api.v1.routes.inventory_extended import router as inventory_extended_router
 from backend.app.interfaces.api.v1.routes.rbac_admin import router as rbac_admin_router
+from backend.app.interfaces.api.v1.routes.users import router as users_router
 
 api_v1_router = APIRouter()
 
 api_v1_router.include_router(rbac_admin_router)
+api_v1_router.include_router(users_router)
 api_v1_router.include_router(auth_router)
+api_v1_router.include_router(password_reset_router)
 api_v1_router.include_router(tenants_router)
 api_v1_router.include_router(files_router)
 api_v1_router.include_router(inventory_router)

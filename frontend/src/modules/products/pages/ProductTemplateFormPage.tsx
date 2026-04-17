@@ -57,9 +57,13 @@ export default function ProductTemplateFormPage() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["products", "templates"] })
       toast.success(isNew ? "Template created" : "Template updated")
-      if (isNew) navigate(`/products/${data.id}`, { replace: true })
+      mutation.reset()
+      navigate(`/products/${data.id}`, { replace: true })
     },
-    onError: (err: any) => toast.error(err?.response?.data?.detail || "Failed to save template")
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Failed to save template")
+      mutation.reset()
+    }
   })
 
   const save = () => {

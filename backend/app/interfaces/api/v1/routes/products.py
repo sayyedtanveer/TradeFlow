@@ -33,6 +33,12 @@ from backend.app.application.product.commands.product_commands import (
     CreateItemVariantCommand,
     UpdateItemVariantCommand,
 )
+from backend.app.application.product.commands.product_image_commands import (
+    UploadProductImageCommand,
+    DeleteProductImageCommand,
+    SetPrimaryImageCommand,
+    ReorderImageCommand,
+)
 from backend.app.application.product.handlers.product_handlers import (
     CreateItemTemplateHandler,
     UpdateItemTemplateHandler,
@@ -60,6 +66,7 @@ from backend.app.infrastructure.persistence.repositories.item_template_repositor
 from backend.app.infrastructure.persistence.repositories.item_variant_repository import ItemVariantRepository
 from backend.app.infrastructure.persistence.repositories.product_image_repository import ProductImageRepository
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
+from backend.app.domain.product.value_objects.product_status import ProductStatus
 from backend.app.interfaces.api.v1.dependencies.auth import (
     get_container,
     get_current_tenant_id,
@@ -102,6 +109,7 @@ def _template_from_result(r) -> ItemTemplateResponse:
         category_id=uuid.UUID(r.category_id) if r.category_id else None,
         base_unit_id=uuid.UUID(r.base_unit_id) if r.base_unit_id else None,
         attributes=r.attributes,
+        status=r.status,
         is_active=r.is_active,
     )
 
@@ -523,9 +531,10 @@ async def change_product_status(
     try:
         new_status = ProductStatus(body.new_status)
     except ValueError:
+        valid_statuses = [str(s.value) for s in ProductStatus]
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid status. Must be one of: {', '.join(s.value for s in ProductStatus)}"
+            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
         )
 
     container = get_container(request)
@@ -598,8 +607,8 @@ async def delete_template(
 )
 async def upload_template_image(
     template_id: uuid.UUID,
+    request: Request,
     file: UploadFile = File(...),
-    request: Request = None,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
@@ -640,15 +649,14 @@ async def upload_template_image(
         file_data = await file.read()
 
         # Store file
-        storage = get_file_storage()
-        file_path, file_size_stored = await storage.upload(
+        container = get_container(request)
+        file_path, file_size_stored = await container.storage_service.upload(
             file_data=file_data,
             file_name=file.filename or "image",
             tenant_id=tenant_id,
         )
 
         # Save image metadata
-        container = get_container(request)
         async with container.session_factory() as session:
             img_repo = ProductImageRepository(session)
             uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
@@ -693,9 +701,9 @@ async def upload_template_image(
 )
 async def upload_variant_image(
     variant_id: uuid.UUID,
+    request: Request,
     template_id: uuid.UUID = Query(..., description="Parent template ID"),
     file: UploadFile = File(...),
-    request: Request = None,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
@@ -720,14 +728,13 @@ async def upload_variant_image(
 
     try:
         file_data = await file.read()
-        storage = get_file_storage()
-        file_path, file_size_stored = await storage.upload(
+        container = get_container(request)
+        file_path, file_size_stored = await container.storage_service.upload(
             file_data=file_data,
             file_name=file.filename or "image",
             tenant_id=tenant_id,
         )
 
-        container = get_container(request)
         async with container.session_factory() as session:
             img_repo = ProductImageRepository(session)
             uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
@@ -966,9 +973,8 @@ async def delete_image(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found.")
 
         # Delete from storage
-        storage = get_file_storage()
         try:
-            await storage.delete(image.file_path, tenant_id)
+            await container.storage_service.delete(image.file_path, tenant_id)
         except Exception as e:
             # Log error but don't fail the request
             pass

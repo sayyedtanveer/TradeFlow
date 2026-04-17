@@ -48,7 +48,7 @@ export default function UserFormPage() {
       email: "",
       first_name: "",
       last_name: "",
-      role: "OPERATOR",
+      role: "operator",
       is_active: true,
     }
   })

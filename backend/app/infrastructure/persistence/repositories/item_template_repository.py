@@ -18,6 +18,15 @@ class ItemTemplateRepository(BaseRepository[ItemTemplate, ItemTemplateModel]):
         return ItemTemplateModel
 
     def _to_entity(self, model: ItemTemplateModel) -> ItemTemplate:
+        from backend.app.domain.product.value_objects.product_status import ProductStatus
+        # Convert status string to uppercase to ensure it matches ProductStatus enum values
+        status_value = (model.status or 'ACTIVE').upper()
+        try:
+            status = ProductStatus(status_value)
+        except ValueError:
+            # Fallback to ACTIVE if status value is invalid
+            status = ProductStatus.ACTIVE
+        
         return ItemTemplate(
             id=model.id,
             tenant_id=model.tenant_id,
@@ -27,6 +36,7 @@ class ItemTemplateRepository(BaseRepository[ItemTemplate, ItemTemplateModel]):
             category_id=model.category_id,
             base_unit_id=model.base_unit_id,
             attributes=model.attributes or [],
+            status=status,
             is_active=model.is_active,
             is_deleted=model.is_deleted,
             deleted_at=model.deleted_at,
@@ -44,6 +54,7 @@ class ItemTemplateRepository(BaseRepository[ItemTemplate, ItemTemplateModel]):
             category_id=entity.category_id,
             base_unit_id=entity.base_unit_id,
             attributes=entity.attributes,
+            status=entity.status.value,
             is_active=entity.is_active,
             is_deleted=entity.is_deleted,
             deleted_at=entity.deleted_at,
