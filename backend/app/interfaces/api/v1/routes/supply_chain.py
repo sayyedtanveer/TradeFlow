@@ -13,6 +13,7 @@ from backend.app.application.manufacturing.services.inventory_service import Inv
 from backend.app.application.supply_chain.po_number_service import PONumberService
 from backend.app.application.supply_chain.subcontract_number_service import SubcontractNumberService
 from backend.app.infrastructure.persistence.models.location_model import LocationModel
+from backend.app.infrastructure.persistence.models.inventory_transaction_model import InventoryTransactionModel
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.infrastructure.persistence.models.material_request_model import MaterialRequestModel
 from backend.app.infrastructure.persistence.models.purchase_order_model import PurchaseOrderLineModel, PurchaseOrderModel
@@ -25,11 +26,14 @@ from backend.app.infrastructure.persistence.models.quality_model import (
 from backend.app.infrastructure.persistence.models.stock_level_model import StockLevelModel
 from backend.app.infrastructure.persistence.models.subcontract_model import SubcontractMaterialIssueModel, SubcontractOrderModel
 from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel
-from backend.app.interfaces.api.v1.dependencies.auth import get_container, get_current_tenant_id, get_current_user_id
+from backend.app.interfaces.api.v1.dependencies.auth import get_container, get_current_role, get_current_tenant_id, get_current_user_id
 from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.interfaces.api.v1.dependencies.supplier_portal import require_supplier_id
 from backend.app.interfaces.api.v1.schemas.supply_chain_schemas import (
     GoodsReceiptRequest,
+    MaterialRequestCreate,
+    MaterialRequestResponse,
+    MaterialRequestUpdate,
     NCRCreateRequest,
     PurchaseOrderCreate,
     QualityInspectRequest,
@@ -115,21 +119,50 @@ async def _subcontractor_location(session, tenant_id: uuid.UUID, supplier_id: uu
 # ── Suppliers (tenant) ────────────────────────────────────────────────────────
 
 
-@router.get("/suppliers", response_model=List[SupplierResponse])
+@router.get("/suppliers")
 async def list_suppliers(
     request: Request,
+    search: Optional[str] = Query(None, description="Search by code or name"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ):
+    """List suppliers with pagination and filtering."""
     container = get_container(request)
     async with container.session_factory() as session:
-        stmt = (
-            select(SupplierModel)
-            .where(SupplierModel.tenant_id == tenant_id, SupplierModel.is_deleted.is_(False))
-            .order_by(SupplierModel.code)
+        query = select(SupplierModel).where(
+            SupplierModel.tenant_id == tenant_id,
+            SupplierModel.is_deleted.is_(False),
         )
-        r = await session.execute(stmt)
+        
+        # Apply search filter
+        if search:
+            search_term = f"%{search}%"
+            query = query.where(
+                (SupplierModel.code.ilike(search_term)) | (SupplierModel.name.ilike(search_term))
+            )
+        
+        # Apply active status filter
+        if is_active is not None:
+            query = query.where(SupplierModel.is_active == is_active)
+        
+        # Count total
+        count_stmt = select(func.count(SupplierModel.id)).select_from(query.subquery())
+        total = await session.execute(count_stmt)
+        total_count = total.scalar_one()
+        
+        # Paginate
+        query = query.order_by(SupplierModel.code).offset(skip).limit(limit)
+        r = await session.execute(query)
         rows = r.scalars().all()
-    return [SupplierResponse.model_validate(x) for x in rows]
+    
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "items": [SupplierResponse.model_validate(x) for x in rows],
+    }
 
 
 @router.post(
@@ -142,6 +175,7 @@ async def create_supplier(
     body: SupplierCreate,
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     container = get_container(request)
     async with container.session_factory() as session:
@@ -165,6 +199,8 @@ async def create_supplier(
             address=body.address,
             gst=body.gst,
             payment_terms=body.payment_terms,
+            created_by=user_id,
+            updated_by=user_id,
         )
         session.add(s)
         await session.commit()
@@ -182,6 +218,7 @@ async def update_supplier(
     body: SupplierUpdate,
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     container = get_container(request)
     async with container.session_factory() as session:
@@ -191,31 +228,110 @@ async def update_supplier(
         data = body.model_dump(exclude_unset=True)
         for k, v in data.items():
             setattr(s, k, v)
+        s.updated_by = user_id
         s.updated_at = datetime.now(timezone.utc)
         await session.commit()
         await session.refresh(s)
     return SupplierResponse.model_validate(s)
 
 
-# ── Purchase orders ───────────────────────────────────────────────────────────
-
-
-@router.get("/purchase-orders")
-async def list_purchase_orders(
+@router.delete(
+    "/suppliers/{supplier_id}",
+    dependencies=[Depends(require_permission("procurement:write"))],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_supplier(
+    supplier_id: uuid.UUID,
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ):
+    """Delete supplier (soft-delete). Cannot delete if supplier has active POs."""
     container = get_container(request)
     async with container.session_factory() as session:
-        stmt = (
-            select(PurchaseOrderModel)
-            .options(selectinload(PurchaseOrderModel.lines))
-            .where(PurchaseOrderModel.tenant_id == tenant_id, PurchaseOrderModel.is_deleted.is_(False))
-            .order_by(PurchaseOrderModel.created_at.desc())
+        s = await session.get(SupplierModel, supplier_id)
+        if not s or s.tenant_id != tenant_id or s.is_deleted:
+            raise HTTPException(status_code=404, detail="Supplier not found")
+        
+        # Check if supplier has active (non-soft-deleted) POs
+        stmt = select(PurchaseOrderModel.id).where(
+            PurchaseOrderModel.supplier_id == supplier_id,
+            PurchaseOrderModel.tenant_id == tenant_id,
+            PurchaseOrderModel.is_deleted.is_(False),
         )
-        r = await session.execute(stmt)
+        result = await session.execute(stmt)
+        if result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete supplier with active purchase orders. Archive or delete the POs first.",
+            )
+        
+        # Soft delete the supplier
+        s.is_deleted = True
+        s.deleted_at = datetime.now(timezone.utc)
+        await session.commit()
+    return None
+
+
+# ── Purchase orders ───────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/purchase-orders",
+    dependencies=[Depends(require_permission("procurement:read"))],
+)
+async def list_purchase_orders(
+    request: Request,
+    po_status: Optional[str] = Query(None, alias="status", description="Filter by status: draft, sent, acknowledged, partial, received, cancelled"),
+    supplier_id: Optional[uuid.UUID] = Query(None, description="Filter by supplier"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    _role: str = Depends(get_current_role),
+):
+    """List purchase orders with pagination and filtering.
+    
+    SECURITY: Supplier-role users are blocked here — they must use GET /supplier/purchase-orders instead.
+    Both endpoints are properly scoped to prevent cross-supplier data leakage.
+    """
+    # SECURITY: Supplier-role users have procurement:read but must NOT access the tenant-wide list.
+    # The /supplier/purchase-orders endpoint enforces JWT-derived supplier_id isolation.
+    if _role == "supplier":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Supplier users must use GET /supplier/purchase-orders to view their orders",
+        )
+    container = get_container(request)
+    async with container.session_factory() as session:
+        query = select(PurchaseOrderModel).where(
+            PurchaseOrderModel.tenant_id == tenant_id,
+            PurchaseOrderModel.is_deleted.is_(False),
+        )
+        
+        # Apply status filter
+        if po_status:
+            query = query.where(PurchaseOrderModel.status == po_status)
+        
+        # Apply supplier filter
+        if supplier_id:
+            query = query.where(PurchaseOrderModel.supplier_id == supplier_id)
+        
+        # Count total
+        count_stmt = select(func.count(PurchaseOrderModel.id)).select_from(query.subquery())
+        total = await session.execute(count_stmt)
+        total_count = total.scalar_one()
+        
+        # Paginate
+        query = query.order_by(PurchaseOrderModel.created_at.desc()).offset(skip).limit(limit)
+        query = query.options(selectinload(PurchaseOrderModel.lines))
+        r = await session.execute(query)
         pos = r.scalars().unique().all()
-    return [_po_to_dict(p) for p in pos]
+    
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "items": [_po_to_dict(p) for p in pos],
+    }
 
 
 @router.get("/purchase-orders/{po_id}")
@@ -242,6 +358,44 @@ async def get_purchase_order(
     return _po_to_dict(p)
 
 
+@router.get("/purchase-orders/{po_id}/receipts")
+async def get_purchase_order_receipts(
+    po_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Get all Goods Receipt Notes (GRN) / inventory transactions for this PO."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        stmt = (
+            select(InventoryTransactionModel, MaterialModel.code, MaterialModel.name)
+            .join(MaterialModel, MaterialModel.id == InventoryTransactionModel.material_id)
+            .where(
+                InventoryTransactionModel.tenant_id == tenant_id,
+                InventoryTransactionModel.reference_type == "purchase_order",
+                InventoryTransactionModel.reference_id == po_id,
+                InventoryTransactionModel.transaction_type == "receipt",
+                InventoryTransactionModel.is_deleted.is_(False),
+            )
+            .order_by(InventoryTransactionModel.created_at.desc())
+        )
+        r = await session.execute(stmt)
+        rows = r.all()
+        
+    return [
+        {
+            "id": str(tx.id),
+            "material_id": str(tx.material_id),
+            "material_code": code,
+            "material_name": name,
+            "quantity": float(tx.quantity),
+            "created_at": tx.created_at.isoformat(),
+            "remarks": tx.remarks,
+        }
+        for tx, code, name in rows
+    ]
+
+
 @router.post(
     "/purchase-orders",
     status_code=status.HTTP_201_CREATED,
@@ -257,6 +411,12 @@ async def create_purchase_order(
     async with container.session_factory() as session:
         if not body.lines:
             raise HTTPException(status_code=400, detail="At least one PO line is required")
+        
+        # CRITICAL: Validate supplier belongs to current tenant
+        supplier = await session.get(SupplierModel, body.supplier_id)
+        if not supplier or supplier.tenant_id != tenant_id or supplier.is_deleted:
+            raise HTTPException(status_code=404, detail="Supplier not found")
+        
         po_svc = PONumberService(session)
         po_number = await po_svc.generate(tenant_id)
         total = Decimal("0")
@@ -275,6 +435,11 @@ async def create_purchase_order(
         session.add(po)
         await session.flush()
         for line in body.lines:
+            # CRITICAL: Validate material belongs to current tenant
+            material = await session.get(MaterialModel, line.material_id)
+            if not material or material.tenant_id != tenant_id or material.is_deleted:
+                raise HTTPException(status_code=404, detail="Material not found")
+            
             lt = Decimal(str(line.quantity)) * Decimal(str(line.unit_price))
             total += lt
             pl = PurchaseOrderLineModel(
@@ -291,6 +456,111 @@ async def create_purchase_order(
         po.total_amount = float(total)
         await session.commit()
     return {"id": str(po.id), "po_number": po.po_number}
+
+
+@router.put(
+    "/purchase-orders/{po_id}",
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
+async def update_purchase_order(
+    po_id: uuid.UUID,
+    body: dict,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Update PO (only when in draft status). Can update notes, expected_delivery, etc."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        po = await session.get(PurchaseOrderModel, po_id)
+        if not po or po.tenant_id != tenant_id or po.is_deleted:
+            raise HTTPException(status_code=404, detail="PO not found")
+        
+        # Only allow editing draft POs
+        if po.status != "draft":
+            raise HTTPException(status_code=400, detail="Only draft POs can be edited")
+        
+        # Update allowed fields
+        if "notes" in body:
+            po.notes = body.get("notes")
+        if "expected_delivery" in body:
+            edate = body.get("expected_delivery")
+            if isinstance(edate, str):
+                edate = datetime.fromisoformat(edate).date()
+            po.expected_delivery = edate
+        
+        po.updated_at = datetime.now(timezone.utc)
+        po.updated_by = user_id
+        await session.commit()
+        await session.refresh(po, ["lines"])
+    
+    return _po_to_dict(po)
+
+
+@router.delete(
+    "/purchase-orders/{po_id}",
+    dependencies=[Depends(require_permission("procurement:write"))],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_purchase_order(
+    po_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Delete PO (soft-delete, only in draft status)."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        po = await session.get(PurchaseOrderModel, po_id)
+        if not po or po.tenant_id != tenant_id or po.is_deleted:
+            raise HTTPException(status_code=404, detail="PO not found")
+        
+        # Only allow deleting draft POs
+        if po.status != "draft":
+            raise HTTPException(status_code=400, detail="Only draft POs can be deleted")
+        
+        # Soft delete the PO
+        po.is_deleted = True
+        await session.commit()
+    return None
+
+
+@router.put(
+    "/purchase-orders/{po_id}/cancel",
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
+async def cancel_purchase_order(
+    po_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Cancel PO. Can only cancel POs that haven't been fully received."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        stmt = (
+            select(PurchaseOrderModel)
+            .options(selectinload(PurchaseOrderModel.lines))
+            .where(
+                PurchaseOrderModel.id == po_id,
+                PurchaseOrderModel.tenant_id == tenant_id,
+                PurchaseOrderModel.is_deleted.is_(False),
+            )
+        )
+        r = await session.execute(stmt)
+        po = r.scalar_one_or_none()
+        if not po:
+            raise HTTPException(status_code=404, detail="PO not found")
+        
+        # Cannot cancel if fully received
+        if po.status == "received":
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot cancel a fully received PO. Create a credit note or return instead.",
+            )
+        
+        po.status = "cancelled"
+        po.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+    return {"status": "cancelled"}
 
 
 @router.put(
@@ -422,6 +692,409 @@ async def receive_goods(
         po.updated_at = datetime.now(timezone.utc)
         await session.commit()
     return {"status": "ok"}
+
+
+@router.put(
+    "/purchase-orders/{po_id}/lines/{line_id}",
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
+async def update_po_line(
+    po_id: uuid.UUID,
+    line_id: uuid.UUID,
+    body: dict,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Update PO line (only when PO is in draft status)."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        po = await session.get(PurchaseOrderModel, po_id)
+        if not po or po.tenant_id != tenant_id or po.is_deleted:
+            raise HTTPException(status_code=404, detail="PO not found")
+        
+        # Only allow editing draft POs
+        if po.status != "draft":
+            raise HTTPException(status_code=400, detail="Only draft POs can be edited")
+        
+        # Find the line
+        line = None
+        for lin in po.lines:
+            if lin.id == line_id and not lin.is_deleted:
+                line = lin
+                break
+        
+        if not line:
+            raise HTTPException(status_code=404, detail="Line not found")
+        
+        # Update allowed fields
+        if "quantity" in body:
+            new_qty = float(body.get("quantity"))
+            if new_qty <= 0:
+                raise HTTPException(status_code=400, detail="Quantity must be > 0")
+            line.quantity = new_qty
+        
+        if "unit_price" in body:
+            new_price = float(body.get("unit_price"))
+            if new_price < 0:
+                raise HTTPException(status_code=400, detail="Unit price cannot be negative")
+            line.unit_price = new_price
+        
+        # Recalculate line total
+        line.line_total = float(Decimal(str(line.quantity)) * Decimal(str(line.unit_price)))
+        
+        # Recalculate PO total
+        total = Decimal("0")
+        for lin in po.lines:
+            if not lin.is_deleted:
+                total += Decimal(str(lin.line_total or 0))
+        po.total_amount = float(total)
+        po.updated_at = datetime.now(timezone.utc)
+        
+        await session.commit()
+    
+    return {
+        "id": str(line.id),
+        "material_id": str(line.material_id),
+        "quantity": line.quantity,
+        "unit_price": line.unit_price,
+        "line_total": line.line_total,
+    }
+
+
+@router.delete(
+    "/purchase-orders/{po_id}/lines/{line_id}",
+    dependencies=[Depends(require_permission("procurement:write"))],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_po_line(
+    po_id: uuid.UUID,
+    line_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Delete PO line (soft-delete, only when PO is in draft status)."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        po = await session.get(PurchaseOrderModel, po_id)
+        if not po or po.tenant_id != tenant_id or po.is_deleted:
+            raise HTTPException(status_code=404, detail="PO not found")
+        
+        # Only allow editing draft POs
+        if po.status != "draft":
+            raise HTTPException(status_code=400, detail="Only draft POs can be edited")
+        
+        # Find the line
+        line = None
+        for lin in po.lines:
+            if lin.id == line_id and not lin.is_deleted:
+                line = lin
+                break
+        
+        if not line:
+            raise HTTPException(status_code=404, detail="Line not found")
+        
+        # Soft delete the line
+        line.is_deleted = True
+        
+        # Recalculate PO total (excluding deleted lines)
+        total = Decimal("0")
+        for lin in po.lines:
+            if not lin.is_deleted:
+                total += Decimal(str(lin.line_total or 0))
+        po.total_amount = float(total)
+        po.updated_at = datetime.now(timezone.utc)
+        
+        await session.commit()
+    return None
+
+
+# ── Material Requests ─────────────────────────────────────────────────────────
+
+
+@router.get("/material-requests")
+async def list_material_requests(
+    request: Request,
+    status: Optional[str] = Query(None, description="Filter by status: open, fulfilled, cancelled"),
+    item_type: Optional[str] = Query(None, description="Filter by item_type: material, component, product"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """List material requests with pagination and filtering."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        query = select(MaterialRequestModel).where(
+            MaterialRequestModel.tenant_id == tenant_id,
+            MaterialRequestModel.is_deleted.is_(False),
+        )
+        if status:
+            query = query.where(MaterialRequestModel.status == status)
+        if item_type:
+            query = query.where(MaterialRequestModel.item_type == item_type)
+        
+        # Count total
+        count_stmt = select(func.count(MaterialRequestModel.id)).select_from(query.subquery())
+        total = await session.execute(count_stmt)
+        total_count = total.scalar_one()
+        
+        # Paginate
+        query = query.order_by(MaterialRequestModel.created_at.desc()).offset(skip).limit(limit)
+        r = await session.execute(query)
+        reqs = r.scalars().all()
+    
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "items": [MaterialRequestResponse.model_validate(x) for x in reqs],
+    }
+
+
+@router.get("/material-requests/{mr_id}", response_model=MaterialRequestResponse)
+async def get_material_request(
+    mr_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Get a specific material request."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        mr = await session.get(MaterialRequestModel, mr_id)
+        if not mr or mr.tenant_id != tenant_id or mr.is_deleted:
+            raise HTTPException(status_code=404, detail="Material request not found")
+    return MaterialRequestResponse.model_validate(mr)
+
+
+@router.post(
+    "/material-requests",
+    response_model=MaterialRequestResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
+async def create_material_request(
+    body: MaterialRequestCreate,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Create a new material request."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        # Validate the item exists in the current tenant
+        if body.item_type == "material":
+            item = await session.get(MaterialModel, body.item_id)
+            if not item or item.tenant_id != tenant_id or item.is_deleted:
+                raise HTTPException(status_code=404, detail="Material not found")
+        # Can extend to validate other item_types (component, product) as needed
+        
+        mr = MaterialRequestModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            item_id=body.item_id,
+            item_type=body.item_type,
+            required_quantity=float(body.required_quantity),
+            required_by=body.required_by,
+            status="open",
+            source_ref_type=body.source_ref_type,
+            source_ref_id=body.source_ref_id,
+        )
+        session.add(mr)
+        await session.commit()
+        await session.refresh(mr)
+    return MaterialRequestResponse.model_validate(mr)
+
+
+@router.put(
+    "/material-requests/{mr_id}",
+    response_model=MaterialRequestResponse,
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
+async def update_material_request(
+    mr_id: uuid.UUID,
+    body: MaterialRequestUpdate,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Update a material request (only if status is open)."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        mr = await session.get(MaterialRequestModel, mr_id)
+        if not mr or mr.tenant_id != tenant_id or mr.is_deleted:
+            raise HTTPException(status_code=404, detail="Material request not found")
+        
+        if mr.status != "open":
+            raise HTTPException(status_code=400, detail="Can only update open material requests")
+        
+        if body.required_quantity is not None:
+            mr.required_quantity = float(body.required_quantity)
+        if body.required_by is not None:
+            mr.required_by = body.required_by
+        
+        await session.commit()
+        await session.refresh(mr)
+    return MaterialRequestResponse.model_validate(mr)
+
+
+@router.delete(
+    "/material-requests/{mr_id}",
+    dependencies=[Depends(require_permission("procurement:write"))],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_material_request(
+    mr_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Delete material request (soft-delete, only if status is open)."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        mr = await session.get(MaterialRequestModel, mr_id)
+        if not mr or mr.tenant_id != tenant_id or mr.is_deleted:
+            raise HTTPException(status_code=404, detail="Material request not found")
+        
+        if mr.status != "open":
+            raise HTTPException(status_code=400, detail="Can only delete open material requests")
+        
+        mr.is_deleted = True
+        mr.deleted_at = datetime.now(timezone.utc)
+        await session.commit()
+    return None
+
+
+# ── GRN (Goods Receipt Notes) ─────────────────────────────────────────────────
+
+
+@router.get("/grn")
+async def list_grns(
+    request: Request,
+    purchase_order_id: Optional[uuid.UUID] = Query(None, description="Filter by PO"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """List all GRNs (goods receipts) for current tenant, optionally filtered by PO."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        query = select(InventoryTransactionModel).where(
+            InventoryTransactionModel.tenant_id == tenant_id,
+            InventoryTransactionModel.reference_type == "purchase_receipt",
+            InventoryTransactionModel.is_deleted.is_(False),
+        )
+        if purchase_order_id:
+            query = query.where(InventoryTransactionModel.reference_id == purchase_order_id)
+        
+        # Total count
+        count_stmt = select(func.count(InventoryTransactionModel.id)).select_from(query.subquery())
+        total = await session.execute(count_stmt)
+        total_count = total.scalar_one()
+        
+        # Paginated results
+        query = query.order_by(InventoryTransactionModel.created_at.desc()).offset(skip).limit(limit)
+        r = await session.execute(query)
+        transactions = r.scalars().all()
+    
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "items": [
+            {
+                "id": str(t.id),
+                "material_id": str(t.material_id),
+                "quantity": float(t.quantity),
+                "unit_id": str(t.unit_id) if t.unit_id else None,
+                "from_location_id": str(t.from_location_id) if t.from_location_id else None,
+                "to_location_id": str(t.to_location_id) if t.to_location_id else None,
+                "purchase_order_id": str(t.reference_id) if t.reference_type == "purchase_receipt" else None,
+                "remarks": t.remarks,
+                "created_by": str(t.created_by),
+                "created_at": t.created_at.isoformat(),
+            }
+            for t in transactions
+        ],
+    }
+
+
+@router.get("/grn/{grn_id}")
+async def get_grn(
+    grn_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Get a specific GRN by ID."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        t = await session.get(InventoryTransactionModel, grn_id)
+        if not t or t.tenant_id != tenant_id or t.is_deleted or t.reference_type != "purchase_receipt":
+            raise HTTPException(status_code=404, detail="GRN not found")
+        
+        # Get material and PO details
+        material = await session.get(MaterialModel, t.material_id)
+        po = await session.get(PurchaseOrderModel, t.reference_id) if t.reference_id else None
+    
+    return {
+        "id": str(t.id),
+        "material_id": str(t.material_id),
+        "material_code": material.code if material else None,
+        "material_name": material.name if material else None,
+        "quantity": float(t.quantity),
+        "unit_id": str(t.unit_id) if t.unit_id else None,
+        "from_location_id": str(t.from_location_id) if t.from_location_id else None,
+        "to_location_id": str(t.to_location_id) if t.to_location_id else None,
+        "purchase_order_id": str(t.reference_id) if t.reference_id else None,
+        "purchase_order_number": po.po_number if po else None,
+        "remarks": t.remarks,
+        "created_by": str(t.created_by),
+        "created_at": t.created_at.isoformat(),
+    }
+
+
+@router.post("/grn/{grn_id}/reverse", dependencies=[Depends(require_permission("procurement:write"))])
+async def reverse_grn(
+    grn_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Reverse a GRN (create a counter-receipt transaction)."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        original_grn = await session.get(InventoryTransactionModel, grn_id)
+        if not original_grn or original_grn.tenant_id != tenant_id or original_grn.is_deleted:
+            raise HTTPException(status_code=404, detail="GRN not found")
+        if original_grn.reference_type != "purchase_receipt":
+            raise HTTPException(status_code=400, detail="Can only reverse purchase receipts")
+        
+        # Create reverse transaction (out)
+        reverse_txn = InventoryTransactionModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            material_id=original_grn.material_id,
+            transaction_type="out",
+            quantity=-original_grn.quantity,  # Negative to reverse
+            unit_id=original_grn.unit_id,
+            from_location_id=original_grn.to_location_id,  # Reverse the flow
+            to_location_id=original_grn.from_location_id,
+            reference_type="purchase_receipt_reversal",
+            reference_id=original_grn.reference_id,  # Link back to PO
+            remarks=f"Reversal of GRN {grn_id}",
+            created_by=user_id,
+        )
+        session.add(reverse_txn)
+        
+        # Soft delete the original GRN
+        original_grn.is_deleted = True
+        original_grn.deleted_at = datetime.now(timezone.utc)
+        
+        await session.commit()
+    
+    return {
+        "status": "reversed",
+        "original_grn_id": str(grn_id),
+        "reversal_transaction_id": str(reverse_txn.id),
+    }
 
 
 # ── Quality ───────────────────────────────────────────────────────────────────
@@ -612,32 +1285,52 @@ async def create_subcontract_order(
 @router.get("/subcontract/orders")
 async def list_subcontract_orders(
     request: Request,
+    status: Optional[str] = Query(None, description="Filter by status: draft, issued, received"),
+    supplier_id: Optional[uuid.UUID] = Query(None, description="Filter by supplier"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ):
+    """List subcontract orders with pagination and filtering."""
     container = get_container(request)
     async with container.session_factory() as session:
-        stmt = (
-            select(SubcontractOrderModel)
-            .where(
-                SubcontractOrderModel.tenant_id == tenant_id,
-                SubcontractOrderModel.is_deleted.is_(False),
-            )
-            .order_by(SubcontractOrderModel.created_at.desc())
+        query = select(SubcontractOrderModel).where(
+            SubcontractOrderModel.tenant_id == tenant_id,
+            SubcontractOrderModel.is_deleted.is_(False),
         )
-        r = await session.execute(stmt)
+        
+        if status:
+            query = query.where(SubcontractOrderModel.status == status)
+        if supplier_id:
+            query = query.where(SubcontractOrderModel.supplier_id == supplier_id)
+        
+        # Count total
+        count_stmt = select(func.count(SubcontractOrderModel.id)).select_from(query.subquery())
+        total = await session.execute(count_stmt)
+        total_count = total.scalar_one()
+        
+        # Paginate
+        query = query.order_by(SubcontractOrderModel.created_at.desc()).offset(skip).limit(limit)
+        r = await session.execute(query)
         rows = r.scalars().all()
-    return [
-        {
-            "id": str(x.id),
-            "order_number": x.order_number,
-            "supplier_id": str(x.supplier_id),
-            "product_id": str(x.product_id),
-            "product_type": x.product_type,
-            "quantity": float(x.quantity),
-            "status": x.status,
-        }
-        for x in rows
-    ]
+    
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "items": [
+            {
+                "id": str(x.id),
+                "order_number": x.order_number,
+                "supplier_id": str(x.supplier_id),
+                "product_id": str(x.product_id),
+                "product_type": x.product_type,
+                "quantity": float(x.quantity),
+                "status": x.status,
+            }
+            for x in rows
+        ],
+    }
 
 
 @router.get("/subcontract/orders/{order_id}")
@@ -756,33 +1449,7 @@ async def receive_subcontract(
     return {"status": "ok"}
 
 
-# ── Material requests & MRP ───────────────────────────────────────────────────
-
-
-@router.get("/material-requests")
-async def list_material_requests(
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-):
-    container = get_container(request)
-    async with container.session_factory() as session:
-        stmt = select(MaterialRequestModel).where(
-            MaterialRequestModel.tenant_id == tenant_id,
-            MaterialRequestModel.is_deleted.is_(False),
-        )
-        r = await session.execute(stmt)
-        rows = r.scalars().all()
-    return [
-        {
-            "id": str(x.id),
-            "item_id": str(x.item_id),
-            "item_type": x.item_type,
-            "required_quantity": float(x.required_quantity),
-            "fulfilled_quantity": float(x.fulfilled_quantity),
-            "status": x.status,
-        }
-        for x in rows
-    ]
+# ── Material Requests (continued) ────────────────────────────────────────────
 
 
 @router.post(
@@ -856,34 +1523,54 @@ async def run_mrp(
 # ── Supplier portal ───────────────────────────────────────────────────────────
 
 
-@router.get("/supplier/purchase-orders")
+@router.get("/supplier/purchase-orders", tags=["Supplier Portal"])
 async def supplier_list_pos(
     request: Request,
+    po_status: Optional[str] = Query(None, alias="status", description="Filter by status"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     supplier_id: uuid.UUID = Depends(require_supplier_id),
 ):
+    """Return only the purchase orders assigned to the authenticated supplier.
+
+    Security guarantees:
+    - supplier_id is extracted from the JWT (claim 'sid') via require_supplier_id.
+    - tenant_id is extracted from the JWT (claim 'tid') via get_current_tenant_id.
+    - Both filters are applied in the DB query — no client-supplied supplier_id is trusted.
+    - A wrong-supplier user will always receive an empty list (not a 403, to avoid enumeration).
+    """
     container = get_container(request)
     async with container.session_factory() as session:
+        base_filter = [
+            PurchaseOrderModel.tenant_id == tenant_id,
+            PurchaseOrderModel.supplier_id == supplier_id,  # CRITICAL: JWT-derived, not user-supplied
+            PurchaseOrderModel.is_deleted.is_(False),
+        ]
+        if po_status:
+            base_filter.append(PurchaseOrderModel.status == po_status)
+
+        # Count first for pagination metadata
+        count_stmt = select(func.count(PurchaseOrderModel.id)).where(*base_filter)
+        total_count = (await session.execute(count_stmt)).scalar_one()
+
         stmt = (
             select(PurchaseOrderModel)
             .options(selectinload(PurchaseOrderModel.lines))
-            .where(
-                PurchaseOrderModel.tenant_id == tenant_id,
-                PurchaseOrderModel.supplier_id == supplier_id,
-                PurchaseOrderModel.is_deleted.is_(False),
-            )
+            .where(*base_filter)
+            .order_by(PurchaseOrderModel.created_at.desc())
+            .offset(skip)
+            .limit(limit)
         )
         r = await session.execute(stmt)
         pos = r.scalars().unique().all()
-    return [
-        {
-            "id": str(p.id),
-            "po_number": p.po_number,
-            "status": p.status,
-            "total_amount": float(p.total_amount),
-        }
-        for p in pos
-    ]
+
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "items": [_po_to_dict(p) for p in pos],
+    }
 
 
 @router.get("/supplier/purchase-orders/{po_id}")
@@ -921,11 +1608,18 @@ async def supplier_ack_po(
 ):
     container = get_container(request)
     async with container.session_factory() as session:
-        po = await session.get(PurchaseOrderModel, po_id)
-        if not po or po.tenant_id != tenant_id or po.is_deleted:
+        stmt = select(PurchaseOrderModel).where(
+            PurchaseOrderModel.id == po_id,
+            PurchaseOrderModel.tenant_id == tenant_id,
+            PurchaseOrderModel.supplier_id == supplier_id,
+            PurchaseOrderModel.is_deleted.is_(False),
+        )
+        r = await session.execute(stmt)
+        po = r.scalar_one_or_none()
+        if not po:
             raise HTTPException(status_code=404, detail="PO not found")
-        if po.supplier_id != supplier_id:
-            raise HTTPException(status_code=403, detail="Not your purchase order")
+        if po.status not in ("sent", "draft"):
+            raise HTTPException(status_code=400, detail=f"Cannot acknowledge PO in '{po.status}' status")
         po.status = "acknowledged"
         po.updated_at = datetime.now(timezone.utc)
         await session.commit()
@@ -1068,6 +1762,11 @@ async def create_rfq(
         await session.flush()
 
         for line in body.lines:
+            # CRITICAL: Validate material belongs to current tenant
+            material = await session.get(MaterialModel, line.material_id)
+            if not material or material.tenant_id != tenant_id or material.is_deleted:
+                raise HTTPException(status_code=404, detail="Material not found")
+            
             session.add(
                 RFQLineModel(
                     id=uuid.uuid4(),
@@ -1080,6 +1779,11 @@ async def create_rfq(
             )
 
         for sid in body.supplier_ids:
+            # CRITICAL: Validate supplier belongs to current tenant
+            supplier = await session.get(SupplierModel, sid)
+            if not supplier or supplier.tenant_id != tenant_id or supplier.is_deleted:
+                raise HTTPException(status_code=404, detail="Supplier not found")
+            
             session.add(
                 RFQSupplierModel(
                     id=uuid.uuid4(),
@@ -1221,6 +1925,16 @@ async def award_rfq(
             raise HTTPException(status_code=400, detail="RFQ must be sent before awarding")
         if not body.lines:
             raise HTTPException(status_code=400, detail="At least one PO line required")
+        
+        # CRITICAL: Validate supplier was invited to this RFQ
+        invited_supplier_ids = [s.supplier_id for s in rfq.supplier_invites]
+        if body.supplier_id not in invited_supplier_ids:
+            raise HTTPException(status_code=400, detail="Supplier not invited to this RFQ")
+        
+        # CRITICAL: Validate supplier belongs to current tenant (double check)
+        supplier = await session.get(SupplierModel, body.supplier_id)
+        if not supplier or supplier.tenant_id != tenant_id or supplier.is_deleted:
+            raise HTTPException(status_code=404, detail="Supplier not found")
 
         # Generate PO
         po_svc = PONumberService(session)
@@ -1242,6 +1956,11 @@ async def award_rfq(
         await session.flush()
 
         for line in body.lines:
+            # CRITICAL: Validate material belongs to current tenant
+            material = await session.get(MaterialModel, line.material_id)
+            if not material or material.tenant_id != tenant_id or material.is_deleted:
+                raise HTTPException(status_code=404, detail="Material not found")
+            
             lt = Decimal(str(line.quantity)) * Decimal(str(line.unit_price))
             total += lt
             session.add(
@@ -1265,6 +1984,71 @@ async def award_rfq(
 
         await session.commit()
     return {"po_id": str(po.id), "po_number": po_number}
+
+
+@router.put(
+    "/rfq/{rfq_id}",
+    dependencies=[Depends(require_permission("procurement:write"))],
+    tags=["RFQ"],
+)
+async def update_rfq(
+    rfq_id: uuid.UUID,
+    body: dict,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Update RFQ (only when in draft status)."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        rfq = await session.get(RFQModel, rfq_id)
+        if not rfq or rfq.tenant_id != tenant_id or rfq.is_deleted:
+            raise HTTPException(status_code=404, detail="RFQ not found")
+        
+        # Only allow editing draft RFQs
+        if rfq.status != "draft":
+            raise HTTPException(status_code=400, detail="Only draft RFQs can be edited")
+        
+        # Update allowed fields
+        if "title" in body:
+            rfq.title = body.get("title")
+        if "deadline" in body:
+            rfq.deadline = body.get("deadline")
+        if "notes" in body:
+            rfq.notes = body.get("notes")
+        
+        rfq.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+    return _rfq_to_dict(rfq)
+
+
+@router.delete(
+    "/rfq/{rfq_id}",
+    dependencies=[Depends(require_permission("procurement:write"))],
+    tags=["RFQ"],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_rfq(
+    rfq_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Delete RFQ (soft-delete, only when in draft status)."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        rfq = await session.get(RFQModel, rfq_id)
+        if not rfq or rfq.tenant_id != tenant_id or rfq.is_deleted:
+            raise HTTPException(status_code=404, detail="RFQ not found")
+        
+        # Only allow deleting draft RFQs
+        if rfq.status != "draft":
+            raise HTTPException(status_code=400, detail="Only draft RFQs can be deleted")
+        
+        # Soft delete
+        rfq.is_deleted = True
+        rfq.deleted_at = datetime.now(timezone.utc)
+        await session.commit()
+    return None
 
 
 # ── Supplier performance ───────────────────────────────────────────────────────

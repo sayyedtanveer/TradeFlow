@@ -29,7 +29,7 @@ export default function SupplierPortalPage() {
   const [validUntil, setValidUntil] = useState("")
 
   const load = () =>
-    supplyChainApi.supplierPortalPOs().then((r) => setRows(r.data as PoRow[]))
+    supplyChainApi.supplierPortalPOs().then((r) => setRows((r.data?.items ?? []) as PoRow[]))
 
   useEffect(() => {
     load().catch(() =>

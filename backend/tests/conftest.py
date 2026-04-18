@@ -3,6 +3,24 @@ Pytest configuration and shared fixtures for MedTrack test suite.
 Provides async client, authentication, database sessions, and test data.
 """
 
+import os
+import sys
+
+# Ensure repository root is on sys.path so tests can import the `backend` package.
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+# Map PostgreSQL-specific JSONB type to SQLAlchemy generic JSON for tests
+# so modules that import JSONB can still be used with SQLite in-memory DB.
+try:
+    from sqlalchemy import JSON as SA_JSON
+    from sqlalchemy.dialects import postgresql
+    postgresql.JSONB = SA_JSON
+except Exception:
+    pass
+
+
 import asyncio
 import uuid
 from datetime import datetime, timedelta
@@ -57,8 +75,15 @@ async def test_db_engine():
         poolclass=StaticPool,
     )
     
-    # Create all tables
+    # Allow SQLite to compile models that use PostgreSQL-specific types (e.g. JSONB)
+    # by mapping them to generic SQLAlchemy types for testing.
+    from sqlalchemy import JSON as SA_JSON
+    from sqlalchemy.dialects import postgresql
+    postgresql.JSONB = SA_JSON
+
+    # Ensure clean schema: drop any existing tables then create all tables
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     
     yield engine
@@ -159,10 +184,10 @@ def sync_client() -> TestClient:
 
 
 @pytest.fixture
-async def async_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+async def async_client() -> AsyncGenerator[AsyncClient, None]:
     """
-    Provide an async HTTP client for testing with dependency injection.
-    Injects test database session into the app.
+    Provide an async HTTP client for testing.
+    (Does not inject a DB session for lightweight endpoint tests.)
     """
     async with AsyncClient(app=app, base_url="http://test") as client:
         yield client

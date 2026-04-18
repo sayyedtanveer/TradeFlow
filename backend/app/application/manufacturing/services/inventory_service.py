@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.infrastructure.persistence.models.inventory_transaction_model import InventoryTransactionModel
+from backend.app.infrastructure.persistence.models.inventory_management_models import StockLedgerModel
 from backend.app.infrastructure.persistence.models.location_model import LocationModel
 from backend.app.infrastructure.persistence.models.stock_level_model import StockLevelModel
 from backend.app.domain.manufacturing.exceptions import InsufficientStockError
@@ -85,6 +86,43 @@ class InventoryService:
             created_by=created_by,
         )
         self._session.add(tx)
+
+    async def _log_ledger(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+        location_id: Optional[uuid.UUID],
+        transaction_type: str,
+        quantity_change: Decimal,
+        unit_cost: Optional[float] = None,
+        reference_type: Optional[str] = None,
+        reference_id: Optional[uuid.UUID] = None,
+    ) -> None:
+        """Append an immutable ledger row with running balance.
+
+        Running balance = current sum of all StockLevelModel buckets for this material.
+        This is called *after* bucket mutations so the balance is already updated.
+        """
+        running_balance = await self._sum_all_stock_levels(tenant_id, material_id)
+        total_value: Optional[float] = None
+        if unit_cost is not None:
+            total_value = float(abs(quantity_change) * Decimal(str(unit_cost)))
+        entry = StockLedgerModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            material_id=material_id,
+            location_id=location_id,
+            transaction_date=datetime.now(timezone.utc),
+            transaction_type=transaction_type,
+            quantity_change=float(quantity_change),
+            running_balance=float(running_balance),
+            unit_cost=unit_cost,
+            total_value=total_value,
+            reference_type=reference_type,
+            reference_id=reference_id,
+        )
+        self._session.add(entry)
 
     async def _default_warehouse_location(self, tenant_id: uuid.UUID) -> Optional[uuid.UUID]:
         stmt = (
@@ -314,6 +352,16 @@ class InventoryService:
             reference_id=work_order_id, created_by=created_by,
             remarks=f"Issued for WO {work_order_id}",
         )
+        # ── Stock Ledger ─────────────────────────────────────────────────────
+        await self._log_ledger(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            location_id=None,
+            transaction_type="ISSUE",
+            quantity_change=-quantity,  # negative = reduction
+            reference_type="work_order",
+            reference_id=work_order_id,
+        )
 
     async def receive_stock(
         self,
@@ -347,6 +395,16 @@ class InventoryService:
             remarks=f"Production receipt for WO {work_order_id}",
             to_location_id=loc,
         )
+        # ── Stock Ledger ────────────────────────────────────────────────────
+        await self._log_ledger(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            location_id=loc,
+            transaction_type="PRODUCTION_RECEIPT",
+            quantity_change=quantity,
+            reference_type="work_order",
+            reference_id=work_order_id,
+        )
 
     async def receive_purchase_receipt(
         self,
@@ -358,18 +416,19 @@ class InventoryService:
         unit_id: Optional[uuid.UUID],
         created_by: uuid.UUID,
         warehouse_location_id: Optional[uuid.UUID] = None,
+        unit_cost: Optional[float] = None,
     ) -> None:
         """GRN: receipt into warehouse; pending_inspection or available based on material flag."""
         model = await self._lock_material(tenant_id, material_id)
         loc = warehouse_location_id or await self._default_warehouse_location(tenant_id)
         if loc is None:
             raise ValueError("No warehouse location configured for this tenant")
-        status = _ST_PENDING if getattr(model, "inspection_required", False) else _ST_AVAILABLE
+        stock_status = _ST_PENDING if getattr(model, "inspection_required", False) else _ST_AVAILABLE
         await self._add_bucket_quantity(
             tenant_id=tenant_id,
             material_id=material_id,
             location_id=loc,
-            stock_status=status,
+            stock_status=stock_status,
             quantity=quantity,
         )
         await self._sync_material_total_from_buckets(model)
@@ -384,6 +443,17 @@ class InventoryService:
             created_by=created_by,
             remarks="Goods receipt",
             to_location_id=loc,
+        )
+        # ── Stock Ledger (immutable audit) ───────────────────────────────────
+        await self._log_ledger(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            location_id=loc,
+            transaction_type="RECEIPT",
+            quantity_change=quantity,
+            unit_cost=unit_cost,
+            reference_type="purchase_order",
+            reference_id=purchase_order_id,
         )
 
     async def inspection_pass_move_to_available(
@@ -412,7 +482,7 @@ class InventoryService:
             material_id=material_id,
             transaction_type="transfer",
             quantity=quantity,
-            unit_id=material.base_unit_id,
+            unit_id=model.base_unit_id,
             reference_type="quality_inspection",
             reference_id=inspection_id,
             created_by=created_by,
@@ -448,7 +518,7 @@ class InventoryService:
             material_id=material_id,
             transaction_type="transfer",
             quantity=quantity,
-            unit_id=material.base_unit_id,
+            unit_id=model.base_unit_id,
             reference_type="quality_inspection",
             reference_id=inspection_id,
             created_by=created_by,

@@ -25,3 +25,17 @@ class IUserRepository(IRepository[User]):
     ) -> bool:
         """Return True if email is already registered in this tenant."""
         ...
+
+    @abstractmethod
+    async def get_supplier_id_for_user(
+        self, user_id: uuid.UUID, tenant_id: uuid.UUID
+    ) -> Optional[uuid.UUID]:
+        """Return the supplier_id linked to this user, or None if not a supplier."""
+        ...
+
+    @abstractmethod
+    async def get_client_id_for_user(
+        self, user_id: uuid.UUID, tenant_id: uuid.UUID
+    ) -> Optional[uuid.UUID]:
+        """Return the client_id linked to this user, or None if not a client portal user."""
+        ...

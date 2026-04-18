@@ -33,15 +33,15 @@ class LoginUserHandler(ICommandHandler[LoginUserCommand, LoginResult]):
         if not self._password_hasher.verify(command.password, user.hashed_password):
             raise DomainException("Invalid email or password", code="AUTH_FAILED")
 
+        # Build extra JWT claims for supplier / client portal users.
+        # Both methods are now formally declared on IUserRepository.
         extra: dict = {}
-        if hasattr(self._user_repo, "get_supplier_id_for_user"):
-            sid = await self._user_repo.get_supplier_id_for_user(user.id, command.tenant_id)  # type: ignore[union-attr]
-            if sid:
-                extra["sid"] = str(sid)
-        if hasattr(self._user_repo, "get_client_id_for_user"):
-            cid = await self._user_repo.get_client_id_for_user(user.id, command.tenant_id)  # type: ignore[union-attr]
-            if cid:
-                extra["cid"] = str(cid)
+        sid = await self._user_repo.get_supplier_id_for_user(user.id, command.tenant_id)
+        if sid:
+            extra["sid"] = str(sid)
+        cid = await self._user_repo.get_client_id_for_user(user.id, command.tenant_id)
+        if cid:
+            extra["cid"] = str(cid)
 
         access_token = self._jwt_handler.create_access_token(
             user_id=str(user.id),

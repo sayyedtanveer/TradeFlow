@@ -4,11 +4,35 @@
  * Declares the route names, payload shapes, and exported method names expected
  * for supplier self-service integration. This file is intentionally non-runtime.
  */
+/*
+ NOTE (architect):
+ - This file is a static contract/descriptor for the supplier-portal API surface
+   used for documentation, discoverability, and potential codegen.
+ - Do NOT assume this module is imported at runtime; keep the shape stable.
+ - Minimal changes only: prefer adding comments here instead of changing keys.
+ - TODO: Consider generating this from OpenAPI in the future to avoid drift.
+*/
 
 export const SUPPLIER_PORTAL_API_PREFIX = "/supplier" as const;
+// Resolve contract file path at runtime (best-effort). Bundlers expose `import.meta.url`.
+// Fallback to the static path string when resolution is not available.
+const CONTRACT_FILE_PATH = (() => {
+  try {
+    // Vite/Rollup provide import.meta.url; convert to repo-relative path where possible.
+    const url = new URL(import.meta.url)
+    const pathname = url.pathname
+    // If running from a developer machine, try to return a repo-relative path fragment.
+    const marker = "/source/repos/"
+    const idx = pathname.indexOf(marker)
+    if (idx !== -1) return pathname.slice(idx + 1)
+    return pathname
+  } catch (e) {
+    return "frontend/src/services/supplierPortalService.ts"
+  }
+})()
 
 export const supplierPortalServiceContract = {
-  filePath: "frontend/src/services/supplierPortalService.ts",
+  filePath: CONTRACT_FILE_PATH,
   apiPrefix: SUPPLIER_PORTAL_API_PREFIX,
   methods: {
     getSupplierPurchaseOrders: {

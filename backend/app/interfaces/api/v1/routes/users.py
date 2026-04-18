@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 
 from backend.app.infrastructure.persistence.models.user_model import UserModel
+from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel
 from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_tenant_id,
     get_container,
@@ -31,6 +32,7 @@ class UserCreateRequest(BaseModel):
     last_name: str
     role: str
     is_active: bool = True
+    supplier_id: Optional[str] = None  # Link to supplier if creating supplier portal user
 
 
 class UserUpdateRequest(BaseModel):
@@ -38,6 +40,7 @@ class UserUpdateRequest(BaseModel):
     last_name: Optional[str] = None
     role: Optional[str] = None
     is_active: Optional[bool] = None
+    supplier_id: Optional[str] = None
 
 
 class UserCreateResponse(BaseModel):
@@ -171,6 +174,19 @@ async def create_user(
         if result.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Email already exists")
 
+        # CRITICAL: If supplier_id provided, validate it belongs to current tenant
+        supplier_id_value = None
+        if body.supplier_id:
+            try:
+                supplier_uuid = uuid.UUID(body.supplier_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid supplier_id format")
+            
+            supplier = await session.get(SupplierModel, supplier_uuid)
+            if not supplier or supplier.tenant_id != tenant_id or supplier.is_deleted:
+                raise HTTPException(status_code=404, detail="Supplier not found")
+            supplier_id_value = supplier_uuid
+
         # Generate secure temporary password
         temporary_password = _generate_temporary_password()
         
@@ -184,6 +200,7 @@ async def create_user(
             role=body.role.lower(),
             is_active=body.is_active,
             hashed_password=container.password_hasher.hash(temporary_password),
+            supplier_id=supplier_id_value,  # Set supplier_id if provided
         )
         session.add(user)
         await session.commit()
@@ -230,9 +247,23 @@ async def update_user(
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Update fields (normalize role to lowercase)
+        # CRITICAL: If supplier_id provided, validate it belongs to current tenant
+        if body.supplier_id is not None:
+            try:
+                supplier_uuid = uuid.UUID(body.supplier_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid supplier_id format")
+            
+            supplier = await session.get(SupplierModel, supplier_uuid)
+            if not supplier or supplier.tenant_id != tenant_id or supplier.is_deleted:
+                raise HTTPException(status_code=404, detail="Supplier not found")
+            user.supplier_id = supplier_uuid
+        
+        # Update other fields (normalize role to lowercase)
         data = body.model_dump(exclude_unset=True)
         for key, value in data.items():
+            if key == "supplier_id":
+                continue  # Already handled above
             if key == "role" and isinstance(value, str):
                 value = value.lower()
             setattr(user, key, value)

@@ -34,16 +34,43 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         # 2. Try to decode from JWT (best-effort, no raise on failure)
         payload: dict | None = None
-        if not tenant_id:
-            auth_header = request.headers.get("Authorization", "")
-            if auth_header.startswith("Bearer "):
-                token = auth_header[7:]
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            try:
+                container = request.app.state.container
+                payload = container.jwt_handler.decode_token(token)
+                # prefer header tenant_id but fallback to token tid
+                tenant_id = tenant_id or payload.get("tid")
+            except Exception:
+                pass  # Will fail properly in auth dependency
+
+        # If we decoded a token, expose common identity fields on request.state
+        if payload:
+            try:
+                user_id = payload.get("sub")
+                role = payload.get("role")
+                supplier_id = payload.get("sid")
+                client_id = payload.get("cid")
+
+                # Set ContextVars where possible
+                if user_id:
+                    set_request_context(user_id=user_id, tenant_id=tenant_id)
+
+                # Expose on request.state for handlers that run before auth dependency
                 try:
-                    container = request.app.state.container
-                    payload = container.jwt_handler.decode_token(token)
-                    tenant_id = payload.get("tid")
+                    request.state.user = {"id": user_id, "role": role}
+                    request.state.role = role
+                    request.state.supplier_id = supplier_id
+                    request.state.client_id = client_id
+                    # keep legacy scope values
+                    request.scope.setdefault("user_id", user_id)
+                    request.scope.setdefault("tenant_id", tenant_id)
+                    request.scope.setdefault("user_role", role)
                 except Exception:
-                    pass  # Will fail properly in auth dependency
+                    pass
+            except Exception:
+                pass
 
         if payload and str(payload.get("role", "")).lower() == "client":
             if request.url.path.startswith("/api/v1/") and not request.url.path.startswith(_CLIENT_ALLOWED_PREFIXES):
@@ -54,6 +81,11 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         if tenant_id:
             set_request_context(tenant_id=tenant_id)
+            # expose tenant_id on request.state for handlers that run before auth dependency
+            try:
+                request.state.tenant_id = tenant_id
+            except Exception:
+                pass
             logger.debug("Tenant resolved", extra={"tenant_id": tenant_id})
 
         return await call_next(request)

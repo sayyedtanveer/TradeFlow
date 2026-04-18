@@ -3,6 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { usersService } from "@/services/users.service"
+import { supplyChainApi } from "@/services/supply-chain.service"
 import { AVAILABLE_ROLES } from "@/lib/roles.config"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -21,6 +22,7 @@ const userSchema = z.object({
   last_name: z.string().min(2, "Last name is required"),
   role: z.string().min(1, "Role is required"),
   is_active: z.boolean(),
+  supplier_id: z.string().optional().nullable(),
 })
 
 type UserFormValues = z.infer<typeof userSchema>
@@ -45,6 +47,14 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
     enabled: isEditing && open,
   })
 
+  const { data: suppliersData } = useQuery({
+    queryKey: ["suppliers"],
+    queryFn: async () => {
+      const res = await supplyChainApi.listSuppliers()
+      return res.data || []
+    },
+  })
+
   const { register, handleSubmit, formState: { errors }, setValue, watch, reset } = useForm<UserFormValues>({
     resolver: zodResolver(userSchema),
     defaultValues: {
@@ -53,6 +63,7 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
       last_name: "",
       role: "operator",
       is_active: true,
+      supplier_id: null,
     }
   })
 
@@ -65,6 +76,7 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
         last_name: user.last_name,
         role: user.role,
         is_active: user.is_active,
+        supplier_id: (user as any).supplier_id || null,
       })
     } else if (userId === "new") {
       reset({
@@ -73,6 +85,7 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
         last_name: "",
         role: "operator",
         is_active: true,
+        supplier_id: null,
       })
     }
   }, [user, userId, reset])
@@ -245,6 +258,31 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
               </Select>
               {errors.role && <p className="text-xs text-destructive">{errors.role.message}</p>}
             </div>
+
+            {watch("role") === "supplier" && (
+              <div className="space-y-2 bg-blue-50 p-3 rounded border border-blue-200">
+                <Label htmlFor="supplier_id">Link to Supplier (Required for Supplier Portal)</Label>
+                <Select 
+                  value={watch("supplier_id") || ""} 
+                  onValueChange={(val) => setValue("supplier_id", val || null, { shouldValidate: true })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Supplier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">— None —</SelectItem>
+                    {suppliersData?.map((supplier: any) => (
+                      <SelectItem key={supplier.id} value={supplier.id}>
+                        {supplier.code} — {supplier.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-600">
+                  Link this user to a supplier so they can access the supplier portal and manage purchase orders.
+                </p>
+              </div>
+            )}
 
             <div className="flex items-center space-x-2 pt-2">
               <Checkbox 

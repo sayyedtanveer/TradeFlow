@@ -32,6 +32,69 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         ip_address = request.client.host if request.client else "unknown"
         start = time.perf_counter()
 
+        # Best-effort extract tenant/user from headers so logs include identity
+        try:
+            tenant_id = request.headers.get("X-Tenant-ID")
+            logger.info("Request headers Authorization=%s, X-Tenant-ID=%s", request.headers.get("Authorization"), tenant_id)
+            payload = None
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+                try:
+                    # Prefer container's JWT handler when available
+                    jwt_handler = None
+                    try:
+                        container = request.app.state.container
+                        jwt_handler = container.jwt_handler
+                    except Exception:
+                        jwt_handler = None
+
+                    if jwt_handler is None:
+                        from backend.app.config import get_settings
+                        from backend.app.infrastructure.security.jwt_handler import JWTHandler
+
+                        settings = get_settings()
+                        jwt_handler = JWTHandler(
+                            secret_key=settings.jwt_secret_key,
+                            algorithm=settings.jwt_algorithm,
+                            expiry_minutes=settings.jwt_expiry_minutes,
+                        )
+
+                    payload = jwt_handler.decode_token(token)
+                    tenant_id = tenant_id or payload.get("tid")
+                    logger.info(
+                        "Decoded JWT payload tid=%s role=%s sid=%s sub=%s",
+                        payload.get("tid"),
+                        payload.get("role"),
+                        payload.get("sid"),
+                        payload.get("sub"),
+                    )
+                except Exception as exc:
+                    logger.exception("JWT decode failed: %s", exc)
+                    payload = None
+
+            if payload:
+                user_id = payload.get("sub")
+                role = payload.get("role")
+                supplier_id = payload.get("sid")
+                # populate ContextVars and request.state for logging
+                if user_id or tenant_id:
+                    set_request_context(tenant_id=tenant_id, user_id=user_id)
+                try:
+                    request.state.tenant_id = tenant_id
+                    request.state.user = {"id": user_id, "role": role}
+                    request.state.role = role
+                    request.state.supplier_id = supplier_id
+                    # keep legacy scope values for compatibility
+                    request.scope.setdefault("user_id", user_id)
+                    request.scope.setdefault("tenant_id", tenant_id)
+                    request.scope.setdefault("user_role", role)
+                except Exception:
+                    pass
+
+        except Exception:
+            pass
+
         # Set context vars — available globally for this request
         set_request_context(
             correlation_id=correlation_id,

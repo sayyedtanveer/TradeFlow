@@ -178,12 +178,31 @@ class WorkOrderHandler:
         wo.scrap_quantity = float(new_scrap)
         wo.updated_at = datetime.now(timezone.utc)
 
-        # Receive finished goods into stock — MUST provide product's material_id via product_id
-        # (WO product_id maps to item_variant; FG stock is tracked via material linked to variant)
-        # For now we pass product_id as proxy; caller can link post-Phase 4.5
+        # Resolve the finished-goods material_id.
+        # WO.product_id is an item_variant UUID; inventory is tracked on MaterialModel.
+        # We look for a material whose item_variant_id matches.
+        from backend.app.infrastructure.persistence.models.material_model import MaterialModel
+        mat_stmt = select(MaterialModel).where(
+            MaterialModel.item_variant_id == wo.product_id,
+            MaterialModel.tenant_id == wo.tenant_id,
+            MaterialModel.is_deleted.is_(False),
+        ).limit(1)
+        mat_result = await self._session.execute(mat_stmt)
+        fg_material = mat_result.scalar_one_or_none()
+
+        if fg_material is None:
+            # Fallback: no linked material found — skip inventory update but log warning.
+            # This keeps production recording from failing if FG material isn't set up.
+            import logging
+            logging.getLogger(__name__).warning(
+                "WO %s: no material linked to product_id %s — skipping FG inventory receipt.",
+                wo.id, wo.product_id,
+            )
+            return
+
         await self._inventory.receive_stock(
             tenant_id=cmd.tenant_id,
-            material_id=wo.product_id,   # FG material = variant id (linked via material system)
+            material_id=fg_material.id,  # FIXED: use material.id, not product_id
             quantity=cmd.produced_quantity,
             work_order_id=wo.id,
             created_by=cmd.recorded_by,

@@ -175,10 +175,29 @@ export const supplyChainApi = {
   receiveSubcontract: (orderId: string, body: Record<string, unknown>) =>
     apiClient.post(`${BASE}/subcontract/orders/${orderId}/receive`, body),
 
-  supplierPortalPOs: () =>
-    apiClient.get<{ id: string; po_number: string; status: string; total_amount: number }[]>(
-      `${BASE}/supplier/purchase-orders`
-    ),
+  supplierPortalPOs: (params?: { status?: string; skip?: number; limit?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.status) qs.set("status", params.status)
+    if (params?.skip != null) qs.set("skip", String(params.skip))
+    if (params?.limit != null) qs.set("limit", String(params.limit))
+    const query = qs.toString() ? `?${qs.toString()}` : ""
+    return apiClient.get<{
+      total: number
+      skip: number
+      limit: number
+      items: {
+        id: string
+        po_number: string
+        status: string
+        total_amount: number
+        supplier_id: string
+        order_date: string
+        expected_delivery?: string | null
+        notes?: string | null
+        lines: PurchaseOrderLine[]
+      }[]
+    }>(`${BASE}/supplier/purchase-orders${query}`)
+  },
   supplierPortalPO: (id: string) => apiClient.get<PurchaseOrder>(`${BASE}/supplier/purchase-orders/${id}`),
   supplierAckPO: (id: string) => apiClient.put(`${BASE}/supplier/purchase-orders/${id}/acknowledge`),
   supplierQuotation: (body: Record<string, unknown>) => apiClient.post(`${BASE}/supplier/quotations`, body),

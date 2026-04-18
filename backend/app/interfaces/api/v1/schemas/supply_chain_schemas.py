@@ -117,6 +117,36 @@ class SupplierQuotationCreate(BaseModel):
     rfq_id: Optional[uuid.UUID] = None
 
 
+class MaterialRequestCreate(BaseModel):
+    item_id: uuid.UUID
+    item_type: str = Field(..., pattern="^(material|component|product)$")
+    required_quantity: Decimal
+    required_by: Optional[date] = None
+    source_ref_type: Optional[str] = None
+    source_ref_id: Optional[uuid.UUID] = None
+
+
+class MaterialRequestUpdate(BaseModel):
+    required_quantity: Optional[Decimal] = None
+    required_by: Optional[date] = None
+
+
+class MaterialRequestResponse(BaseModel):
+    id: uuid.UUID
+    item_id: uuid.UUID
+    item_type: str
+    required_quantity: float
+    fulfilled_quantity: float
+    required_by: Optional[date] = None
+    status: str
+    source_ref_type: Optional[str] = None
+    source_ref_id: Optional[uuid.UUID] = None
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+
 # ── RFQ schemas ───────────────────────────────────────────────────────────────
 
 class RFQLineIn(BaseModel):

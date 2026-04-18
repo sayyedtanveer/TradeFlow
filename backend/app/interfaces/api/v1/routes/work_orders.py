@@ -32,6 +32,8 @@ from sqlalchemy.orm import selectinload
 from backend.app.infrastructure.persistence.models.work_order_model import (
     WorkOrderModel, JobCardModel
 )
+from backend.app.infrastructure.persistence.models.inventory_transaction_model import InventoryTransactionModel
+from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.interfaces.api.v1.dependencies.auth import get_container
 
 
@@ -290,6 +292,42 @@ async def start_job_card(
             return await _error_response(e)
 
 
+@router.get("/{work_order_id}/material-consumption")
+async def get_work_order_consumption(
+    work_order_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Get the material consumption history for this Work Order."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        stmt = (
+            select(InventoryTransactionModel, MaterialModel.code, MaterialModel.name)
+            .join(MaterialModel, MaterialModel.id == InventoryTransactionModel.material_id)
+            .where(
+                InventoryTransactionModel.tenant_id == tenant_id,
+                InventoryTransactionModel.reference_type == "work_order",
+                InventoryTransactionModel.reference_id == work_order_id,
+                InventoryTransactionModel.transaction_type == "issue",
+                InventoryTransactionModel.is_deleted.is_(False),
+            )
+            .order_by(InventoryTransactionModel.created_at.desc())
+        )
+        result = await session.execute(stmt)
+        rows = result.all()
+
+    return [
+        {
+            "id": str(tx.id),
+            "material_id": str(tx.material_id),
+            "material_code": code,
+            "material_name": name,
+            "quantity": float(tx.quantity),
+            "created_at": tx.created_at.isoformat(),
+            "remarks": tx.remarks,
+        }
+        for tx, code, name in rows
+    ]
 @router.patch("/{work_order_id}/job-cards/{job_card_id}/complete", status_code=status.HTTP_200_OK)
 async def complete_job_card(
     work_order_id: uuid.UUID,
