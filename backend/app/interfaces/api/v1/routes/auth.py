@@ -166,6 +166,8 @@ async def me(
             role=payload.get("role", "viewer"),
             tenant_id=tenant_id_str,
             is_active=True,
+            supplier_id=payload.get("sid"),
+            client_id=payload.get("cid"),
         ),
         tenant=TenantInMeResponse(
             id=str(tenant.id),

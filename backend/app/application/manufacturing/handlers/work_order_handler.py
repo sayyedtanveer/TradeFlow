@@ -200,6 +200,53 @@ class WorkOrderHandler:
             )
             return
 
+        # --- Consume component materials according to BOM lines ---
+        # For each BOM line with a linked material, ensure cumulative consumption
+        # equals (produced + scrap) * per-unit quantity. Issue any shortfall.
+        from backend.app.infrastructure.persistence.models.bom_model import BOMLineModel
+
+        total_output = Decimal(str(wo.produced_quantity)) + Decimal(str(wo.scrap_quantity))
+        if wo.bom_id is not None:
+            bl_stmt = (
+                select(BOMLineModel)
+                .where(
+                    BOMLineModel.bom_id == wo.bom_id,
+                    BOMLineModel.material_id.isnot(None),
+                    BOMLineModel.is_deleted.is_(False),
+                )
+            )
+            bl_res = await self._session.execute(bl_stmt)
+            bom_lines = bl_res.scalars().all()
+            for line in bom_lines:
+                per_unit = Decimal(str(line.quantity))
+                cumulative_required = total_output * per_unit
+
+                # load the WO material requirement row
+                wm_stmt = select(WorkOrderMaterialModel).where(
+                    WorkOrderMaterialModel.work_order_id == wo.id,
+                    WorkOrderMaterialModel.material_id == line.material_id,
+                )
+                wm_res = await self._session.execute(wm_stmt)
+                wm = wm_res.scalar_one_or_none()
+                if wm is None:
+                    # no requirement tracked (unexpected) — skip
+                    continue
+
+                already_issued = Decimal(str(wm.issued_quantity))
+                to_issue = cumulative_required - already_issued
+                if to_issue > 0:
+                    # perform inventory issuance (may raise InsufficientStockError)
+                    await self._inventory.issue_stock(
+                        tenant_id=cmd.tenant_id,
+                        material_id=line.material_id,
+                        quantity=to_issue,
+                        work_order_id=wo.id,
+                        unit_id=line.unit_id,
+                        created_by=cmd.recorded_by,
+                    )
+                    wm.issued_quantity = float(already_issued + to_issue)
+
+        # --- Receive finished goods into inventory ---
         await self._inventory.receive_stock(
             tenant_id=cmd.tenant_id,
             material_id=fg_material.id,  # FIXED: use material.id, not product_id

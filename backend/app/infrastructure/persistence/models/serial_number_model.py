@@ -19,7 +19,7 @@ class SerialNumberModel(Base):
         UniqueConstraint("tenant_id", "serial_number", name="uq_serial_tenant_serial_number"),
         Index("ix_serial_numbers_tenant_id", "tenant_id"),
         Index("ix_serial_numbers_tenant_serial", "tenant_id", "serial_number"),
-        Index("ix_serial_numbers_material_id", "material_id"),
+        # material_id already declares index=True on the column; avoid duplicate index creation
         Index("ix_serial_numbers_status", "status"),
     )
 

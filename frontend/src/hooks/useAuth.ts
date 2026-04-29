@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom"
 import { useToast } from "@/hooks/use-toast"
 
 export function useAuth() {
-  const { setAuth, setUser, logout: clearAuthStore, isAuthenticated, user, tenant_id } = useAuthStore()
+  const { setAuth, setUser, setSupplierAndClient, logout: clearAuthStore, isAuthenticated, user, tenant_id } = useAuthStore()
   const { clearTenant, setTenantInfo } = useTenantStore()
   const navigate = useNavigate()
   const { toast } = useToast()
@@ -23,6 +23,7 @@ export function useAuth() {
       try {
         const meResult = await authService.getMe()
         setUser(meResult.user)
+        setSupplierAndClient(meResult.user.supplier_id ?? null, meResult.user.client_id ?? null)
         setTenantInfo(meResult.tenant.name, meResult.tenant.slug, meResult.tenant.plan)
         
         toast({ title: "Welcome back!" })
@@ -51,6 +52,7 @@ export function useAuth() {
       try {
         const meResult = await authService.getMe()
         setUser(meResult.user)
+        setSupplierAndClient(meResult.user.supplier_id ?? null, meResult.user.client_id ?? null)
         setTenantInfo(meResult.tenant.name, meResult.tenant.slug, meResult.tenant.plan)
         
         toast({ title: "Tenant created successfully! Welcome." })
@@ -85,5 +87,7 @@ export function useAuth() {
     isAuthenticated,
     user,
     tenant_id,
+    supplier_id: useAuthStore((s) => s.supplier_id),
+    client_id: useAuthStore((s) => s.client_id),
   }
 }

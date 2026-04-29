@@ -58,6 +58,9 @@ export function ProtectedRoute({ allowedRoles, roles, children }: ProtectedRoute
     if (normalizedUserRole === "CLIENT") {
       return <Navigate to="/client" replace />
     }
+    if (normalizedUserRole === "SUPPLIER") {
+      return <Navigate to="/supplier-portal" replace />
+    }
   }
 
   if (effectiveRoles && effectiveRoles.length > 0 && user) {

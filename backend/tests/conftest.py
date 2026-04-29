@@ -28,16 +28,20 @@ from typing import AsyncGenerator, Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from httpx import AsyncClient, ASGITransport
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from backend.app.config import settings
 from backend.app.main import app
+from backend.app.infrastructure.container import Container
 from backend.app.infrastructure.context.request_context import RequestContext
 from backend.app.infrastructure.persistence.database import Base
 from backend.app.infrastructure.security.jwt_handler import JWTHandler
 from backend.app.infrastructure.security.password_hasher import BcryptPasswordHasher
+from backend.app.infrastructure.audit.audit_service import AuditService
+from backend.app.infrastructure.logging.error_logger import ErrorLogger
+from backend.app.infrastructure.logging.repository import ErrorLogRepository
 
 
 password_hasher = BcryptPasswordHasher()
@@ -101,6 +105,25 @@ async def db_session(test_db_engine) -> AsyncGenerator[AsyncSession, None]:
         yield session
         # Cleanup after each test
         await session.rollback()
+
+
+@pytest.fixture(scope="session")
+def test_container(test_db_engine) -> Container:
+    """Build a DI container for tests using the SQLite in-memory database."""
+    session_factory = async_sessionmaker(
+        bind=test_db_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+        autocommit=False,
+    )
+    container = Container.create(settings)
+    container.db_engine = test_db_engine
+    container.session_factory = session_factory
+    container.audit_service = AuditService(session_factory=session_factory)
+    container.error_log_repository = ErrorLogRepository(session_factory=session_factory)
+    container.error_logger = ErrorLogger(session_factory=session_factory)
+    yield container
 
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -184,12 +207,18 @@ def sync_client() -> TestClient:
 
 
 @pytest.fixture
-async def async_client() -> AsyncGenerator[AsyncClient, None]:
+async def async_client(test_container: Container, monkeypatch) -> AsyncGenerator[AsyncClient, None]:
     """
     Provide an async HTTP client for testing.
-    (Does not inject a DB session for lightweight endpoint tests.)
+    Ensures the app uses the SQLite in-memory test container.
     """
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    monkeypatch.setattr(
+        "backend.app.main.Container.create",
+        classmethod(lambda cls, settings: test_container),
+    )
+    app.state.container = test_container
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 
 

@@ -36,6 +36,9 @@ class UserInMeResponse(BaseModel):
     role: str
     tenant_id: str
     is_active: bool
+    # Optional portal links (populated from JWT claims when present)
+    supplier_id: Optional[str] = None
+    client_id: Optional[str] = None
 
 
 # Nested tenant object returned inside /auth/me

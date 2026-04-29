@@ -438,7 +438,7 @@ class InventoryService:
             transaction_type="receipt",
             quantity=quantity,
             unit_id=unit_id,
-            reference_type="purchase_order",
+            reference_type="purchase_receipt",
             reference_id=purchase_order_id,
             created_by=created_by,
             remarks="Goods receipt",

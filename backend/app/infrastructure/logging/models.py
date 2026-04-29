@@ -5,8 +5,11 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Integer, Index, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import Boolean, DateTime, Integer, Index, String, Text, JSON as SA_JSON
+from sqlalchemy.dialects.postgresql import UUID
+
+# Use PostgreSQL JSONB when available, otherwise fall back to SQLAlchemy's generic JSON
+JSONB = SA_JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.infrastructure.persistence.database import Base

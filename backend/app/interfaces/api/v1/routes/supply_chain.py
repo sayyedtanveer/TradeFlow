@@ -17,6 +17,10 @@ from backend.app.infrastructure.persistence.models.inventory_transaction_model i
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.infrastructure.persistence.models.material_request_model import MaterialRequestModel
 from backend.app.infrastructure.persistence.models.purchase_order_model import PurchaseOrderLineModel, PurchaseOrderModel
+from backend.app.infrastructure.persistence.models.grn_model import (
+    GoodsReceiptNoteModel,
+    GRNLineModel,
+)
 from backend.app.infrastructure.persistence.models.quality_model import (
     InspectionDetailModel,
     NonConformanceReportModel,
@@ -31,6 +35,9 @@ from backend.app.interfaces.api.v1.dependencies.permissions import require_permi
 from backend.app.interfaces.api.v1.dependencies.supplier_portal import require_supplier_id
 from backend.app.interfaces.api.v1.schemas.supply_chain_schemas import (
     GoodsReceiptRequest,
+    GRNCreate,
+    GRNResponse,
+    GRNLineCreate,
     MaterialRequestCreate,
     MaterialRequestResponse,
     MaterialRequestUpdate,
@@ -372,7 +379,7 @@ async def get_purchase_order_receipts(
             .join(MaterialModel, MaterialModel.id == InventoryTransactionModel.material_id)
             .where(
                 InventoryTransactionModel.tenant_id == tenant_id,
-                InventoryTransactionModel.reference_type == "purchase_order",
+                InventoryTransactionModel.reference_type == "purchase_receipt",
                 InventoryTransactionModel.reference_id == po_id,
                 InventoryTransactionModel.transaction_type == "receipt",
                 InventoryTransactionModel.is_deleted.is_(False),
@@ -605,6 +612,250 @@ async def acknowledge_purchase_order(
         po.updated_at = datetime.now(timezone.utc)
         await session.commit()
     return {"status": "ok"}
+
+
+# ── GRN (Goods Receipt Note) ─────────────────────────────────────────────────
+
+
+@router.post(
+    "/grns",
+    response_model=GRNResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
+async def create_grn(
+    body: GRNCreate,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Create a GRN (Goods Receipt Note) from a PO.
+    This represents the receipt of goods from supplier and links to inventory.
+    Flow: PO → GRN → Inventory Update
+    """
+    container = get_container(request)
+    async with container.session_factory() as session:
+        # Verify PO exists and belongs to tenant
+        stmt = (
+            select(PurchaseOrderModel)
+            .options(selectinload(PurchaseOrderModel.lines))
+            .where(
+                PurchaseOrderModel.id == body.purchase_order_id,
+                PurchaseOrderModel.tenant_id == tenant_id,
+                PurchaseOrderModel.is_deleted.is_(False),
+            )
+        )
+        r = await session.execute(stmt)
+        po = r.scalar_one_or_none()
+        if not po:
+            raise HTTPException(status_code=404, detail="PO not found")
+        if po.status not in ("sent", "acknowledged", "partial"):
+            raise HTTPException(status_code=400, detail="PO not open for GRN")
+        
+        # Generate GRN number
+        grn_svc = PONumberService(session)  # Reuse for GRN numbering
+        grn_number = f"GRN-{await grn_svc.generate(tenant_id)}"
+        
+        # Create GRN header
+        grn = GoodsReceiptNoteModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            grn_number=grn_number,
+            purchase_order_id=body.purchase_order_id,
+            supplier_id=po.supplier_id,
+            warehouse_location_id=body.warehouse_location_id,
+            status="pending_receipt",
+            driver_name=body.driver_name,
+            vehicle_number=body.vehicle_number,
+            transport_company=body.transport_company,
+            tracking_number=body.tracking_number,
+            remarks=body.remarks,
+            created_by=user_id,
+        )
+        session.add(grn)
+        await session.flush()
+        
+        # Create GRN lines from PO lines
+        for line in body.lines:
+            # Verify line matches PO
+            po_line = next(
+                (ln for ln in po.lines if ln.id == line.po_line_id and not ln.is_deleted),
+                None,
+            )
+            if not po_line:
+                raise HTTPException(
+                    status_code=400, detail=f"PO line {line.po_line_id} not found"
+                )
+            
+            qty = Decimal(str(line.received_quantity))
+            max_qty = Decimal(str(po_line.quantity)) - Decimal(str(po_line.received_quantity))
+            if qty <= 0 or qty > max_qty:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid quantity for line {po_line.id}: max {max_qty}",
+                )
+            
+            grn_line = GRNLineModel(
+                id=uuid.uuid4(),
+                tenant_id=tenant_id,
+                grn_id=grn.id,
+                po_line_id=po_line.id,
+                material_id=po_line.material_id,
+                po_quantity=po_line.quantity,
+                received_quantity=float(qty),
+                accepted_quantity=0,
+                rejected_quantity=0,
+                unit_price=po_line.unit_price,
+                remarks=line.remarks,
+            )
+            session.add(grn_line)
+        
+        await session.commit()
+        await session.refresh(grn)
+    
+    return GRNResponse.model_validate(grn)
+
+
+@router.get("/grns/{grn_id}")
+async def get_grn(
+    grn_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Retrieve a specific GRN with all lines."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        stmt = (
+            select(GoodsReceiptNoteModel)
+            .options(selectinload(GoodsReceiptNoteModel.lines))
+            .where(
+                GoodsReceiptNoteModel.id == grn_id,
+                GoodsReceiptNoteModel.tenant_id == tenant_id,
+                GoodsReceiptNoteModel.is_deleted.is_(False),
+            )
+        )
+        r = await session.execute(stmt)
+        grn = r.scalar_one_or_none()
+    
+    if not grn:
+        raise HTTPException(status_code=404, detail="GRN not found")
+    
+    return GRNResponse.model_validate(grn)
+
+
+@router.put(
+    "/grns/{grn_id}/receive-in-inventory",
+    response_model=dict,
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
+async def receive_grn_into_inventory(
+    grn_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Mark GRN as received and update inventory with accepted quantities.
+    This is the point where goods move from GRN to inventory stock.
+    """
+    container = get_container(request)
+    async with container.session_factory() as session:
+        stmt = (
+            select(GoodsReceiptNoteModel)
+            .options(selectinload(GoodsReceiptNoteModel.lines))
+            .where(
+                GoodsReceiptNoteModel.id == grn_id,
+                GoodsReceiptNoteModel.tenant_id == tenant_id,
+                GoodsReceiptNoteModel.is_deleted.is_(False),
+            )
+            .with_for_update(of=GoodsReceiptNoteModel)
+        )
+        r = await session.execute(stmt)
+        grn = r.scalar_one_or_none()
+        if not grn:
+            raise HTTPException(status_code=404, detail="GRN not found")
+        if grn.status != "pending_receipt":
+            raise HTTPException(status_code=400, detail="GRN is not pending receipt")
+        
+        # Get PO to update
+        po = await session.get(PurchaseOrderModel, grn.purchase_order_id)
+        if not po:
+            raise HTTPException(status_code=404, detail="PO not found")
+        
+        inv = InventoryService(session)
+        
+        # For each GRN line, update inventory and PO line
+        for grn_line in grn.lines:
+            if grn_line.is_deleted:
+                continue
+            
+            # Set accepted quantity to received quantity (full acceptance)
+            accepted_qty = Decimal(str(grn_line.received_quantity))
+            grn_line.accepted_quantity = float(accepted_qty)
+            
+            # Find the PO line and update its received_quantity
+            po_line = await session.get(PurchaseOrderLineModel, grn_line.po_line_id)
+            if po_line:
+                po_line.received_quantity = float(
+                    Decimal(str(po_line.received_quantity)) + accepted_qty
+                )
+            
+            # Get material details for unit
+            material = await session.get(MaterialModel, grn_line.material_id)
+            
+            # Log inventory receipt (CRITICAL: reference GRN, not purchase_receipt)
+            await inv.receive_purchase_receipt(
+                tenant_id=tenant_id,
+                material_id=grn_line.material_id,
+                quantity=accepted_qty,
+                purchase_order_id=po.id,
+                unit_id=material.base_unit_id if material else None,
+                created_by=user_id,
+                warehouse_location_id=grn.warehouse_location_id,
+                unit_cost=grn_line.unit_price,
+            )
+            
+            # Record supplier price history
+            await session.execute(
+                text("""
+                    INSERT INTO supplier_price_history (
+                        id, tenant_id, supplier_id, material_id, unit_price, effective_from, created_at
+                    ) VALUES (
+                        :id, :tid, :sid, :mid, :up, CURRENT_DATE, NOW()
+                    )
+                    ON CONFLICT DO NOTHING
+                """),
+                {
+                    "id": str(uuid.uuid4()),
+                    "tid": str(tenant_id),
+                    "sid": str(po.supplier_id),
+                    "mid": str(grn_line.material_id),
+                    "up": float(grn_line.unit_price),
+                },
+            )
+        
+        # Update GRN status to received
+        grn.status = "received"
+        grn.updated_by = user_id
+        grn.updated_at = datetime.now(timezone.utc)
+        
+        # Update PO status based on completion
+        all_done = all(
+            Decimal(str(l.received_quantity)) >= Decimal(str(l.quantity))
+            for l in po.lines
+            if not l.is_deleted
+        )
+        any_recv = any(Decimal(str(l.received_quantity)) > 0 for l in po.lines if not l.is_deleted)
+        if all_done:
+            po.status = "received"
+        elif any_recv:
+            po.status = "partial"
+        po.updated_at = datetime.now(timezone.utc)
+        
+        await session.commit()
+    
+    return {"grn_id": str(grn.id), "status": grn.status, "po_id": str(po.id)}
 
 
 @router.put(
@@ -1635,6 +1886,28 @@ async def supplier_submit_quotation(
 ):
     container = get_container(request)
     async with container.session_factory() as session:
+        # Validate material belongs to tenant
+        mat = await session.get(MaterialModel, body.material_id)
+        if not mat or mat.tenant_id != tenant_id or mat.is_deleted:
+            raise HTTPException(status_code=404, detail="Material not found")
+
+        # If linked to a PO, ensure the PO exists and is assigned to this supplier and tenant
+        if body.purchase_order_id:
+            try:
+                po_uuid = uuid.UUID(body.purchase_order_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid purchase_order_id format")
+            stmt = select(PurchaseOrderModel).where(
+                PurchaseOrderModel.id == po_uuid,
+                PurchaseOrderModel.tenant_id == tenant_id,
+                PurchaseOrderModel.supplier_id == supplier_id,
+                PurchaseOrderModel.is_deleted.is_(False),
+            )
+            r = await session.execute(stmt)
+            po = r.scalar_one_or_none()
+            if not po:
+                raise HTTPException(status_code=404, detail="Purchase order not found or not assigned to this supplier")
+
         q = SupplierQuotationModel(
             id=uuid.uuid4(),
             tenant_id=tenant_id,

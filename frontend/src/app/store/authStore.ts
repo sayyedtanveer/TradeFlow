@@ -7,18 +7,22 @@ interface User {
   first_name: string
   last_name: string
   role: string
-  client_id?: string | null
-  supplier_id?: string | null
   tenant_id?: string | null
+  supplier_id?: string | null
+  client_id?: string | null
+  is_active: boolean
 }
 
 interface AuthState {
   token: string | null
   user: User | null
   tenant_id: string | null
+  supplier_id: string | null
+  client_id: string | null
   isAuthenticated: boolean
   setAuth: (token: string, tenant_id: string) => void
   setUser: (user: User) => void
+  setSupplierAndClient: (supplier_id: string | null, client_id: string | null) => void
   logout: () => void
 }
 
@@ -28,11 +32,22 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       user: null,
       tenant_id: null,
+      supplier_id: null,
+      client_id: null,
       isAuthenticated: false,
       setAuth: (token, tenant_id) =>
         set({ token, tenant_id, isAuthenticated: true }),
       setUser: (user) => set({ user }),
-      logout: () => set({ token: null, user: null, tenant_id: null, isAuthenticated: false }),
+      setSupplierAndClient: (supplier_id, client_id) =>
+        set({ supplier_id, client_id }),
+      logout: () => set({
+        token: null,
+        user: null,
+        tenant_id: null,
+        supplier_id: null,
+        client_id: null,
+        isAuthenticated: false,
+      }),
     }),
     {
       name: "auth-storage", // stores in localStorage

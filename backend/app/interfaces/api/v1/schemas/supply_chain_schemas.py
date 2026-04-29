@@ -182,3 +182,60 @@ class InvoiceDisputeCreate(BaseModel):
 class InvoiceDisputeResolve(BaseModel):
     resolution: str = Field(..., pattern="^(approved|rejected)$")
     resolution_notes: Optional[str] = None
+
+
+# ── GRN (Goods Receipt Note) Schemas ──────────────────────────────────────────
+
+class GRNLineCreate(BaseModel):
+    po_line_id: uuid.UUID
+    received_quantity: Decimal
+    remarks: Optional[str] = None
+
+
+class GRNCreate(BaseModel):
+    purchase_order_id: uuid.UUID
+    warehouse_location_id: Optional[uuid.UUID] = None
+    lines: List[GRNLineCreate]
+    driver_name: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    transport_company: Optional[str] = None
+    tracking_number: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+class GRNLineResponse(BaseModel):
+    id: uuid.UUID
+    grn_id: uuid.UUID
+    po_line_id: uuid.UUID
+    material_id: uuid.UUID
+    po_quantity: float
+    received_quantity: float
+    accepted_quantity: float
+    rejected_quantity: float
+    unit_price: float
+    remarks: Optional[str] = None
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class GRNResponse(BaseModel):
+    id: uuid.UUID
+    grn_number: str
+    purchase_order_id: uuid.UUID
+    supplier_id: uuid.UUID
+    status: str
+    actual_receipt_date: str
+    warehouse_location_id: Optional[uuid.UUID] = None
+    driver_name: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    transport_company: Optional[str] = None
+    tracking_number: Optional[str] = None
+    remarks: Optional[str] = None
+    lines: List[GRNLineResponse] = []
+    created_at: str
+    created_by: uuid.UUID
+
+    class Config:
+        from_attributes = True
