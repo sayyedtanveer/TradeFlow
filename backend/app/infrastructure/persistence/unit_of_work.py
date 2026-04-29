@@ -58,6 +58,10 @@ class SQLAlchemyUnitOfWork(IUnitOfWork):
         for event in events:
             await self._dispatcher.dispatch(event)
 
+    async def work(self) -> None:
+        """Alias for commit() — used by command handlers for semantic clarity."""
+        await self.commit()
+
     async def rollback(self) -> None:
         self._pending_events.clear()
         await self._session.rollback()

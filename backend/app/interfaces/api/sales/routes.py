@@ -575,9 +575,9 @@ async def confirm_order(
         
         credit_service = CreditValidationService(client_repo)
         app_inventory = AppInventoryService(session, container.event_dispatcher)
-        wo_handler = WorkOrderHandler(session)
+        wo_handler = WorkOrderHandler(session).with_uow(uow)
         inv_integ = SalesInventoryIntegrationService(app_inventory)
-        mfg_integ = SalesManufacturingIntegrationService(wo_handler)
+        mfg_integ = SalesManufacturingIntegrationService(wo_handler, uow).with_event_dispatcher(container.event_dispatcher)
         inv_service = InventoryReservationService(inv_integ, mfg_integ)
 
         handler = ConfirmSalesOrderCommandHandler(order_repo, client_repo, credit_service, inv_service, uow)
@@ -618,9 +618,9 @@ async def ship_order(
         from backend.app.application.inventory.services.inventory_service import InventoryService as AppInventoryService
         
         app_inventory = AppInventoryService(session, container.event_dispatcher)
-        wo_handler = WorkOrderHandler(session)
+        wo_handler = WorkOrderHandler(session).with_uow(uow)
         inv_integ = SalesInventoryIntegrationService(app_inventory)
-        mfg_integ = SalesManufacturingIntegrationService(wo_handler)
+        mfg_integ = SalesManufacturingIntegrationService(wo_handler, uow).with_event_dispatcher(container.event_dispatcher)
         inv_service = InventoryReservationService(inv_integ, mfg_integ)
         
         handler = ShipOrderCommandHandler(order_repo, inv_service, uow)
@@ -694,9 +694,9 @@ async def cancel_order(
         
         credit_service = CreditValidationService(client_repo)
         app_inventory = AppInventoryService(session, container.event_dispatcher)
-        wo_handler = WorkOrderHandler(session)
+        wo_handler = WorkOrderHandler(session).with_uow(uow)
         inv_integ = SalesInventoryIntegrationService(app_inventory)
-        mfg_integ = SalesManufacturingIntegrationService(wo_handler)
+        mfg_integ = SalesManufacturingIntegrationService(wo_handler, uow).with_event_dispatcher(container.event_dispatcher)
         inv_service = InventoryReservationService(inv_integ, mfg_integ)
 
         handler = CancelSalesOrderCommandHandler(order_repo, credit_service, inv_service, uow)

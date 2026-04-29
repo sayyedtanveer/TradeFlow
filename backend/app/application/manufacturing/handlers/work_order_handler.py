@@ -23,6 +23,9 @@ from backend.app.application.manufacturing.services.inventory_service import Inv
 from backend.app.application.manufacturing.services.wo_number_service import WONumberService
 from backend.app.domain.manufacturing.entities.work_order import WorkOrder, WorkOrderStatus, WorkOrderPriority
 from backend.app.domain.manufacturing.exceptions import BOMNotFoundError, MaterialNotIssuedError
+from backend.app.domain.manufacturing.events.work_order_events import (
+    WorkOrderReleased, WorkOrderStarted, WorkOrderCompleted, WorkOrderClosed,
+)
 from backend.app.infrastructure.persistence.models.work_order_model import (
     WorkOrderModel, WorkOrderMaterialModel, JobCardModel, ProductionRecordModel
 )
@@ -31,10 +34,21 @@ from backend.app.infrastructure.persistence.models.bom_operation_model import BO
 
 
 class WorkOrderHandler:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, uow=None):
         self._session = session
+        self._uow = uow  # Optional: UnitOfWork for emitting domain events
         self._inventory = InventoryService(session)
         self._wo_number = WONumberService(session)
+
+    def with_uow(self, uow):
+        """Fluent setter for UnitOfWork (for event emission)."""
+        self._uow = uow
+        return self
+
+    def _emit_event(self, event) -> None:
+        """Emit a domain event via UnitOfWork if available."""
+        if self._uow is not None:
+            self._uow.register_events([event])
 
     # ── Create ──────────────────────────────────────────────────────────────────
 
@@ -107,6 +121,16 @@ class WorkOrderHandler:
         entity.release()
         wo.status = entity.status
         wo.updated_at = datetime.now(timezone.utc)
+        
+        # Emit event for dashboard notifications
+        self._emit_event(WorkOrderReleased(
+            aggregate_id=wo.id,
+            tenant_id=cmd.tenant_id,
+            event_type="work_order.released",
+            wo_id=str(wo.id),
+            wo_number=wo.wo_number,
+            product=str(wo.product_id),
+        ))
 
     # ── Start ───────────────────────────────────────────────────────────────────
 
@@ -116,6 +140,15 @@ class WorkOrderHandler:
         entity.start()
         wo.status = entity.status
         wo.updated_at = datetime.now(timezone.utc)
+        
+        # Emit event for dashboard notifications
+        self._emit_event(WorkOrderStarted(
+            aggregate_id=wo.id,
+            tenant_id=cmd.tenant_id,
+            event_type="work_order.started",
+            wo_id=str(wo.id),
+            wo_number=wo.wo_number,
+        ))
 
     # ── Issue Material ───────────────────────────────────────────────────────────
 
@@ -263,6 +296,16 @@ class WorkOrderHandler:
         entity.complete()  # raises MaterialNotIssuedError if produced_qty == 0
         wo.status = entity.status
         wo.updated_at = datetime.now(timezone.utc)
+        
+        # Emit event for dashboard notifications
+        self._emit_event(WorkOrderCompleted(
+            aggregate_id=wo.id,
+            tenant_id=cmd.tenant_id,
+            event_type="work_order.completed",
+            wo_id=str(wo.id),
+            wo_number=wo.wo_number,
+            produced_qty=float(wo.produced_quantity),
+        ))
 
     # ── Close ────────────────────────────────────────────────────────────────────
 
@@ -272,6 +315,15 @@ class WorkOrderHandler:
         entity.close()
         wo.status = entity.status
         wo.updated_at = datetime.now(timezone.utc)
+        
+        # Emit event for dashboard notifications
+        self._emit_event(WorkOrderClosed(
+            aggregate_id=wo.id,
+            tenant_id=cmd.tenant_id,
+            event_type="work_order.closed",
+            wo_id=str(wo.id),
+            wo_number=wo.wo_number,
+        ))
 
     # ── Job Card ─────────────────────────────────────────────────────────────────
 

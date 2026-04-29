@@ -64,7 +64,7 @@ async def create_work_order(
     container = get_container(request)
     async with container.session_factory() as session:
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = WorkOrderHandler(session)
+        handler = WorkOrderHandler(session).with_uow(uow)
         try:
             cmd = CreateWorkOrderCommand(
                 tenant_id=tenant_id, created_by=user_id, **body.model_dump()
@@ -137,7 +137,7 @@ async def release_work_order(
     container = get_container(request)
     async with container.session_factory() as session:
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = WorkOrderHandler(session)
+        handler = WorkOrderHandler(session).with_uow(uow)
         try:
             await handler.handle_release(ReleaseWorkOrderCommand(tenant_id=tenant_id, work_order_id=work_order_id))
             await uow.commit()
@@ -155,7 +155,7 @@ async def start_work_order(
     container = get_container(request)
     async with container.session_factory() as session:
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = WorkOrderHandler(session)
+        handler = WorkOrderHandler(session).with_uow(uow)
         try:
             await handler.handle_start(StartWorkOrderCommand(tenant_id=tenant_id, work_order_id=work_order_id))
             await uow.commit()
@@ -175,7 +175,7 @@ async def issue_materials(
     container = get_container(request)
     async with container.session_factory() as session:
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = WorkOrderHandler(session)
+        handler = WorkOrderHandler(session).with_uow(uow)
         try:
             cmd = IssueMaterialCommand(
                 tenant_id=tenant_id, work_order_id=work_order_id, issued_by=user_id, **body.model_dump()
@@ -198,7 +198,7 @@ async def record_production(
     container = get_container(request)
     async with container.session_factory() as session:
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = WorkOrderHandler(session)
+        handler = WorkOrderHandler(session).with_uow(uow)
         try:
             cmd = RecordProductionCommand(
                 tenant_id=tenant_id, work_order_id=work_order_id, recorded_by=user_id, **body.model_dump()
@@ -219,7 +219,7 @@ async def complete_work_order(
     container = get_container(request)
     async with container.session_factory() as session:
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = WorkOrderHandler(session)
+        handler = WorkOrderHandler(session).with_uow(uow)
         try:
             await handler.handle_complete(CompleteWorkOrderCommand(tenant_id=tenant_id, work_order_id=work_order_id))
             await uow.commit()
@@ -237,7 +237,7 @@ async def close_work_order(
     container = get_container(request)
     async with container.session_factory() as session:
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = WorkOrderHandler(session)
+        handler = WorkOrderHandler(session).with_uow(uow)
         try:
             await handler.handle_close(CloseWorkOrderCommand(tenant_id=tenant_id, work_order_id=work_order_id))
             await uow.commit()
@@ -279,7 +279,7 @@ async def start_job_card(
     container = get_container(request)
     async with container.session_factory() as session:
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = WorkOrderHandler(session)
+        handler = WorkOrderHandler(session).with_uow(uow)
         try:
             cmd = StartJobCardCommand(
                 tenant_id=tenant_id, work_order_id=work_order_id,
@@ -339,7 +339,7 @@ async def complete_job_card(
     container = get_container(request)
     async with container.session_factory() as session:
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = WorkOrderHandler(session)
+        handler = WorkOrderHandler(session).with_uow(uow)
         try:
             cmd = CompleteJobCardCommand(
                 tenant_id=tenant_id, work_order_id=work_order_id,
