@@ -47,6 +47,23 @@ export const useOfflineSync = (options: SyncOptions = {}) => {
     },
   })
 
+  // Update pending count
+  const updatePendingCount = useCallback(async () => {
+    if (!idb.isReady) {
+      setPendingCount(0)
+      return
+    }
+
+    try {
+      const unsynced = await idb.getAllUnsynced('syncQueue')
+      setPendingCount(unsynced.length)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      setSyncError(errorMsg)
+      setPendingCount(0)
+    }
+  }, [idb])
+
   // Queue an action for sync
   const queueAction = useCallback(
     async (
@@ -68,18 +85,12 @@ export const useOfflineSync = (options: SyncOptions = {}) => {
       }
 
       await idb.add('syncQueue', queueItem as any)
-      updatePendingCount()
+      await updatePendingCount()
 
       return queueItem.id
     },
-    [idb, maxRetries]
+    [idb, maxRetries, updatePendingCount]
   )
-
-  // Update pending count
-  const updatePendingCount = useCallback(async () => {
-    const unsynced = await idb.getAllUnsynced('syncQueue')
-    setPendingCount(unsynced.length)
-  }, [idb])
 
   // Sync a single item
   const syncItem = useCallback(
@@ -130,7 +141,7 @@ export const useOfflineSync = (options: SyncOptions = {}) => {
 
   // Sync all pending items
   const syncAll = useCallback(async (): Promise<number> => {
-    if (!navigator.onLine) {
+    if (!idb.isReady || !navigator.onLine) {
       return 0
     }
 
@@ -165,10 +176,10 @@ export const useOfflineSync = (options: SyncOptions = {}) => {
 
   // Auto-sync when online
   useEffect(() => {
-    if (!autoSync) return
+    if (!autoSync || !idb.isReady) return
 
     const handleOnline = () => {
-      syncAll()
+      void syncAll()
     }
 
     const handleOffline = () => {
@@ -182,12 +193,22 @@ export const useOfflineSync = (options: SyncOptions = {}) => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
     }
-  }, [autoSync, syncAll])
+  }, [autoSync, idb.isReady, syncAll])
 
   // Initial pending count
   useEffect(() => {
-    updatePendingCount()
-  }, [updatePendingCount])
+    if (!idb.isReady) {
+      return
+    }
+
+    void updatePendingCount()
+  }, [idb.isReady, updatePendingCount])
+
+  useEffect(() => {
+    if (idb.error) {
+      setSyncError(idb.error)
+    }
+  }, [idb.error])
 
   // Cache work order data
   const cacheWorkOrder = useCallback(

@@ -1,7 +1,21 @@
-import { User, UserRole } from "@/types/auth.types"
+import { User } from "@/types/auth.types"
 import { apiClient } from "./api-client"
 
 const BASE = ""
+
+type UserMutationPayload = {
+  email: string
+  first_name: string
+  last_name: string
+  role: string
+  is_active?: boolean
+  supplier_id?: string | null
+  client_id?: string | null
+}
+
+export type CreatedUser = User & {
+  temporary_password?: string
+}
 
 export const usersService = {
   async getUsers(filters?: { search?: string; role?: string; status?: string }): Promise<User[]> {
@@ -14,14 +28,8 @@ export const usersService = {
     return data
   },
 
-  async createUser(payload: {
-    email: string
-    first_name: string
-    last_name: string
-    role: string
-    is_active?: boolean
-  }): Promise<User> {
-    const { data } = await apiClient.post<User>(`${BASE}/users`, payload)
+  async createUser(payload: UserMutationPayload): Promise<CreatedUser> {
+    const { data } = await apiClient.post<CreatedUser>(`${BASE}/users`, payload)
     return data
   },
 
@@ -30,6 +38,8 @@ export const usersService = {
     last_name: string
     role: string
     is_active: boolean
+    supplier_id: string | null
+    client_id: string | null
   }>): Promise<User> {
     const { data } = await apiClient.put<User>(`${BASE}/users/${id}`, payload)
     return data

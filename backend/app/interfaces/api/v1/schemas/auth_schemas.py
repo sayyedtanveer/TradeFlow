@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import List, Optional
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 # ── Request schemas ────────────────────────────────────────────────────────────
@@ -29,6 +29,8 @@ class TokenResponse(BaseModel):
 
 # Nested user object returned inside /auth/me
 class UserInMeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     email: str
     first_name: str

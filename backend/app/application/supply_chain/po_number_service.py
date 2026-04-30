@@ -7,6 +7,8 @@ from datetime import date
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.infrastructure.persistence.models.po_sequence_model import PONumberSequenceModel  # noqa: F401
+
 
 class PONumberService:
     def __init__(self, session: AsyncSession):

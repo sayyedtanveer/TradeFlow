@@ -1,7 +1,7 @@
 """Unit tests for Sales domain layer."""
 
 import pytest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -374,7 +374,7 @@ class TestSalesOrder:
         client_id = uuid4()
         tenant_id = uuid4()
         order_date = date.today()
-        delivery_date = date(2026, 4, 1)
+        delivery_date = date.today() + timedelta(days=30)
         
         order = SalesOrder(
             id=order_id,
@@ -410,7 +410,7 @@ class TestSalesOrder:
             order_number=OrderNumber.generate(1),
             client_id=uuid4(),
             order_date=date.today(),
-            delivery_date=date(2026, 4, 1),
+            delivery_date=date.today() + timedelta(days=30),
         )
         
         line = SalesOrderLine(
@@ -436,7 +436,7 @@ class TestSalesOrder:
             order_number=OrderNumber.generate(1),
             client_id=uuid4(),
             order_date=date.today(),
-            delivery_date=date(2026, 4, 1),
+            delivery_date=date.today() + timedelta(days=30),
         )
         
         line = SalesOrderLine(
@@ -462,7 +462,7 @@ class TestSalesOrder:
             order_number=OrderNumber.generate(1),
             client_id=uuid4(),
             order_date=date.today(),
-            delivery_date=date(2026, 4, 1),
+            delivery_date=date.today() + timedelta(days=30),
         )
         
         # Add two lines
@@ -506,7 +506,7 @@ class TestSalesOrder:
             order_number=OrderNumber.generate(1),
             client_id=uuid4(),
             order_date=date.today(),
-            delivery_date=date(2026, 4, 1),
+            delivery_date=date.today() + timedelta(days=30),
         )
         
         line = SalesOrderLine(
@@ -533,7 +533,7 @@ class TestSalesOrder:
             order_number=OrderNumber.generate(1),
             client_id=uuid4(),
             order_date=date.today(),
-            delivery_date=date(2026, 4, 1),
+            delivery_date=date.today() + timedelta(days=30),
         )
         
         with pytest.raises(ValueError):
@@ -547,13 +547,24 @@ class TestSalesOrder:
             order_number=OrderNumber.generate(1),
             client_id=uuid4(),
             order_date=date.today(),
-            delivery_date=date(2026, 4, 1),
+            delivery_date=date.today() + timedelta(days=30),
         )
         
         # DRAFT -> CONFIRMED
         assert order.can_transition_to(OrderStatus.CONFIRMED) is True
         assert order.can_transition_to(OrderStatus.SHIPPED) is False
-        
+        order.add_line(
+            SalesOrderLine(
+                id=uuid4(),
+                order_id=order.id,
+                product_id=uuid4(),
+                product_type="variant",
+                uom_id=uuid4(),
+                quantity=Decimal("1.00"),
+                unit_price=Decimal("100.00"),
+            )
+        )
+
         order.confirm()
         assert order.status == OrderStatus.CONFIRMED
         
@@ -570,7 +581,7 @@ class TestSalesOrder:
             order_number=OrderNumber.generate(1),
             client_id=uuid4(),
             order_date=date.today(),
-            delivery_date=date(2026, 4, 1),
+            delivery_date=date.today() + timedelta(days=30),
         )
         
         # Try to ship from DRAFT (invalid)
@@ -585,7 +596,7 @@ class TestSalesOrder:
             order_number=OrderNumber.generate(1),
             client_id=uuid4(),
             order_date=date.today(),
-            delivery_date=date(2026, 4, 1),
+            delivery_date=date.today() + timedelta(days=30),
         )
         
         # Add initial line
@@ -731,12 +742,12 @@ class TestPriceList:
             name="Default Pricing",
         )
         price_list.valid_from = today
-        price_list.valid_to = date(2026, 12, 31)
+        price_list.valid_to = today + timedelta(days=365)
         
         assert price_list.is_valid_on(today) is True
-        assert price_list.is_valid_on(date(2026, 12, 31)) is True
-        assert price_list.is_valid_on(date(2025, 1, 1)) is False
-        assert price_list.is_valid_on(date(2027, 1, 1)) is False
+        assert price_list.is_valid_on(today + timedelta(days=365)) is True
+        assert price_list.is_valid_on(today - timedelta(days=365)) is False
+        assert price_list.is_valid_on(today + timedelta(days=366)) is False
 
     def test_update_price(self):
         """Test updating a pricing line."""

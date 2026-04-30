@@ -9,6 +9,7 @@ import {
   SalesOrder,
   PriceList,
   OrderStatus,
+  PaymentStatus,
   CreateClientRequest,
   UpdateClientRequest,
   CreateOrderRequest,
@@ -22,6 +23,85 @@ import {
 
 const BASE_URL = '/sales';
 
+const unwrap = async <T>(request: Promise<{ data: T }>): Promise<T> => {
+  const response = await request;
+  return response.data;
+};
+
+const toNumber = (value: unknown): number => {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const normalizeClient = (client: any): SalesClient => ({
+  ...client,
+  credit_limit: toNumber(client.credit_limit),
+  credit_used: toNumber(client.credit_used),
+  payment_terms_days: toNumber(client.payment_terms_days),
+});
+
+const normalizeOrderLine = (line: any) => {
+  const quantity = toNumber(line.quantity);
+  const unitPrice = toNumber(line.unit_price);
+  const total = toNumber(line.total ?? line.line_total);
+
+  return {
+    ...line,
+    quantity,
+    unit_price: unitPrice,
+    tax_rate: toNumber(line.tax_rate),
+    allocated_qty: toNumber(line.allocated_qty ?? line.allocated_quantity),
+    shipped_qty: toNumber(line.shipped_qty ?? line.shipped_quantity),
+    backorder_qty: toNumber(line.backorder_qty ?? line.backorder_quantity),
+    subtotal: toNumber(line.subtotal ?? quantity * unitPrice),
+    tax_amount: toNumber(line.tax_amount),
+    total,
+    line_status: (line.line_status ?? line.status ?? 'PENDING').toString().toUpperCase(),
+  };
+};
+
+const normalizeOrder = (order: any): SalesOrder => ({
+  ...order,
+  status: (order.status ?? OrderStatus.DRAFT).toString().toUpperCase() as OrderStatus,
+  payment_status: (order.payment_status ?? PaymentStatus.PENDING).toString().toUpperCase() as PaymentStatus,
+  subtotal: toNumber(order.subtotal),
+  discount_amount: toNumber(order.discount_amount),
+  tax_amount: toNumber(order.tax_amount),
+  grand_total: toNumber(order.grand_total),
+  lines: Array.isArray(order.lines) ? order.lines.map(normalizeOrderLine) : [],
+});
+
+const normalizePriceList = (priceList: any): PriceList => ({
+  ...priceList,
+  lines: Array.isArray(priceList.lines)
+    ? priceList.lines.map((line: any) => ({ ...line, unit_price: toNumber(line.unit_price) }))
+    : [],
+});
+
+const normalizeStatistics = (stats: any): OrderStatistics => ({
+  draft_count: toNumber(stats.draft_count ?? stats.DRAFT),
+  confirmed_count: toNumber(stats.confirmed_count ?? stats.CONFIRMED),
+  production_count: toNumber(stats.production_count ?? stats.PRODUCTION),
+  ready_count: toNumber(stats.ready_count ?? stats.READY),
+  shipped_count: toNumber(stats.shipped_count ?? stats.SHIPPED),
+  delivered_count: toNumber(stats.delivered_count ?? stats.DELIVERED),
+  cancelled_count: toNumber(stats.cancelled_count ?? stats.CANCELLED),
+});
+
+const normalizeCredit = (credit: any): ClientCreditInfo => {
+  const creditLimit = credit.credit_limit === null ? 0 : toNumber(credit.credit_limit);
+  const creditUsed = toNumber(credit.credit_used);
+  const availableCredit = credit.available_credit === null ? 0 : toNumber(credit.available_credit);
+
+  return {
+    ...credit,
+    credit_limit: creditLimit,
+    credit_used: creditUsed,
+    available_credit: availableCredit,
+    usage_percent: creditLimit && creditLimit > 0 ? (creditUsed / creditLimit) * 100 : 0,
+  };
+};
+
 /**
  * ============================================================================
  * CLIENTS API
@@ -33,14 +113,14 @@ export const clientsApi = {
    * Create a new sales client
    */
   create: async (data: CreateClientRequest): Promise<SalesClient> => {
-    return apiClient.post(`${BASE_URL}/clients`, data);
+    return normalizeClient(await unwrap(apiClient.post(`${BASE_URL}/clients`, data)));
   },
 
   /**
    * Get client by ID
    */
   get: async (clientId: string): Promise<SalesClient> => {
-    return apiClient.get(`${BASE_URL}/clients/${clientId}`);
+    return normalizeClient(await unwrap(apiClient.get(`${BASE_URL}/clients/${clientId}`)));
   },
 
   /**
@@ -59,28 +139,31 @@ export const clientsApi = {
     if (is_active !== undefined) params.append('is_active', is_active.toString());
 
     const query = params.toString();
-    return apiClient.get(`${BASE_URL}/clients${query ? `?${query}` : ''}`);
+    const response = await unwrap<SalesListResponse<SalesClient>>(
+      apiClient.get(`${BASE_URL}/clients${query ? `?${query}` : ''}`)
+    );
+    return { ...response, items: response.items.map(normalizeClient) };
   },
 
   /**
    * Update client
    */
   update: async (clientId: string, data: UpdateClientRequest): Promise<SalesClient> => {
-    return apiClient.patch(`${BASE_URL}/clients/${clientId}`, data);
+    return normalizeClient(await unwrap(apiClient.patch(`${BASE_URL}/clients/${clientId}`, data)));
   },
 
   /**
    * Deactivate (soft delete) client
    */
   deactivate: async (clientId: string): Promise<void> => {
-    return apiClient.delete(`${BASE_URL}/clients/${clientId}`);
+    await apiClient.delete(`${BASE_URL}/clients/${clientId}`);
   },
 
   /**
    * Get client credit information
    */
   getCredit: async (clientId: string): Promise<ClientCreditInfo> => {
-    return apiClient.get(`${BASE_URL}/clients/${clientId}/credit`);
+    return normalizeCredit(await unwrap(apiClient.get(`${BASE_URL}/clients/${clientId}/credit`)));
   },
 };
 
@@ -95,21 +178,21 @@ export const ordersApi = {
    * Create a new sales order
    */
   create: async (data: CreateOrderRequest): Promise<SalesOrder> => {
-    return apiClient.post(`${BASE_URL}/orders`, data);
+    return normalizeOrder(await unwrap(apiClient.post(`${BASE_URL}/orders`, data)));
   },
 
   /**
    * Get sales order by ID (with full details)
    */
   get: async (orderId: string): Promise<SalesOrder> => {
-    return apiClient.get(`${BASE_URL}/orders/${orderId}`);
+    return normalizeOrder(await unwrap(apiClient.get(`${BASE_URL}/orders/${orderId}`)));
   },
 
   /**
    * Get sales order by order number
    */
   getByNumber: async (orderNumber: string): Promise<SalesOrder> => {
-    return apiClient.get(`${BASE_URL}/orders/number/${orderNumber}`);
+    return normalizeOrder(await unwrap(apiClient.get(`${BASE_URL}/orders/number/${orderNumber}`)));
   },
 
   /**
@@ -132,14 +215,17 @@ export const ordersApi = {
     if (endDate) params.append('end_date', endDate);
 
     const query = params.toString();
-    return apiClient.get(`${BASE_URL}/orders${query ? `?${query}` : ''}`);
+    const response = await unwrap<SalesListResponse<SalesOrder>>(
+      apiClient.get(`${BASE_URL}/orders${query ? `?${query}` : ''}`)
+    );
+    return { ...response, items: response.items.map(normalizeOrder) };
   },
 
   /**
    * Update sales order (before confirmation)
    */
   update: async (orderId: string, data: UpdateOrderRequest): Promise<SalesOrder> => {
-    return apiClient.patch(`${BASE_URL}/orders/${orderId}`, data);
+    return normalizeOrder(await unwrap(apiClient.patch(`${BASE_URL}/orders/${orderId}`, data)));
   },
 
   /**
@@ -149,65 +235,73 @@ export const ordersApi = {
     const params = new URLSearchParams();
     if (limit) params.append('limit', limit.toString());
     const query = params.toString();
-    return apiClient.get(`${BASE_URL}/orders/draft${query ? `?${query}` : ''}`);
+    const response = await unwrap<SalesListResponse<SalesOrder>>(
+      apiClient.get(`${BASE_URL}/orders/draft${query ? `?${query}` : ''}`)
+    );
+    return { ...response, items: response.items.map(normalizeOrder) };
   },
 
   /**
    * Add line item to order
    */
   addLine: async (orderId: string, line: CreateOrderLineRequest): Promise<SalesOrder> => {
-    return apiClient.post(`${BASE_URL}/orders/${orderId}/lines`, line);
+    return normalizeOrder(await unwrap(apiClient.post(`${BASE_URL}/orders/${orderId}/lines`, line)));
   },
 
   /**
    * Remove line item from order
    */
   removeLine: async (orderId: string, lineId: string): Promise<SalesOrder> => {
-    return apiClient.delete(`${BASE_URL}/orders/${orderId}/lines/${lineId}`);
+    return unwrap(apiClient.delete(`${BASE_URL}/orders/${orderId}/lines/${lineId}`));
   },
 
   /**
    * Apply discount to order
    */
   applyDiscount: async (orderId: string, discountAmount: number): Promise<SalesOrder> => {
-    return apiClient.post(`${BASE_URL}/orders/${orderId}/discount`, {
+    return normalizeOrder(await unwrap(apiClient.post(`${BASE_URL}/orders/${orderId}/discount`, {
       discount_amount: discountAmount,
-    });
+    })));
   },
 
   /**
    * Confirm order (move from DRAFT to CONFIRMED)
    */
   confirm: async (orderId: string): Promise<SalesOrder> => {
-    return apiClient.post(`${BASE_URL}/orders/${orderId}/confirm`, {});
+    return normalizeOrder(await unwrap(apiClient.post(`${BASE_URL}/orders/${orderId}/confirm`, {
+      confirmed_by: 'admin',
+    })));
   },
 
   /**
    * Record shipment (move to SHIPPED)
    */
   ship: async (orderId: string, shipmentData?: any): Promise<SalesOrder> => {
-    return apiClient.post(`${BASE_URL}/orders/${orderId}/ship`, shipmentData || {});
+    return normalizeOrder(await unwrap(apiClient.post(`${BASE_URL}/orders/${orderId}/ship`, {
+      line_shipments: shipmentData?.line_shipments ?? {},
+      shipped_by: shipmentData?.shipped_by ?? 'admin',
+    })));
   },
 
   /**
    * Record delivery (move to DELIVERED)
    */
   deliver: async (orderId: string, deliveryData?: any): Promise<SalesOrder> => {
-    return apiClient.post(`${BASE_URL}/orders/${orderId}/deliver`, deliveryData || {});
+    return normalizeOrder(await unwrap(apiClient.post(`${BASE_URL}/orders/${orderId}/deliver`, deliveryData || {})));
   },
 
   /**
    * Cancel order
    */
   cancel: async (orderId: string, reason?: string): Promise<SalesOrder> => {
-    return apiClient.post(`${BASE_URL}/orders/${orderId}/cancel`, { reason });
+    return normalizeOrder(await unwrap(apiClient.post(`${BASE_URL}/orders/${orderId}/cancel`, { reason })));
   },
 
   /**
    * Get order statistics (count by status)
    */
   getStatistics: async (): Promise<OrderStatistics> => {
-    return apiClient.get(`${BASE_URL}/orders/stats/by-status`);
+    return normalizeStatistics(await unwrap(apiClient.get(`${BASE_URL}/orders/stats/by-status`)));
   },
 };
 
@@ -222,14 +316,14 @@ export const priceListsApi = {
    * Create a new price list
    */
   create: async (data: CreatePriceListRequest): Promise<PriceList> => {
-    return apiClient.post(`${BASE_URL}/price-lists`, data);
+    return normalizePriceList(await unwrap(apiClient.post(`${BASE_URL}/price-lists`, data)));
   },
 
   /**
    * Get price list by ID
    */
   get: async (priceListId: string): Promise<PriceList> => {
-    return apiClient.get(`${BASE_URL}/price-lists/${priceListId}`);
+    return normalizePriceList(await unwrap(apiClient.get(`${BASE_URL}/price-lists/${priceListId}`)));
   },
 
   /**
@@ -241,7 +335,10 @@ export const priceListsApi = {
     if (offset) params.append('offset', offset.toString());
 
     const query = params.toString();
-    return apiClient.get(`${BASE_URL}/price-lists${query ? `?${query}` : ''}`);
+    const response = await unwrap<SalesListResponse<PriceList>>(
+      apiClient.get(`${BASE_URL}/price-lists${query ? `?${query}` : ''}`)
+    );
+    return { ...response, items: response.items.map(normalizePriceList) };
   },
 
   /**
@@ -251,28 +348,28 @@ export const priceListsApi = {
     priceListId: string,
     data: Partial<CreatePriceListRequest>
   ): Promise<PriceList> => {
-    return apiClient.patch(`${BASE_URL}/price-lists/${priceListId}`, data);
+    return normalizePriceList(await unwrap(apiClient.patch(`${BASE_URL}/price-lists/${priceListId}`, data)));
   },
 
   /**
    * Add line to price list
    */
   addLine: async (priceListId: string, lineData: any): Promise<PriceList> => {
-    return apiClient.post(`${BASE_URL}/price-lists/${priceListId}/lines`, lineData);
+    return normalizePriceList(await unwrap(apiClient.post(`${BASE_URL}/price-lists/${priceListId}/lines`, lineData)));
   },
 
   /**
    * Update price list line
    */
   updateLine: async (priceListId: string, lineData: any): Promise<PriceList> => {
-    return apiClient.patch(`${BASE_URL}/price-lists/${priceListId}/lines`, lineData);
+    return normalizePriceList(await unwrap(apiClient.patch(`${BASE_URL}/price-lists/${priceListId}/lines`, lineData)));
   },
 
   /**
    * Remove line from price list
    */
   removeLine: async (priceListId: string, lineId: string): Promise<PriceList> => {
-    return apiClient.delete(`${BASE_URL}/price-lists/${priceListId}/lines/${lineId}`);
+    return unwrap(apiClient.delete(`${BASE_URL}/price-lists/${priceListId}/lines/${lineId}`));
   },
 };
 

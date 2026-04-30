@@ -297,6 +297,14 @@ class ConfirmSalesOrderCommandHandler:
         
         # 5. Transition order
         order.confirm()
+        has_backorder = any(line.backorder_quantity > 0 for line in order.lines)
+        all_allocated = bool(order.lines) and all(
+            line.allocated_quantity >= line.quantity for line in order.lines
+        )
+        if has_backorder:
+            order.transition_to_production()
+        elif all_allocated:
+            order.transition_to_ready()
         
         # Persist all changes
         await self.sales_order_repo.save(order)
@@ -397,8 +405,9 @@ class ShipOrderCommandHandler:
         
         # Record shipments for each line
         for line in order.lines:
-            if line.id in command.line_shipments:
-                shipped_qty = command.line_shipments[line.id]
+            shipment_key = line.id if line.id in command.line_shipments else str(line.id)
+            if shipment_key in command.line_shipments:
+                shipped_qty = command.line_shipments[shipment_key]
                 
                 # Record shipment
                 line.ship(shipped_qty)
@@ -411,11 +420,13 @@ class ShipOrderCommandHandler:
                 )
         
         # If all lines shipped, transition order to SHIPPED
-        all_shipped = all(
-            line.shipped_quantity >= line.allocated_quantity
+        all_shipped = bool(order.lines) and all(
+            line.allocated_quantity > 0 and line.shipped_quantity >= line.allocated_quantity
             for line in order.lines
         )
         if all_shipped:
+            if order.status in (OrderStatus.CONFIRMED, OrderStatus.PRODUCTION):
+                order.transition_to_ready()
             order.ship()
         
         await self.sales_order_repo.save(order)

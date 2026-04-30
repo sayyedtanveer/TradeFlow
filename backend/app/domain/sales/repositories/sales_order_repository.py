@@ -5,10 +5,15 @@ from typing import Type
 from uuid import UUID
 
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 
 from backend.app.domain.sales.entities.sales_order import SalesOrder
-from backend.app.domain.sales.value_objects import OrderStatus
-from backend.app.infrastructure.persistence.models.sales_models import SalesOrderModel
+from backend.app.domain.sales.entities.sales_order_line import SalesOrderLine
+from backend.app.domain.sales.value_objects import LineStatus, OrderStatus
+from backend.app.infrastructure.persistence.models.sales_models import (
+    SalesOrderLineModel,
+    SalesOrderModel,
+)
 from backend.app.infrastructure.persistence.repositories.base_repository import BaseRepository
 
 
@@ -23,6 +28,29 @@ class SalesOrderRepository(BaseRepository):
         """Convert ORM model → domain entity."""
         if not model:
             return None
+        lines = [
+            SalesOrderLine(
+                id=line.id,
+                order_id=model.id,
+                product_id=line.product_id,
+                product_type=line.product_type,
+                uom_id=line.uom_id,
+                quantity=line.quantity,
+                unit_price=line.unit_price,
+                tax_rate=line.tax_rate,
+                status=line.status,
+                allocated_quantity=line.allocated_quantity,
+                shipped_quantity=line.shipped_quantity,
+                backorder_quantity=line.backorder_quantity,
+                tax_amount=line.tax_amount,
+                line_total=line.line_total,
+                work_order_id=line.work_order_id,
+                notes=line.notes,
+                created_at=line.created_at,
+                updated_at=line.updated_at,
+            )
+            for line in (model.lines or [])
+        ]
         return SalesOrder(
             id=model.id,
             tenant_id=model.tenant_id,
@@ -30,13 +58,15 @@ class SalesOrderRepository(BaseRepository):
             client_id=model.client_id,
             order_date=model.order_date,
             delivery_date=model.delivery_date,
-            status=OrderStatus(model.status),
+            status=model.status,
+            payment_status=model.payment_status,
             subtotal=model.subtotal,
             discount_amount=model.discount_amount,
             tax_amount=model.tax_amount,
             grand_total=model.grand_total,
             notes=model.notes,
             created_by=model.created_by,
+            lines=lines,
             is_active=model.is_active,
             is_deleted=model.is_deleted,
             deleted_at=model.deleted_at,
@@ -49,11 +79,12 @@ class SalesOrderRepository(BaseRepository):
         return SalesOrderModel(
             id=entity.id,
             tenant_id=entity.tenant_id,
-            order_number=entity.order_number,
+            order_number=str(entity.order_number),
             client_id=entity.client_id,
-            order_date=entity.order_date,
-            delivery_date=entity.delivery_date,
-            status=entity.status.value,
+            order_date=entity.order_date.isoformat(),
+            delivery_date=entity.delivery_date.isoformat(),
+            status=entity.status.name,
+            payment_status=entity.payment_status.name,
             subtotal=entity.subtotal,
             discount_amount=entity.discount_amount,
             tax_amount=entity.tax_amount,
@@ -65,7 +96,69 @@ class SalesOrderRepository(BaseRepository):
             deleted_at=entity.deleted_at,
             created_at=entity.created_at,
             updated_at=entity.updated_at,
+            lines=[
+                SalesOrderLineModel(
+                    id=line.id,
+                    sales_order_id=entity.id,
+                    product_id=line.product_id,
+                    product_type=line.product_type,
+                    uom_id=line.uom_id,
+                    quantity=line.quantity,
+                    unit_price=line.unit_price,
+                    tax_rate=line.tax_rate,
+                    tax_amount=line.tax_amount,
+                    line_total=line.line_total,
+                    allocated_quantity=line.allocated_quantity,
+                    shipped_quantity=line.shipped_quantity,
+                    backorder_quantity=line.backorder_quantity,
+                    work_order_id=line.work_order_id,
+                    status=line.status.value if isinstance(line.status, LineStatus) else str(line.status),
+                    notes=line.notes,
+                    created_at=line.created_at,
+                    updated_at=line.updated_at,
+                )
+                for line in entity.lines
+            ],
         )
+
+    async def get_by_id(
+        self,
+        id: UUID,
+        tenant_id: UUID,
+    ) -> SalesOrder | None:
+        """Get a sales order aggregate with its line collection loaded."""
+        stmt = (
+            select(self._model_class())
+            .options(selectinload(SalesOrderModel.lines))
+            .where(
+                self._model_class().id == id,
+                self._model_class().tenant_id == tenant_id,
+                self._model_class().is_deleted.is_(False),
+            )
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return self._to_entity(model) if model else None
+
+    async def get_next_sequence(self, tenant_id: UUID, date: date) -> int:
+        """Return the next SO sequence for the tenant and order date."""
+        prefix = f"SO-{date.strftime('%Y%m%d')}-"
+        stmt = (
+            select(self._model_class().order_number)
+            .where(
+                self._model_class().tenant_id == tenant_id,
+                self._model_class().order_number.like(f"{prefix}%"),
+                self._model_class().is_deleted.is_(False),
+            )
+        )
+        result = await self._session.execute(stmt)
+        max_sequence = 0
+        for order_number in result.scalars().all():
+            try:
+                max_sequence = max(max_sequence, int(str(order_number).split("-")[-1]))
+            except (TypeError, ValueError):
+                continue
+        return max_sequence + 1
 
     async def get_by_order_number(
         self,
@@ -127,7 +220,8 @@ class SalesOrderRepository(BaseRepository):
         )
         
         if status:
-            stmt = stmt.where(self._model_class().status == status.value)
+            status_value = status.name if isinstance(status, OrderStatus) else str(status).upper()
+            stmt = stmt.where(self._model_class().status == status_value)
         
         stmt = stmt.order_by(self._model_class().order_date.desc())
         stmt = stmt.limit(limit).offset(offset)
@@ -171,7 +265,8 @@ class SalesOrderRepository(BaseRepository):
         )
         
         if status:
-            stmt = stmt.where(self._model_class().status == status.value)
+            status_value = status.name if isinstance(status, OrderStatus) else str(status).upper()
+            stmt = stmt.where(self._model_class().status == status_value)
         
         stmt = stmt.order_by(self._model_class().order_date.desc())
         stmt = stmt.limit(limit).offset(offset)
@@ -211,7 +306,7 @@ class SalesOrderRepository(BaseRepository):
         )
         
         if statuses:
-            status_values = [s.value for s in statuses]
+            status_values = [s.name if isinstance(s, OrderStatus) else str(s).upper() for s in statuses]
             stmt = stmt.where(self._model_class().status.in_(status_values))
         
         stmt = stmt.order_by(self._model_class().delivery_date.asc())
@@ -269,7 +364,7 @@ class SalesOrderRepository(BaseRepository):
             select(self._model_class())
             .where(
                 self._model_class().tenant_id == tenant_id,
-                self._model_class().status == OrderStatus.DRAFT.value,
+                self._model_class().status == OrderStatus.DRAFT.name,
                 self._model_class().is_active.is_(True),
                 self._model_class().is_deleted.is_(False),
             )

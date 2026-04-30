@@ -12,7 +12,8 @@ import { Badge } from '@/components/ui/badge';
 import { TableSkeleton } from '@/components/shared/LoadingSkeleton';
 import { clientsApi } from '@/services/sales.service';
 import { SalesClient } from '@/types/sales.types';
-import { Plus, Edit2, DollarSign } from 'lucide-react';
+import { Plus, Edit2, IndianRupee } from 'lucide-react';
+import { formatCurrency } from '@/utils/currency';
 
 export default function ClientsListPage() {
   const navigate = useNavigate();
@@ -137,8 +138,8 @@ export default function ClientsListPage() {
                         <td className="px-4 py-3 text-gray-600">{client.email || '-'}</td>
                         <td className="px-4 py-3">
                           <div className={`inline-block px-3 py-1 rounded-full border text-sm ${getCreditColor(usagePercent)}`}>
-                            <DollarSign className="inline h-3 w-3 mr-1" />
-                            ${client.credit_used.toFixed(0)} / ${client.credit_limit.toFixed(0)}
+                            <IndianRupee className="inline h-3 w-3 mr-1" />
+                            {formatCurrency(client.credit_used)} / {formatCurrency(client.credit_limit)}
                             ({usagePercent.toFixed(0)}%)
                           </div>
                         </td>

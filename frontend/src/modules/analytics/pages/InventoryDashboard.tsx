@@ -9,6 +9,7 @@ import {
   KPICard,
 } from '../components/Charts';
 import { analyticsAPI } from '../../../services/api';
+import { formatCurrency } from '@/utils/currency';
 
 export const InventoryDashboard: React.FC = () => {
   const [dateRange, setDateRange] = useState({
@@ -34,7 +35,7 @@ export const InventoryDashboard: React.FC = () => {
   const metrics = [
     {
       title: 'Total Inventory Value',
-      value: `$${(inventoryReport?.summary?.total_value || 0).toLocaleString()}`,
+      value: formatCurrency(inventoryReport?.summary?.total_value || 0),
       trend: 2,
     },
     {

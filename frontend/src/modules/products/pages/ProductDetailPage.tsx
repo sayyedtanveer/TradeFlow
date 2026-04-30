@@ -6,6 +6,7 @@ import { productService } from "@/services/product.service"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { toast } from "sonner"
+import { formatCurrency } from "@/utils/currency"
 
 interface BulkImportError {
   row_number: number
@@ -211,8 +212,8 @@ export default function ProductDetailPage() {
                         </span>
                       ))}
                     </td>
-                    <td className="px-4 py-3 text-right">${v.standard_cost}</td>
-                    <td className="px-4 py-3 text-right">${v.selling_price || "—"}</td>
+                    <td className="px-4 py-3 text-right">{formatCurrency(v.standard_cost)}</td>
+                    <td className="px-4 py-3 text-right">{v.selling_price ? formatCurrency(v.selling_price) : "—"}</td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-block px-2 py-1 rounded text-xs bg-opacity-20" 
                             style={{ backgroundColor: v.is_active ? "rgb(34 197 94 / 0.2)" : "rgb(239 68 68 / 0.2)" }}>

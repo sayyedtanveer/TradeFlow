@@ -179,8 +179,20 @@ class InventoryService:
         return r.scalar_one_or_none() is not None
 
     async def _sync_material_total_from_buckets(self, material: MaterialModel) -> None:
+        # The app-wide async session disables autoflush; flush bucket changes before
+        # reading aggregate stock so material.current_stock stays authoritative.
+        await self._session.flush()
         total = await self._sum_all_stock_levels(material.tenant_id, material.id)
         material.current_stock = float(total)
+
+    async def _available_for_locked_material(self, material: MaterialModel) -> Decimal:
+        """Return available stock after subtracting tenant-wide reservations."""
+        if await self._has_stock_levels(material.tenant_id, material.id):
+            on_hand = await self._sum_available_internal(material.tenant_id, material.id)
+        else:
+            on_hand = Decimal(str(material.current_stock))
+        reserved = Decimal(str(material.reserved_stock))
+        return max(Decimal("0"), on_hand - reserved)
 
     async def _lock_stock_level(
         self,
@@ -301,10 +313,7 @@ class InventoryService:
     ) -> None:
         """Reserve stock (soft lock) when WO is released. Non-destructive."""
         model = await self._lock_material(tenant_id, material_id)
-        if await self._has_stock_levels(tenant_id, material_id):
-            available = await self._sum_available_internal(tenant_id, material_id)
-        else:
-            available = Decimal(str(model.current_stock)) - Decimal(str(model.reserved_stock))
+        available = await self._available_for_locked_material(model)
         if quantity > available:
             raise InsufficientStockError(
                 f"Cannot reserve {quantity}: only {available} available for {material_id}"
@@ -315,6 +324,124 @@ class InventoryService:
             quantity=quantity, unit_id=unit_id, reference_type="work_order",
             reference_id=work_order_id, created_by=created_by,
             remarks=f"Reserved for WO {work_order_id}",
+        )
+
+    async def get_available_stock(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+    ) -> Decimal:
+        """Read available, unreserved stock for a material."""
+        model = await self._lock_material(tenant_id, material_id)
+        return await self._available_for_locked_material(model)
+
+    async def reserve_sales_stock(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+        quantity: Decimal,
+        sales_order_line_id: uuid.UUID,
+        unit_id: Optional[uuid.UUID] = None,
+        created_by: uuid.UUID,
+    ) -> None:
+        """Reserve finished goods for a sales order line without reducing on-hand stock."""
+        model = await self._lock_material(tenant_id, material_id)
+        available = await self._available_for_locked_material(model)
+        if quantity > available:
+            raise InsufficientStockError(
+                f"Cannot reserve {quantity}: only {available} available for {material_id}"
+            )
+        model.reserved_stock = float(Decimal(str(model.reserved_stock)) + quantity)
+        await self._log_transaction(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            transaction_type="reserve",
+            quantity=quantity,
+            unit_id=unit_id,
+            reference_type="sales_order_line",
+            reference_id=sales_order_line_id,
+            created_by=created_by,
+            remarks=f"Reserved for sales order line {sales_order_line_id}",
+        )
+
+    async def release_sales_reservation(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+        quantity: Decimal,
+        sales_order_line_id: uuid.UUID,
+        unit_id: Optional[uuid.UUID] = None,
+        created_by: uuid.UUID,
+    ) -> None:
+        """Release a sales reservation back to available stock."""
+        model = await self._lock_material(tenant_id, material_id)
+        reserved = Decimal(str(model.reserved_stock))
+        released = min(quantity, reserved)
+        model.reserved_stock = float(reserved - released)
+        if released > 0:
+            await self._log_transaction(
+                tenant_id=tenant_id,
+                material_id=material_id,
+                transaction_type="release",
+                quantity=released,
+                unit_id=unit_id,
+                reference_type="sales_order_line",
+                reference_id=sales_order_line_id,
+                created_by=created_by,
+                remarks=f"Released reservation for sales order line {sales_order_line_id}",
+            )
+
+    async def fulfill_sales_reservation(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+        quantity: Decimal,
+        sales_order_line_id: uuid.UUID,
+        unit_id: Optional[uuid.UUID] = None,
+        created_by: uuid.UUID,
+    ) -> None:
+        """Ship reserved goods: deduct physical stock and consume the reservation."""
+        model = await self._lock_material(tenant_id, material_id)
+        if await self._has_stock_levels(tenant_id, material_id):
+            remaining = await self._deduct_available_internal(tenant_id, material_id, quantity)
+            if remaining > 0:
+                raise InsufficientStockError(
+                    f"Insufficient available stock for {material_id}: short by {remaining}"
+                )
+            await self._sync_material_total_from_buckets(model)
+        else:
+            current = Decimal(str(model.current_stock))
+            if quantity > current:
+                raise InsufficientStockError(
+                    f"Insufficient stock for {material_id}: requested {quantity}, available {current}"
+                )
+            model.current_stock = float(current - quantity)
+
+        reserved = Decimal(str(model.reserved_stock))
+        model.reserved_stock = float(max(Decimal("0"), reserved - quantity))
+        await self._log_transaction(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            transaction_type="issue",
+            quantity=quantity,
+            unit_id=unit_id,
+            reference_type="sales_order_line",
+            reference_id=sales_order_line_id,
+            created_by=created_by,
+            remarks=f"Shipped for sales order line {sales_order_line_id}",
+        )
+        await self._log_ledger(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            location_id=None,
+            transaction_type="SALES_SHIPMENT",
+            quantity_change=-quantity,
+            reference_type="sales_order_line",
+            reference_id=sales_order_line_id,
         )
 
     async def issue_stock(

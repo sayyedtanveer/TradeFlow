@@ -1,5 +1,6 @@
 """Client Entity - Core domain entity for sales."""
 
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -22,7 +23,7 @@ class Client(AggregateRoot):
         tenant_id: UUID,
         code: str,
         name: str,
-        email: str,
+        email: str | None = None,
         phone: str | None = None,
         address: str | None = None,
         city: str | None = None,
@@ -30,26 +31,40 @@ class Client(AggregateRoot):
         country: str | None = None,
         postal_code: str | None = None,
         gst: str | None = None,
+        gst_number: str | None = None,
         payment_terms_days: int = 30,
-        credit_limit: Decimal = Decimal("0"),
+        credit_limit: Decimal | None = Decimal("0"),
+        credit_used: Decimal | None = Decimal("0"),
         is_active: bool = True,
+        is_deleted: bool = False,
+        deleted_at: datetime | None = None,
+        created_at: datetime | None = None,
+        updated_at: datetime | None = None,
     ):
         """Initialize Client."""
-        super().__init__(id=id, tenant_id=tenant_id)
+        super().__init__(
+            id=id,
+            tenant_id=tenant_id,
+            created_at=created_at,
+            updated_at=updated_at,
+            is_deleted=is_deleted,
+            deleted_at=deleted_at,
+        )
 
         self.code = code
         self.name = name
-        self.email = email
+        self.email = email.strip() if email else None
         self.phone = phone
         self.address = address
         self.city = city
         self.state = state
         self.country = country
         self.postal_code = postal_code
-        self.gst = gst
+        self.gst_number = gst_number if gst_number is not None else gst
+        self.gst = self.gst_number
         self.payment_terms_days = payment_terms_days
-        self.credit_limit = Decimal(str(credit_limit))
-        self.credit_used = Decimal("0")
+        self.credit_limit = Decimal(str(credit_limit or "0"))
+        self.credit_used = Decimal(str(credit_used or "0"))
         self.is_active = is_active
 
         self._validate()
@@ -60,7 +75,7 @@ class Client(AggregateRoot):
             raise ValueError("Client code is required")
         if not self.name or not self.name.strip():
             raise ValueError("Client name is required")
-        if not self.email or "@" not in self.email:
+        if self.email and "@" not in self.email:
             raise ValueError("Valid email is required")
         if self.credit_limit < 0:
             raise ValueError("Credit limit cannot be negative")
@@ -134,4 +149,23 @@ class Client(AggregateRoot):
     def reactivate(self) -> None:
         """Reactivate client."""
         self.is_active = True
+
+    def to_dict(self) -> dict:
+        """Convert client to API-friendly dictionary."""
+        return {
+            "id": str(self.id),
+            "tenant_id": str(self.tenant_id),
+            "code": self.code,
+            "name": self.name,
+            "email": self.email,
+            "phone": self.phone,
+            "address": self.address,
+            "gst_number": self.gst_number,
+            "credit_limit": str(self.credit_limit),
+            "credit_used": str(self.credit_used),
+            "payment_terms_days": self.payment_terms_days,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+        }
 

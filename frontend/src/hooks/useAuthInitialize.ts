@@ -1,5 +1,6 @@
 import { useEffect } from "react"
 import { useAuthStore } from "@/app/store/authStore"
+import { isClientSession } from "@/lib/auth-session"
 import { apiClient } from "@/services/api-client"
 
 /**
@@ -8,7 +9,7 @@ import { apiClient } from "@/services/api-client"
  * This ensures users are logged out when backend session is lost
  */
 export function useAuthInitialize() {
-  const { token, logout, isAuthenticated } = useAuthStore()
+  const { token, logout, isAuthenticated, user, client_id } = useAuthStore()
 
   useEffect(() => {
     const validateToken = async () => {
@@ -18,9 +19,14 @@ export function useAuthInitialize() {
       }
 
       try {
-        // Try to validate token by making a simple authenticated request
-        // This endpoint should be lightweight and always available for authenticated users
-        await apiClient.get("/auth/me")
+        const validationEndpoint = isClientSession({
+          token,
+          userRole: user?.role,
+          clientId: client_id,
+        })
+          ? "/client/profile"
+          : "/auth/me"
+        await apiClient.get(validationEndpoint)
       } catch (error) {
         // If token validation fails, user is not actually authenticated
         // This handles cases where:
@@ -32,5 +38,5 @@ export function useAuthInitialize() {
     }
 
     validateToken()
-  }, [token, isAuthenticated, logout])
+  }, [token, isAuthenticated, logout, user?.role, client_id])
 }

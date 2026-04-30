@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import List, Optional
 
@@ -230,10 +230,13 @@ class FinanceService:
         await self.session.flush()
 
         for ld in lines_data:
+            product_id = ld["product_id"]
+            if not isinstance(product_id, uuid.UUID):
+                product_id = uuid.UUID(str(product_id))
             il = InvoiceLineModel(
                 tenant_id=tenant_id,
                 invoice_id=invoice.id,
-                product_id=uuid.UUID(ld["product_id"]),
+                product_id=product_id,
                 product_type=ld.get("product_type", "finished"),
                 description=ld.get("description"),
                 quantity=int(ld["quantity"]),
@@ -632,6 +635,7 @@ class FinanceService:
 
     async def get_cash_flow(self, tenant_id: uuid.UUID, months: int = 6) -> List[dict]:
         """Monthly cash flow (collections vs payments)."""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=months * 31)
         result = await self.session.execute(
             text("""
                 SELECT
@@ -640,11 +644,11 @@ class FinanceService:
                     SUM(credit) FILTER (WHERE account_type = 'PAYABLE') as cash_out
                 FROM financial_transactions
                 WHERE tenant_id = :tenant_id
-                    AND created_at >= NOW() - INTERVAL ':months months'
+                    AND created_at >= :cutoff
                 GROUP BY date_trunc('month', created_at)
                 ORDER BY month
             """),
-            {"tenant_id": tenant_id, "months": months}
+            {"tenant_id": tenant_id, "cutoff": cutoff}
         )
         return [
             {"month": str(row.month)[:7], "cash_in": float(row.cash_in or 0), "cash_out": float(row.cash_out or 0)}
@@ -653,6 +657,7 @@ class FinanceService:
 
     async def get_revenue_by_month(self, tenant_id: uuid.UUID, months: int = 6) -> List[dict]:
         """Revenue per month from invoices."""
+        cutoff = date.today() - timedelta(days=months * 31)
         result = await self.session.execute(
             text("""
                 SELECT
@@ -662,11 +667,11 @@ class FinanceService:
                     SUM(paid_amount) as collected
                 FROM invoices
                 WHERE tenant_id = :tenant_id AND is_deleted = false
-                    AND invoice_date >= NOW() - INTERVAL ':months months'
+                    AND invoice_date >= :cutoff
                 GROUP BY date_trunc('month', invoice_date)
                 ORDER BY month
             """),
-            {"tenant_id": tenant_id, "months": months}
+            {"tenant_id": tenant_id, "cutoff": cutoff}
         )
         return [
             {

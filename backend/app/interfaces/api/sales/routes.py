@@ -31,7 +31,6 @@ from backend.app.interfaces.api.sales.schemas import (
     PriceListListResponse,
     SalesOrderCreateRequest,
     SalesOrderResponse,
-    SalesOrderDetailResponse,
     SalesOrderListResponse,
     SalesOrderLineCreateRequest,
     ApplyDiscountRequest,
@@ -105,7 +104,7 @@ from backend.app.application.sales import (
 )
 
 # Create router
-router = APIRouter(prefix="/api/v1/sales", tags=["sales"])
+router = APIRouter(prefix="/sales", tags=["sales"])
 logger = logging.getLogger(__name__)
 
 
@@ -138,7 +137,8 @@ async def create_client(
                     payment_terms_days=body.payment_terms_days,
                 )
             )
-            return await client_repo.get_by_id(client_id)
+            client = await client_repo.get_by_id(UUID(str(client_id)), tenant_id)
+            return client.to_dict() if client else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
@@ -230,7 +230,8 @@ async def update_client(
                     payment_terms_days=body.payment_terms_days,
                 )
             )
-            return await client_repo.get_by_id(client_id)
+            client = await client_repo.get_by_id(client_id, tenant_id)
+            return client.to_dict() if client else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
@@ -318,7 +319,8 @@ async def create_order(
                     notes=body.notes,
                 )
             )
-            return await order_repo.get_by_id(order_id)
+            order = await order_repo.get_by_id(UUID(str(order_id)), tenant_id)
+            return order.to_dict() if order else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
@@ -326,7 +328,32 @@ async def create_order(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Creation failed")
 
 
-@router.get("/orders/{order_id}", response_model=SalesOrderDetailResponse)
+@router.get("/orders/draft", response_model=SalesOrderListResponse)
+async def list_draft_orders(
+    request: Request,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    limit: int = Query(50, ge=1, le=1000),
+):
+    """List draft orders waiting for confirmation."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        order_repo = SalesOrderRepository(session)
+        handler = ListDraftOrdersQueryHandler(order_repo)
+        try:
+            items = await handler.handle(
+                ListDraftOrdersQuery(
+                    tenant_id=tenant_id,
+                    limit=limit,
+                )
+            )
+            total = len(items)
+            return SalesOrderListResponse(items=items, total=total, limit=limit, offset=0)
+        except Exception as e:
+            logger.exception(f"Error listing draft orders: {str(e)}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="List retrieval failed")
+
+
+@router.get("/orders/{order_id}", response_model=SalesOrderResponse)
 async def get_order(
     order_id: UUID,
     request: Request,
@@ -427,32 +454,6 @@ async def list_orders(
             logger.exception(f"Error listing orders: {str(e)}")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="List retrieval failed")
 
-
-@router.get("/orders/draft", response_model=SalesOrderListResponse)
-async def list_draft_orders(
-    request: Request,
-    tenant_id: UUID = Depends(get_current_tenant_id),
-    limit: int = Query(50, ge=1, le=1000),
-):
-    """List draft orders waiting for confirmation."""
-    container = get_container(request)
-    async with container.session_factory() as session:
-        order_repo = SalesOrderRepository(session)
-        handler = ListDraftOrdersQueryHandler(order_repo)
-        try:
-            items = await handler.handle(
-                ListDraftOrdersQuery(
-                    tenant_id=tenant_id,
-                    limit=limit,
-                )
-            )
-            total = len(items)
-            return SalesOrderListResponse(items=items, total=total, limit=limit, offset=0)
-        except Exception as e:
-            logger.exception(f"Error listing draft orders: {str(e)}")
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="List retrieval failed")
-
-
 @router.post("/orders/{order_id}/lines", response_model=SalesOrderResponse, status_code=status.HTTP_201_CREATED)
 async def add_order_line(
     order_id: UUID,
@@ -484,7 +485,8 @@ async def add_order_line(
                     tax_rate=body.tax_rate,
                 )
             )
-            return await order_repo.get_by_id(order_id)
+            order = await order_repo.get_by_id(order_id, tenant_id)
+            return order.to_dict() if order else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
@@ -543,7 +545,8 @@ async def apply_discount(
                     discount_amount=body.discount_amount,
                 )
             )
-            return await order_repo.get_by_id(order_id)
+            order = await order_repo.get_by_id(order_id, tenant_id)
+            return order.to_dict() if order else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
@@ -571,12 +574,12 @@ async def confirm_order(
         from backend.app.application.sales.manufacturing_integration import SalesManufacturingIntegrationService
         from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
         from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
-        from backend.app.application.inventory.services.inventory_service import InventoryService as AppInventoryService
+        from backend.app.application.manufacturing.services.inventory_service import InventoryService as StockInventoryService
         
         credit_service = CreditValidationService(client_repo)
-        app_inventory = AppInventoryService(session, container.event_dispatcher)
+        stock_inventory = StockInventoryService(session)
         wo_handler = WorkOrderHandler(session).with_uow(uow)
-        inv_integ = SalesInventoryIntegrationService(app_inventory)
+        inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
         mfg_integ = SalesManufacturingIntegrationService(wo_handler, uow).with_event_dispatcher(container.event_dispatcher)
         inv_service = InventoryReservationService(inv_integ, mfg_integ)
 
@@ -589,7 +592,8 @@ async def confirm_order(
                     confirmed_by=body.confirmed_by,
                 )
             )
-            return await order_repo.get_by_id(order_id)
+            order = await order_repo.get_by_id(order_id, tenant_id)
+            return order.to_dict() if order else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
@@ -615,11 +619,11 @@ async def ship_order(
         from backend.app.application.sales.manufacturing_integration import SalesManufacturingIntegrationService
         from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
         from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
-        from backend.app.application.inventory.services.inventory_service import InventoryService as AppInventoryService
+        from backend.app.application.manufacturing.services.inventory_service import InventoryService as StockInventoryService
         
-        app_inventory = AppInventoryService(session, container.event_dispatcher)
+        stock_inventory = StockInventoryService(session)
         wo_handler = WorkOrderHandler(session).with_uow(uow)
-        inv_integ = SalesInventoryIntegrationService(app_inventory)
+        inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
         mfg_integ = SalesManufacturingIntegrationService(wo_handler, uow).with_event_dispatcher(container.event_dispatcher)
         inv_service = InventoryReservationService(inv_integ, mfg_integ)
         
@@ -633,7 +637,8 @@ async def ship_order(
                     shipped_by=body.shipped_by,
                 )
             )
-            return await order_repo.get_by_id(order_id)
+            order = await order_repo.get_by_id(order_id, tenant_id)
+            return order.to_dict() if order else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
@@ -662,7 +667,8 @@ async def deliver_order(
                     delivered_by=str(user_id),
                 )
             )
-            return await order_repo.get_by_id(order_id)
+            order = await order_repo.get_by_id(order_id, tenant_id)
+            return order.to_dict() if order else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
         except Exception as e:
@@ -690,12 +696,12 @@ async def cancel_order(
         from backend.app.application.sales.manufacturing_integration import SalesManufacturingIntegrationService
         from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
         from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
-        from backend.app.application.inventory.services.inventory_service import InventoryService as AppInventoryService
+        from backend.app.application.manufacturing.services.inventory_service import InventoryService as StockInventoryService
         
         credit_service = CreditValidationService(client_repo)
-        app_inventory = AppInventoryService(session, container.event_dispatcher)
+        stock_inventory = StockInventoryService(session)
         wo_handler = WorkOrderHandler(session).with_uow(uow)
-        inv_integ = SalesInventoryIntegrationService(app_inventory)
+        inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
         mfg_integ = SalesManufacturingIntegrationService(wo_handler, uow).with_event_dispatcher(container.event_dispatcher)
         inv_service = InventoryReservationService(inv_integ, mfg_integ)
 
@@ -709,7 +715,8 @@ async def cancel_order(
                     cancelled_by=body.cancelled_by,
                 )
             )
-            return await order_repo.get_by_id(order_id)
+            order = await order_repo.get_by_id(order_id, tenant_id)
+            return order.to_dict() if order else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
@@ -764,7 +771,8 @@ async def create_price_list(
                     valid_to=body.valid_to,
                 )
             )
-            return await price_list_repo.get_by_id(price_list_id)
+            price_list = await price_list_repo.get_by_id(UUID(str(price_list_id)), tenant_id)
+            return price_list.to_dict() if price_list else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
@@ -851,7 +859,8 @@ async def add_price_list_line(
                     unit_price=body.unit_price,
                 )
             )
-            return await price_list_repo.get_by_id(price_list_id)
+            price_list = await price_list_repo.get_by_id(price_list_id, tenant_id)
+            return price_list.to_dict() if price_list else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
@@ -883,7 +892,8 @@ async def update_price_list_line(
                     new_price=body.unit_price,
                 )
             )
-            return await price_list_repo.get_by_id(price_list_id)
+            price_list = await price_list_repo.get_by_id(price_list_id, tenant_id)
+            return price_list.to_dict() if price_list else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:

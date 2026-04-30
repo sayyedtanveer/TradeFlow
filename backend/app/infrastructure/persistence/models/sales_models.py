@@ -1,13 +1,14 @@
 """Sales order ORM models for database persistence."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional, List
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -321,8 +322,8 @@ class PriceListModel(Base):
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # Validity period
-    valid_from: Mapped[str] = mapped_column(nullable=False)  # ISO date string
-    valid_to: Mapped[Optional[str]] = mapped_column(nullable=True)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
     # Status flags
     is_active: Mapped[bool] = mapped_column(

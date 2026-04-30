@@ -138,36 +138,39 @@ async def me(
 ):
     container = get_container(request)
     tenant_id_str = payload.get("tid", "")
-    user_id_str   = payload.get("sub", "")
+    user_id_str = payload.get("sub", "")
 
     try:
         tenant_id = uuid.UUID(tenant_id_str)
     except (ValueError, AttributeError):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token: bad tenant_id")
+    try:
+        user_id = uuid.UUID(user_id_str)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token: bad user_id")
 
     async with container.session_factory() as session:
         tenant_repo = TenantRepository(session)
+        user_repo = UserRepository(session)
         tenant = await tenant_repo.get_by_tenant_id(tenant_id)
+        user = await user_repo.get_by_id(user_id, tenant_id)
 
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
-
-    full_name  = payload.get("full_name", "")
-    parts      = full_name.split(" ", 1) if full_name else ["", ""]
-    first_name = parts[0]
-    last_name  = parts[1] if len(parts) > 1 else ""
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     return UserProfileResponse(
         user=UserInMeResponse(
-            id=user_id_str,
-            email=payload.get("email", ""),
-            first_name=first_name,
-            last_name=last_name,
-            role=payload.get("role", "viewer"),
-            tenant_id=tenant_id_str,
-            is_active=True,
-            supplier_id=payload.get("sid"),
-            client_id=payload.get("cid"),
+            id=str(user.id),
+            email=str(user.email),
+            first_name=user.first_name,
+            last_name=user.last_name,
+            role=user.role.value,
+            tenant_id=str(user.tenant_id),
+            is_active=user.is_active,
+            supplier_id=str(user.supplier_id) if user.supplier_id else None,
+            client_id=str(user.client_id) if user.client_id else None,
         ),
         tenant=TenantInMeResponse(
             id=str(tenant.id),

@@ -4,9 +4,13 @@ from typing import Type
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
-from backend.app.domain.sales.entities.price_list import PriceList
-from backend.app.infrastructure.persistence.models.sales_models import PriceListModel
+from backend.app.domain.sales.entities.price_list import PriceList, PriceListLine
+from backend.app.infrastructure.persistence.models.sales_models import (
+    PriceListLineModel,
+    PriceListModel,
+)
 from backend.app.infrastructure.persistence.repositories.base_repository import BaseRepository
 
 
@@ -17,10 +21,24 @@ class PriceListRepository(BaseRepository):
         """Return the SQLAlchemy model class."""
         return PriceListModel
 
-    def _to_entity(self, model: PriceListModel) -> PriceList:
-        """Convert ORM model → domain entity."""
+    def _to_entity(self, model: PriceListModel) -> PriceList | None:
+        """Convert ORM model to domain entity."""
         if not model:
             return None
+
+        lines = [
+            PriceListLine(
+                id=line.id,
+                price_list_id=model.id,
+                product_id=line.product_id,
+                product_type=line.product_type,
+                unit_price=line.unit_price,
+                created_at=line.created_at,
+                updated_at=line.updated_at,
+            )
+            for line in (model.lines or [])
+        ]
+
         return PriceList(
             id=model.id,
             tenant_id=model.tenant_id,
@@ -29,6 +47,7 @@ class PriceListRepository(BaseRepository):
             is_active=model.is_active,
             valid_from=model.valid_from,
             valid_to=model.valid_to,
+            lines=lines,
             is_deleted=model.is_deleted,
             deleted_at=model.deleted_at,
             created_at=model.created_at,
@@ -36,7 +55,7 @@ class PriceListRepository(BaseRepository):
         )
 
     def _to_model(self, entity: PriceList) -> PriceListModel:
-        """Convert domain entity → ORM model."""
+        """Convert domain entity to ORM model."""
         return PriceListModel(
             id=entity.id,
             tenant_id=entity.tenant_id,
@@ -49,39 +68,62 @@ class PriceListRepository(BaseRepository):
             deleted_at=entity.deleted_at,
             created_at=entity.created_at,
             updated_at=entity.updated_at,
+            lines=[
+                PriceListLineModel(
+                    id=line.id,
+                    price_list_id=entity.id,
+                    product_id=line.product_id,
+                    product_type=line.product_type,
+                    unit_price=line.unit_price,
+                    created_at=line.created_at,
+                    updated_at=line.updated_at,
+                )
+                for line in entity.lines
+            ],
         )
+
+    async def get_by_id(
+        self,
+        id: UUID,
+        tenant_id: UUID,
+    ) -> PriceList | None:
+        """Get a price list aggregate with pricing lines loaded."""
+        stmt = (
+            select(self._model_class())
+            .options(selectinload(PriceListModel.lines))
+            .where(
+                self._model_class().id == id,
+                self._model_class().tenant_id == tenant_id,
+                self._model_class().is_deleted.is_(False),
+            )
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return self._to_entity(model) if model else None
 
     async def find_default(
         self,
         tenant_id: UUID,
         include_inactive: bool = False,
     ) -> list[PriceList]:
-        """
-        Find default price lists for a tenant.
-        
-        Args:
-            tenant_id: Tenant ID
-            include_inactive: Whether to include inactive price lists
-            
-        Returns:
-            List of default price lists
-        """
+        """Find default price lists for a tenant."""
         stmt = (
             select(self._model_class())
+            .options(selectinload(PriceListModel.lines))
             .where(
                 self._model_class().tenant_id == tenant_id,
                 self._model_class().is_default.is_(True),
                 self._model_class().is_deleted.is_(False),
             )
         )
-        
+
         if not include_inactive:
             stmt = stmt.where(self._model_class().is_active.is_(True))
-        
+
         stmt = stmt.order_by(self._model_class().valid_from.desc())
-        
+
         result = await self._session.execute(stmt)
-        models = result.scalars().all()
+        models = result.scalars().unique().all()
         return [self._to_entity(m) for m in models]
 
     async def find_by_client(
@@ -90,25 +132,11 @@ class PriceListRepository(BaseRepository):
         client_id: UUID,
         include_inactive: bool = False,
     ) -> list[PriceList]:
+        """Find client-specific price lists.
+
+        A future client-price-list mapping table can plug in here. Until then,
+        client-specific pricing intentionally falls back to default lists.
         """
-        Find client-specific price lists.
-        
-        Note: This assumes there's a many-to-many relationship
-        between PriceList and Client. Actual implementation
-        would need a ClientPriceList junction table.
-        
-        Args:
-            tenant_id: Tenant ID
-            client_id: Client ID
-            include_inactive: Whether to include inactive price lists
-            
-        Returns:
-            List of price lists for this client
-        """
-        # This is a placeholder - actual implementation would need:
-        # 1. A ClientPriceList mapping table
-        # 2. A join query through that table
-        # For now, returning empty to avoid errors
         return []
 
     async def find_by_name(
@@ -117,33 +145,24 @@ class PriceListRepository(BaseRepository):
         name: str,
         include_inactive: bool = False,
     ) -> list[PriceList]:
-        """
-        Find price lists by name (case-insensitive).
-        
-        Args:
-            tenant_id: Tenant ID
-            name: Price list name (partial match)
-            include_inactive: Whether to include inactive price lists
-            
-        Returns:
-            List of matching price lists
-        """
+        """Find price lists by name."""
         stmt = (
             select(self._model_class())
+            .options(selectinload(PriceListModel.lines))
             .where(
                 self._model_class().tenant_id == tenant_id,
                 self._model_class().name.ilike(f"%{name}%"),
                 self._model_class().is_deleted.is_(False),
             )
         )
-        
+
         if not include_inactive:
             stmt = stmt.where(self._model_class().is_active.is_(True))
-        
+
         stmt = stmt.order_by(self._model_class().name.asc())
-        
+
         result = await self._session.execute(stmt)
-        models = result.scalars().all()
+        models = result.scalars().unique().all()
         return [self._to_entity(m) for m in models]
 
     async def find_active_on_date(
@@ -152,19 +171,10 @@ class PriceListRepository(BaseRepository):
         check_date,
         is_default: bool | None = None,
     ) -> list[PriceList]:
-        """
-        Find price lists active on a specific date.
-        
-        Args:
-            tenant_id: Tenant ID
-            check_date: Date to check (date object)
-            is_default: Filter to default lists only (optional)
-            
-        Returns:
-            List of active price lists on that date
-        """
+        """Find price lists active on a specific date."""
         stmt = (
             select(self._model_class())
+            .options(selectinload(PriceListModel.lines))
             .where(
                 self._model_class().tenant_id == tenant_id,
                 self._model_class().is_active.is_(True),
@@ -172,20 +182,17 @@ class PriceListRepository(BaseRepository):
                 self._model_class().valid_from <= check_date,
             )
         )
-        
-        # valid_to is NULL or >= check_date
+
         stmt = stmt.where(
-            (self._model_class().valid_to.is_(None)) |
-            (self._model_class().valid_to >= check_date)
+            (self._model_class().valid_to.is_(None))
+            | (self._model_class().valid_to >= check_date)
         )
-        
+
         if is_default is not None:
             stmt = stmt.where(self._model_class().is_default.is_(is_default))
-        
+
         stmt = stmt.order_by(self._model_class().is_default.desc())
-        
+
         result = await self._session.execute(stmt)
-        models = result.scalars().all()
+        models = result.scalars().unique().all()
         return [self._to_entity(m) for m in models]
-
-

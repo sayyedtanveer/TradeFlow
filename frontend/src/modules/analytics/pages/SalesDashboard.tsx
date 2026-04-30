@@ -9,6 +9,7 @@ import {
   CategoryBreakdownChart,
 } from '../components/Charts';
 import { analyticsAPI } from '../../../services/api';
+import { formatCurrency } from '@/utils/currency';
 
 export const SalesDashboard: React.FC = () => {
   const [dateRange, setDateRange] = useState({
@@ -41,7 +42,7 @@ export const SalesDashboard: React.FC = () => {
   const metrics = [
     {
       title: 'Total Revenue',
-      value: `$${(salesReport?.summary?.total_revenue || 0).toLocaleString()}`,
+      value: formatCurrency(salesReport?.summary?.total_revenue || 0),
       trend: 5,
     },
     {
@@ -51,7 +52,7 @@ export const SalesDashboard: React.FC = () => {
     },
     {
       title: 'Avg Order Value',
-      value: `$${(salesReport?.summary?.average_order_value || 0).toFixed(2)}`,
+      value: formatCurrency(salesReport?.summary?.average_order_value || 0),
       trend: -2,
     },
     {
@@ -139,7 +140,7 @@ export const SalesDashboard: React.FC = () => {
                     {item.group}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    ${item.entries?.[0]?.revenue?.toLocaleString()}
+                    {formatCurrency(item.entries?.[0]?.revenue || 0)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">{item.count}</td>
                 </tr>

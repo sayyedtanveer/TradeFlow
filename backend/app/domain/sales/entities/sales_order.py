@@ -8,6 +8,13 @@ from backend.app.domain.shared.base_entity import AggregateRoot
 from backend.app.domain.sales.value_objects import OrderNumber, OrderStatus, PaymentStatus, Money
 
 
+def _coerce_order_status(status: OrderStatus | str) -> OrderStatus:
+    if isinstance(status, OrderStatus):
+        return status
+    status_text = str(status).upper()
+    return OrderStatus.__members__.get(status_text) or OrderStatus(status_text)
+
+
 class SalesOrder(AggregateRoot):
     """
     Sales Order - Aggregate Root for order management.
@@ -23,39 +30,65 @@ class SalesOrder(AggregateRoot):
         self,
         id: UUID,
         tenant_id: UUID,
-        order_number: OrderNumber,
+        order_number: OrderNumber | str,
         client_id: UUID,
-        order_date: date,
-        delivery_date: date,
+        order_date: date | str,
+        delivery_date: date | str,
+        status: OrderStatus | str = OrderStatus.DRAFT,
+        payment_status: PaymentStatus | str = PaymentStatus.PENDING,
+        subtotal: Decimal | int | float | str = Decimal("0"),
+        discount_amount: Decimal | int | float | str = Decimal("0"),
+        tax_amount: Decimal | int | float | str = Decimal("0"),
+        grand_total: Decimal | int | float | str = Decimal("0"),
+        notes: str | None = None,
+        created_by: str | None = None,
+        lines: list | None = None,
+        is_active: bool = True,
+        is_deleted: bool = False,
+        deleted_at: datetime | None = None,
+        created_at: datetime | None = None,
+        updated_at: datetime | None = None,
     ):
         """Initialize Sales Order."""
-        # AggregateRoot fields
-        self.id = id
-        self.tenant_id = tenant_id
-        self.created_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
-        self.is_active = True
+        super().__init__(
+            id=id,
+            tenant_id=tenant_id,
+            created_at=created_at,
+            updated_at=updated_at,
+            is_deleted=is_deleted,
+            deleted_at=deleted_at,
+        )
         
         # Order identity
-        self.order_number = order_number
+        if isinstance(order_number, OrderNumber):
+            self.order_number = order_number
+        else:
+            try:
+                self.order_number = OrderNumber(order_number)
+            except ValueError:
+                # Older/demo rows may use business-friendly numbers outside the SO-* pattern.
+                self.order_number = order_number
         self.client_id = client_id
-        self.order_date = order_date
-        self.delivery_date = delivery_date
+        self.order_date = date.fromisoformat(order_date) if isinstance(order_date, str) else order_date
+        self.delivery_date = date.fromisoformat(delivery_date) if isinstance(delivery_date, str) else delivery_date
         
         # Status
-        self.status = OrderStatus.DRAFT
-        self.payment_status = PaymentStatus.PENDING
+        self.status = _coerce_order_status(status)
+        self.payment_status = (
+            payment_status if isinstance(payment_status, PaymentStatus) else PaymentStatus(str(payment_status).lower())
+        )
         
         # Totals (denormalized for efficiency)
-        self.subtotal = Decimal("0")
-        self.discount_amount = Decimal("0")
-        self.tax_amount = Decimal("0")
-        self.grand_total = Decimal("0")
+        self.subtotal = Decimal(str(subtotal))
+        self.discount_amount = Decimal(str(discount_amount))
+        self.tax_amount = Decimal(str(tax_amount))
+        self.grand_total = Decimal(str(grand_total))
         
         # Content
-        self.lines: list = []  # List[SalesOrderLine]
-        self.notes: str | None = None
-        self.created_by: str | None = None
+        self.lines: list = lines or []  # List[SalesOrderLine]
+        self.notes = notes
+        self.created_by = created_by
+        self.is_active = is_active
         
         self._validate()
 
@@ -183,7 +216,7 @@ class SalesOrder(AggregateRoot):
             raise ValueError("Cannot confirm order with no lines")
         
         self.status = OrderStatus.CONFIRMED
-        self.updated_at = datetime.utcnow()
+        self._touch()
 
     def transition_to_production(self) -> None:
         """Transition order to PRODUCTION status."""
@@ -192,7 +225,7 @@ class SalesOrder(AggregateRoot):
                 f"Cannot transition from {self.status.value} to PRODUCTION"
             )
         self.status = OrderStatus.PRODUCTION
-        self.updated_at = datetime.utcnow()
+        self._touch()
 
     def transition_to_ready(self) -> None:
         """Transition order to READY status."""
@@ -201,7 +234,7 @@ class SalesOrder(AggregateRoot):
                 f"Cannot transition from {self.status.value} to READY"
             )
         self.status = OrderStatus.READY
-        self.updated_at = datetime.utcnow()
+        self._touch()
 
     def ship(self) -> None:
         """Transition order to SHIPPED status."""
@@ -210,7 +243,7 @@ class SalesOrder(AggregateRoot):
                 f"Cannot transition from {self.status.value} to SHIPPED"
             )
         self.status = OrderStatus.SHIPPED
-        self.updated_at = datetime.utcnow()
+        self._touch()
 
     def deliver(self) -> None:
         """Transition order to DELIVERED status."""
@@ -219,7 +252,7 @@ class SalesOrder(AggregateRoot):
                 f"Cannot transition from {self.status.value} to DELIVERED"
             )
         self.status = OrderStatus.DELIVERED
-        self.updated_at = datetime.utcnow()
+        self._touch()
 
     def cancel(self) -> None:
         """Cancel order if allowed."""
@@ -228,7 +261,7 @@ class SalesOrder(AggregateRoot):
                 f"Cannot cancel order in {self.status.value} status"
             )
         self.status = OrderStatus.CANCELLED
-        self.updated_at = datetime.utcnow()
+        self._touch()
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -238,8 +271,8 @@ class SalesOrder(AggregateRoot):
             "client_id": str(self.client_id),
             "order_date": self.order_date.isoformat(),
             "delivery_date": self.delivery_date.isoformat(),
-            "status": self.status.value,
-            "payment_status": self.payment_status.value,
+            "status": self.status.name,
+            "payment_status": self.payment_status.name,
             "subtotal": str(self.subtotal),
             "discount_amount": str(self.discount_amount),
             "tax_amount": str(self.tax_amount),

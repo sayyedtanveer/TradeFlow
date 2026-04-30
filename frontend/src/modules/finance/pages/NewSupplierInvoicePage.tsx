@@ -169,7 +169,7 @@ export default function NewSupplierInvoicePage() {
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-500">Subtotal *</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-slate-500">$</span>
+                  <span className="absolute left-3 top-2.5 text-slate-500">₹</span>
                   <Input
                     type="number"
                     step="0.01"
@@ -184,7 +184,7 @@ export default function NewSupplierInvoicePage() {
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-500">Tax Amount</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-slate-500">$</span>
+                  <span className="absolute left-3 top-2.5 text-slate-500">₹</span>
                   <Input
                     type="number"
                     step="0.01"
@@ -198,7 +198,7 @@ export default function NewSupplierInvoicePage() {
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-900 dark:text-white">Grand Total</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-2.5 font-bold">$</span>
+                  <span className="absolute left-3 top-2.5 font-bold">₹</span>
                   <Input
                     readOnly
                     type="number"

@@ -16,6 +16,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
+import { formatCurrency } from '@/utils/currency';
 
 interface ChartProps {
   data: any[];
@@ -35,7 +36,7 @@ export const RevenueChart: React.FC<ChartProps> = ({ data, title = 'Revenue', he
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" />
           <YAxis />
-          <Tooltip formatter={(value: any) => `$${value.toLocaleString()}`} />
+          <Tooltip formatter={(value: any) => formatCurrency(value)} />
           <Legend />
           <Line 
             type="monotone" 
@@ -97,7 +98,7 @@ export const InventoryChart: React.FC<ChartProps> = ({ data, title = 'Inventory 
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" />
           <YAxis />
-          <Tooltip formatter={(value: any) => `$${value.toLocaleString()}`} />
+          <Tooltip formatter={(value: any) => formatCurrency(value)} />
           <Legend />
           <Line 
             type="monotone" 

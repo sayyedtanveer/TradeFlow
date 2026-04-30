@@ -10,7 +10,8 @@ import { Badge } from '@/components/ui/badge';
 import { TableSkeleton } from '@/components/shared/LoadingSkeleton';
 import { priceListsApi } from '@/services/sales.service';
 import { PriceList } from '@/types/sales.types';
-import { Plus, Edit2, DollarSign } from 'lucide-react';
+import { Plus, Edit2, IndianRupee } from 'lucide-react';
+import { formatCurrency } from '@/utils/currency';
 
 export default function PriceListsPage() {
   const [priceLists, setPriceLists] = useState<PriceList[]>([]);
@@ -72,7 +73,7 @@ export default function PriceListsPage() {
         {priceLists.length === 0 ? (
           <Card className="col-span-full">
             <CardContent className="pt-12 text-center text-gray-500 pb-12">
-              <DollarSign className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+              <IndianRupee className="h-12 w-12 mx-auto mb-4 text-gray-400" />
               <p>No price lists created yet</p>
               <Button variant="link" className="mt-2">
                 Create First Price List
@@ -124,7 +125,7 @@ export default function PriceListsPage() {
                       {priceList.lines.slice(0, 3).map((line) => (
                         <div key={line.id} className="flex justify-between text-xs text-gray-700">
                           <span>{line.product_id}</span>
-                          <span className="font-semibold">${line.unit_price.toFixed(2)}</span>
+                          <span className="font-semibold">{formatCurrency(line.unit_price)}</span>
                         </div>
                       ))}
                       {priceList.lines.length > 3 && (

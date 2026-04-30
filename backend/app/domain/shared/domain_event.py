@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class DomainEvent:
     """
     Base class for all domain events.

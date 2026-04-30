@@ -1,6 +1,7 @@
-import { Navigate, Outlet } from "react-router-dom"
+import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { useEffect, useState } from "react"
 import { useAuthStore } from "@/app/store/authStore"
+import { isClientSession } from "@/lib/auth-session"
 import { normalizeRole } from "@/lib/roles.config"
 import { apiClient } from "@/services/api-client"
 
@@ -11,7 +12,8 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ allowedRoles, roles, children }: ProtectedRouteProps) {
-  const { isAuthenticated, user, logout, token } = useAuthStore()
+  const { isAuthenticated, user, logout, token, client_id } = useAuthStore()
+  const location = useLocation()
   const [isValidating, setIsValidating] = useState(true)
   const [isValid, setIsValid] = useState(false)
 
@@ -28,8 +30,15 @@ export function ProtectedRoute({ allowedRoles, roles, children }: ProtectedRoute
       }
 
       try {
-        // Validate token by calling /auth/me endpoint
-        await apiClient.get("/auth/me")
+        const validationEndpoint = isClientSession({
+          token,
+          userRole: user?.role,
+          clientId: client_id,
+          pathname: location.pathname,
+        })
+          ? "/client/profile"
+          : "/auth/me"
+        await apiClient.get(validationEndpoint)
         setIsValid(true)
       } catch (error) {
         // Token is invalid, expired, or user session was lost
@@ -41,7 +50,7 @@ export function ProtectedRoute({ allowedRoles, roles, children }: ProtectedRoute
     }
 
     validateToken()
-  }, [isAuthenticated, token, logout])
+  }, [isAuthenticated, token, logout, user?.role, client_id, location.pathname])
 
   // Show loading state while validating
   if (isValidating) {
@@ -55,11 +64,19 @@ export function ProtectedRoute({ allowedRoles, roles, children }: ProtectedRoute
 
   if (!effectiveRoles && user) {
     const normalizedUserRole = normalizeRole(user.role)
-    if (normalizedUserRole === "CLIENT") {
-      return <Navigate to="/client" replace />
-    }
-    if (normalizedUserRole === "SUPPLIER") {
-      return <Navigate to="/supplier-portal" replace />
+    const roleHome =
+      normalizedUserRole === "CLIENT"
+        ? "/client"
+        : normalizedUserRole === "SUPPLIER"
+        ? "/supplier-portal"
+        : null
+
+    if (
+      roleHome &&
+      location.pathname !== roleHome &&
+      !location.pathname.startsWith(`${roleHome}/`)
+    ) {
+      return <Navigate to={roleHome} replace />
     }
   }
 

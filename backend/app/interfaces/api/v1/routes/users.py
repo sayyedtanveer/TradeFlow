@@ -52,6 +52,8 @@ class UserCreateResponse(BaseModel):
     role: str
     tenant_id: str
     is_active: bool
+    supplier_id: Optional[str] = None
+    client_id: Optional[str] = None
     temporary_password: str = Field(
         description="Temporary password for first login. User must change this after login."
     )
@@ -111,6 +113,8 @@ async def list_users(
                 role=u.role,
                 tenant_id=str(u.tenant_id),
                 is_active=u.is_active,
+                supplier_id=str(u.supplier_id) if u.supplier_id else None,
+                client_id=str(u.client_id) if u.client_id else None,
             )
             for u in users
         ]
@@ -215,6 +219,8 @@ async def create_user(
         role=user.role,
         tenant_id=str(user.tenant_id),
         is_active=user.is_active,
+        supplier_id=str(user.supplier_id) if user.supplier_id else None,
+        client_id=str(user.client_id) if user.client_id else None,
         temporary_password=temporary_password,
     )
 
@@ -258,6 +264,8 @@ async def update_user(
             if not supplier or supplier.tenant_id != tenant_id or supplier.is_deleted:
                 raise HTTPException(status_code=404, detail="Supplier not found")
             user.supplier_id = supplier_uuid
+        elif "supplier_id" in body.model_fields_set:
+            user.supplier_id = None
         
         # Update other fields (normalize role to lowercase)
         data = body.model_dump(exclude_unset=True)

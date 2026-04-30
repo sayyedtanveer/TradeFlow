@@ -13,7 +13,7 @@ type Mode = "login" | "forgot" | "reset"
 export default function ClientLogin() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
-  const { setAuth, setUser } = useAuthStore()
+  const { setAuth, setUser, setSupplierAndClient } = useAuthStore()
   const [loginForm, setLoginForm] = useState({ email: "", password: "", tenant_id: "" })
   const [forgotForm, setForgotForm] = useState({ email: "", tenant_id: "" })
   const [resetForm, setResetForm] = useState({ token: searchParams.get("token") ?? "", new_password: "" })
@@ -28,6 +28,7 @@ export default function ClientLogin() {
     mutationFn: clientService.login,
     onSuccess: async (session) => {
       setAuth(session.access_token, session.tenant_id)
+      setSupplierAndClient(null, session.client_id)
       try {
         const profile = await clientService.getProfile()
         setUser({
@@ -38,6 +39,7 @@ export default function ClientLogin() {
           role: "CLIENT",
           client_id: session.client_id,
           tenant_id: session.tenant_id,
+          is_active: true,
         })
       } catch {
         const names = session.full_name.split(" ")
@@ -49,6 +51,7 @@ export default function ClientLogin() {
           role: "CLIENT",
           client_id: session.client_id,
           tenant_id: session.tenant_id,
+          is_active: true,
         })
       }
       navigate("/client", { replace: true })

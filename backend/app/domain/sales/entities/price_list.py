@@ -1,6 +1,6 @@
 """Price List Entities for sales order pricing."""
 
-from datetime import datetime, date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -17,6 +17,8 @@ class PriceListLine:
         product_id: UUID,
         product_type: str,  # "variant" or "finished_product"
         unit_price: Decimal,
+        created_at: datetime | None = None,
+        updated_at: datetime | None = None,
     ):
         """Initialize Price List Line."""
         self.id = id
@@ -24,6 +26,8 @@ class PriceListLine:
         self.product_id = product_id
         self.product_type = product_type
         self.unit_price = Decimal(str(unit_price))
+        self.created_at = created_at
+        self.updated_at = updated_at
         
         self._validate()
 
@@ -60,23 +64,40 @@ class PriceList(AggregateRoot):
         tenant_id: UUID,
         name: str,
         is_default: bool = False,
+        valid_from: date | str | None = None,
+        valid_to: date | str | None = None,
+        lines: list | None = None,
+        is_active: bool = True,
+        is_deleted: bool = False,
+        deleted_at: datetime | None = None,
+        created_at: datetime | None = None,
+        updated_at: datetime | None = None,
     ):
         """Initialize Price List."""
-        # AggregateRoot fields
-        self.id = id
-        self.tenant_id = tenant_id
-        self.created_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
-        self.is_active = True
+        super().__init__(
+            id=id,
+            tenant_id=tenant_id,
+            created_at=created_at,
+            updated_at=updated_at,
+            is_deleted=is_deleted,
+            deleted_at=deleted_at,
+        )
+        self.is_active = is_active
         
         # Price List fields
         self.name = name
         self.is_default = is_default
-        self.valid_from = date.today()
-        self.valid_to: date | None = None  # None = open-ended
+        self.valid_from = (
+            date.fromisoformat(valid_from)
+            if isinstance(valid_from, str)
+            else valid_from or date.today()
+        )
+        self.valid_to: date | None = (
+            date.fromisoformat(valid_to) if isinstance(valid_to, str) else valid_to
+        )
         
         # Lines collection
-        self.lines: list = []  # List[PriceListLine]
+        self.lines: list = lines or []  # List[PriceListLine]
         
         self._validate()
 
@@ -103,7 +124,7 @@ class PriceList(AggregateRoot):
         
         self.valid_from = valid_from
         self.valid_to = valid_to
-        self.updated_at = datetime.utcnow()
+        self._touch()
 
     def add_line(self, line: PriceListLine) -> None:
         """
@@ -122,7 +143,7 @@ class PriceList(AggregateRoot):
                 )
         
         self.lines.append(line)
-        self.updated_at = datetime.utcnow()
+        self._touch()
 
     def update_line_price(self, product_id: UUID, product_type: str, new_price: Decimal) -> None:
         """
@@ -143,7 +164,7 @@ class PriceList(AggregateRoot):
         for line in self.lines:
             if line.product_id == product_id and line.product_type == product_type:
                 line.unit_price = new_price
-                self.updated_at = datetime.utcnow()
+                self._touch()
                 return
         
         raise ValueError(
@@ -172,7 +193,7 @@ class PriceList(AggregateRoot):
                 f"Product {product_id} ({product_type}) not found in this price list"
             )
         
-        self.updated_at = datetime.utcnow()
+        self._touch()
 
     def get_price(self, product_id: UUID, product_type: str) -> Decimal | None:
         """

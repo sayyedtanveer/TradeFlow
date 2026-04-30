@@ -1,8 +1,12 @@
 import axios, { AxiosError } from "axios"
 import { useAuthStore } from "@/app/store/authStore"
 
+// Default to `/api/v1` when `VITE_API_URL` is not provided in development.
+// This keeps calls like `/inventory/...` routed to the backend via the dev proxy.
+const DEFAULT_API_BASE = import.meta.env.VITE_API_URL ?? "/api/v1"
+
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
+  baseURL: DEFAULT_API_BASE,
   headers: {
     "Content-Type": "application/json",
   },

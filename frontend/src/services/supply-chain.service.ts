@@ -1,6 +1,39 @@
 import { apiClient } from "./api-client"
 
+// Use central `apiClient` baseURL. Keep this empty so `apiClient` controls the prefix.
 const BASE = ""
+
+const asArray = <T>(payload: T[] | { items?: T[] } | null | undefined): T[] => {
+  if (Array.isArray(payload)) return payload
+  return payload?.items ?? []
+}
+
+const toNumber = (value: unknown): number => {
+  const parsed = Number(value ?? 0)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const normalizePoLine = (line: PurchaseOrderLine): PurchaseOrderLine => ({
+  ...line,
+  quantity: toNumber(line.quantity),
+  received_quantity: toNumber(line.received_quantity),
+  unit_price: toNumber(line.unit_price),
+  line_total: toNumber(line.line_total),
+})
+
+const normalizePo = (po: PurchaseOrder): PurchaseOrder => ({
+  ...po,
+  total_amount: toNumber(po.total_amount),
+  lines: Array.isArray(po.lines) ? po.lines.map(normalizePoLine) : [],
+})
+
+const withData = async <TResponse, TData>(
+  request: Promise<{ data: TResponse }>,
+  transform: (data: TResponse) => TData
+) => {
+  const response = await request
+  return { ...response, data: transform(response.data) }
+}
 
 export type Supplier = {
   id: string
@@ -9,6 +42,9 @@ export type Supplier = {
   contact_person?: string | null
   email?: string | null
   phone?: string | null
+  address?: string | null
+  gst?: string | null
+  payment_terms?: string | null
   is_active: boolean
 }
 
@@ -97,7 +133,8 @@ export type InspectionTemplate = {
 }
 
 export const supplyChainApi = {
-  listSuppliers: () => apiClient.get<Supplier[]>(`${BASE}/suppliers`),
+  listSuppliers: () =>
+    withData(apiClient.get<Supplier[] | { items: Supplier[] }>(`${BASE}/suppliers`), asArray),
   createSupplier: (body: {
     code: string
     name: string
@@ -123,8 +160,13 @@ export const supplyChainApi = {
     }
   ) => apiClient.put<Supplier>(`${BASE}/suppliers/${id}`, body),
 
-  listPurchaseOrders: () => apiClient.get<PurchaseOrder[]>(`${BASE}/purchase-orders`),
-  getPurchaseOrder: (id: string) => apiClient.get<PurchaseOrder>(`${BASE}/purchase-orders/${id}`),
+  listPurchaseOrders: () =>
+    withData(
+      apiClient.get<PurchaseOrder[] | { items: PurchaseOrder[] }>(`${BASE}/purchase-orders`),
+      (data) => asArray(data).map(normalizePo)
+    ),
+  getPurchaseOrder: (id: string) =>
+    withData(apiClient.get<PurchaseOrder>(`${BASE}/purchase-orders/${id}`), normalizePo),
   createPurchaseOrder: (body: {
     supplier_id: string
     expected_delivery?: string
@@ -181,7 +223,7 @@ export const supplyChainApi = {
     if (params?.skip != null) qs.set("skip", String(params.skip))
     if (params?.limit != null) qs.set("limit", String(params.limit))
     const query = qs.toString() ? `?${qs.toString()}` : ""
-    return apiClient.get<{
+    return withData(apiClient.get<{
       total: number
       skip: number
       limit: number
@@ -196,9 +238,13 @@ export const supplyChainApi = {
         notes?: string | null
         lines: PurchaseOrderLine[]
       }[]
-    }>(`${BASE}/supplier/purchase-orders${query}`)
+    }>(`${BASE}/supplier/purchase-orders${query}`), (data) => ({
+      ...data,
+      items: data.items.map((po) => normalizePo(po as PurchaseOrder)),
+    }))
   },
-  supplierPortalPO: (id: string) => apiClient.get<PurchaseOrder>(`${BASE}/supplier/purchase-orders/${id}`),
+  supplierPortalPO: (id: string) =>
+    withData(apiClient.get<PurchaseOrder>(`${BASE}/supplier/purchase-orders/${id}`), normalizePo),
   supplierAckPO: (id: string) => apiClient.put(`${BASE}/supplier/purchase-orders/${id}/acknowledge`),
   supplierQuotation: (body: Record<string, unknown>) => apiClient.post(`${BASE}/supplier/quotations`, body),
 

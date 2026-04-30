@@ -47,7 +47,7 @@ class PurchaseOrderModel(Base):
     lines: Mapped[List["PurchaseOrderLineModel"]] = relationship(
         "PurchaseOrderLineModel", back_populates="purchase_order", cascade="all, delete-orphan"
     )
-    supplier: Mapped["SupplierModel"] = relationship("SupplierModel", lazy="joined")
+    supplier: Mapped["SupplierModel"] = relationship("SupplierModel")
 
 
 class PurchaseOrderLineModel(Base):

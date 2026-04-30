@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
 
+const normalizeStatus = (status: string) => status.trim().toLowerCase()
+
 export default function SupplierPortalPoDetailPage() {
   const { poId } = useParams<{ poId: string }>()
   const { toast } = useToast()
@@ -30,16 +32,16 @@ export default function SupplierPortalPoDetailPage() {
     }
   }
 
-  if (!po) return <p className="text-muted-foreground">Loading…</p>
+  if (!po) return <p className="text-muted-foreground">Loading...</p>
 
   return (
     <div className="space-y-6 max-w-3xl">
       <Button variant="ghost" size="sm" asChild>
-        <Link to="/supplier-portal">← Portal</Link>
+        <Link to="/supplier-portal">{"<- Portal"}</Link>
       </Button>
       <h1 className="text-2xl font-semibold font-mono">{po.po_number}</h1>
       <p className="text-sm text-muted-foreground">Status: {po.status}</p>
-      {po.status === "sent" && (
+      {normalizeStatus(po.status) === "sent" && (
         <Button onClick={ack}>Acknowledge order</Button>
       )}
       <Table>
@@ -51,11 +53,11 @@ export default function SupplierPortalPoDetailPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {po.lines.map((l) => (
-            <TableRow key={l.id}>
-              <TableCell className="font-mono text-xs">{l.material_id}</TableCell>
-              <TableCell className="text-right">{l.quantity}</TableCell>
-              <TableCell className="text-right">{l.unit_price}</TableCell>
+          {po.lines.map((line) => (
+            <TableRow key={line.id}>
+              <TableCell className="font-mono text-xs">{line.material_id}</TableCell>
+              <TableCell className="text-right">{line.quantity}</TableCell>
+              <TableCell className="text-right">{line.unit_price}</TableCell>
             </TableRow>
           ))}
         </TableBody>

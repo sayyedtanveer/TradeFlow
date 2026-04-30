@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import {
   Layers, Search, CheckCircle2, Circle, AlertCircle,
-  Copy, Eye, DollarSign, ChevronDown, Plus, Calendar, Clock, Loader2
+  Copy, Eye, IndianRupee, ChevronDown, Plus, Calendar, Clock, Loader2
 } from "lucide-react"
 import { bomService } from "@/services/bom.service"
 import { PageHeader } from "@/components/layout/PageHeader"
@@ -361,7 +361,7 @@ function TemplateCard({
                 {/* Cost row */}
                 <div className="flex items-center justify-between text-xs p-2 rounded bg-primary/5 border border-primary/10">
                    <div className="font-medium text-muted-foreground flex items-center gap-1.5">
-                     <DollarSign className="w-3.5 h-3.5 text-primary" />
+                     <IndianRupee className="w-3.5 h-3.5 text-primary" />
                      Total Cost
                    </div>
                    <div className="font-semibold text-primary">

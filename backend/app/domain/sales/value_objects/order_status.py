@@ -11,13 +11,13 @@ class OrderStatus(str, Enum):
     Any state can transition to CANCELLED.
     """
 
-    DRAFT = "draft"  # Initial state, not yet confirmed
-    CONFIRMED = "confirmed"  # Credit & inventory verified, allocated
-    PRODUCTION = "production"  # Partially in production (backorder exists)
-    READY = "ready"  # Fully allocated, ready to ship
-    SHIPPED = "shipped"  # Partial or full shipment sent
-    DELIVERED = "delivered"  # Received by client
-    CANCELLED = "cancelled"  # Cancelled (reverses allocations)
+    DRAFT = "DRAFT"  # Initial state, not yet confirmed
+    CONFIRMED = "CONFIRMED"  # Credit & inventory verified, allocated
+    PRODUCTION = "PRODUCTION"  # Partially in production (backorder exists)
+    READY = "READY"  # Fully allocated, ready to ship
+    SHIPPED = "SHIPPED"  # Partial or full shipment sent
+    DELIVERED = "DELIVERED"  # Received by client
+    CANCELLED = "CANCELLED"  # Cancelled (reverses allocations)
 
     def can_transition_to(self, target: "OrderStatus") -> bool:
         """

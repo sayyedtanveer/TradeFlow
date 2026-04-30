@@ -38,6 +38,7 @@ from backend.app.infrastructure.persistence.models import (  # noqa: F401
     sales_models,
     quality_model,
     purchase_order_model,
+    grn_model,
     supplier_model,
     po_sequence_model,
     material_request_model,

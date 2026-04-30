@@ -70,6 +70,7 @@ class ListClientsQueryHandler:
         clients = await self.client_repo.find_by_status(
             tenant_id=query.tenant_id,
             is_active=query.is_active if query.is_active is not None else True,
+            search=query.search,
             limit=query.limit,
             offset=query.offset,
         )
@@ -199,17 +200,42 @@ class GetProductPriceQueryHandler:
 class CheckClientCreditQueryHandler:
     """Handler for checking client credit."""
 
-    def __init__(self, credit_service: CreditValidationService):
-        self.credit_service = credit_service
+    def __init__(self, client_repo: ClientRepository):
+        self.client_repo = client_repo
 
     async def handle(self, query: CheckClientCreditQuery):
         """Check client credit."""
-        is_valid, reason = await self.credit_service.validate_credit(
+        client = await self.client_repo.get_by_id(
+            id=query.client_id,
             tenant_id=query.tenant_id,
-            client_id=query.client_id,
-            order_grand_total=query.order_total or 0,
         )
-        return {"is_valid": is_valid, "reason": reason}
+        if not client:
+            raise ValueError(f"Client {query.client_id} not found")
+
+        credit_limit = client.credit_limit
+        credit_used = client.credit_used
+        order_total = query.order_total or 0
+
+        if not credit_limit:
+            return {
+                "client_id": str(client.id),
+                "credit_limit": None,
+                "credit_used": str(credit_used),
+                "available_credit": None,
+                "is_valid_for_amount": True,
+                "message": "Client has unlimited credit",
+            }
+
+        available_credit = credit_limit - credit_used
+        is_valid = order_total <= available_credit
+        return {
+            "client_id": str(client.id),
+            "credit_limit": str(credit_limit),
+            "credit_used": str(credit_used),
+            "available_credit": str(available_credit),
+            "is_valid_for_amount": is_valid,
+            "message": "Credit available" if is_valid else "Insufficient credit",
+        }
 
 
 class GetPriceListByIdQueryHandler:

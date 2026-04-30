@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
-  DollarSign, RefreshCw, Loader2, AlertCircle, TrendingUp, Package2, Settings2,
+  IndianRupee, RefreshCw, Loader2, AlertCircle, TrendingUp, Package2, Settings2,
   ChevronDown, ChevronUp
 } from "lucide-react"
 import { bomService } from "@/services/bom.service"
@@ -79,7 +79,7 @@ export function BOMCostBreakdown({ bom }: BOMCostBreakdownProps) {
       {/* Header row */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-muted-foreground text-sm">
-          <DollarSign className="w-4 h-4" />
+          <IndianRupee className="w-4 h-4" />
           <span>Standard Cost Rollup</span>
           {isRefreshing && (
             <span className="flex items-center gap-1 text-xs text-primary">

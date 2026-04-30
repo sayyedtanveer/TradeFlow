@@ -9,6 +9,7 @@ import {
   KPICard,
 } from '../components/Charts';
 import { analyticsAPI } from '../../../services/api';
+import { formatCurrency } from '@/utils/currency';
 
 export const FinanceDashboard: React.FC = () => {
   const [dateRange, setDateRange] = useState({
@@ -41,20 +42,20 @@ export const FinanceDashboard: React.FC = () => {
   const metrics = [
     {
       title: 'Total AR',
-      value: `$${(financeReport?.summary?.ar_total || 0).toLocaleString()}`,
+      value: formatCurrency(financeReport?.summary?.ar_total || 0),
     },
     {
       title: 'Total AP',
-      value: `$${(financeReport?.summary?.ap_total || 0).toLocaleString()}`,
+      value: formatCurrency(financeReport?.summary?.ap_total || 0),
     },
     {
       title: 'AR Outstanding',
-      value: `$${(financeReport?.summary?.ar_outstanding || 0).toLocaleString()}`,
+      value: formatCurrency(financeReport?.summary?.ar_outstanding || 0),
       trend: -2,
     },
     {
       title: 'AP Outstanding',
-      value: `$${(financeReport?.summary?.ap_outstanding || 0).toLocaleString()}`,
+      value: formatCurrency(financeReport?.summary?.ap_outstanding || 0),
       trend: 1,
     },
   ];
@@ -131,7 +132,7 @@ export const FinanceDashboard: React.FC = () => {
           <div className="text-center">
             <p className="text-gray-600 text-sm mb-2">Receivables</p>
             <p className="text-3xl font-bold text-green-600">
-              ${(financeReport?.summary?.ar_total || 0).toLocaleString()}
+              {formatCurrency(financeReport?.summary?.ar_total || 0)}
             </p>
             <p className="text-sm text-gray-500 mt-1">
               {financeReport?.summary?.ar_collected || 0} collected
@@ -140,7 +141,7 @@ export const FinanceDashboard: React.FC = () => {
           <div className="text-center">
             <p className="text-gray-600 text-sm mb-2">Payables</p>
             <p className="text-3xl font-bold text-red-600">
-              ${(financeReport?.summary?.ap_total || 0).toLocaleString()}
+              {formatCurrency(financeReport?.summary?.ap_total || 0)}
             </p>
             <p className="text-sm text-gray-500 mt-1">
               {financeReport?.summary?.ap_paid || 0} paid

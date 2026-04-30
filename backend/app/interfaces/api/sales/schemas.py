@@ -1,6 +1,6 @@
 """Pydantic schemas for Sales API endpoints."""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional, List
 from uuid import UUID
@@ -46,8 +46,8 @@ class ClientResponse(BaseModel):
     credit_used: Decimal
     payment_terms_days: int
     is_active: bool
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -107,8 +107,8 @@ class PriceListResponse(BaseModel):
     valid_to: Optional[date] = None
     is_active: bool
     lines: List[PriceListLineResponse] = []
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -149,8 +149,8 @@ class SalesOrderLineResponse(BaseModel):
     backorder_quantity: Decimal
     work_order_id: Optional[UUID] = None
     status: str
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -189,8 +189,8 @@ class SalesOrderResponse(BaseModel):
     notes: Optional[str] = None
     created_by: Optional[str] = None
     lines: List[SalesOrderLineResponse] = []
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -212,8 +212,8 @@ class SalesOrderDetailResponse(BaseModel):
     notes: Optional[str] = None
     created_by: Optional[str] = None
     lines: List[SalesOrderLineResponse] = []
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True

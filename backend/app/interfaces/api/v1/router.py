@@ -28,6 +28,7 @@ from backend.app.interfaces.api.v1.routes.mrp import router as mrp_router
 from backend.app.interfaces.api.v1.routes.inventory_extended import router as inventory_extended_router
 from backend.app.interfaces.api.v1.routes.rbac_admin import router as rbac_admin_router
 from backend.app.interfaces.api.v1.routes.users import router as users_router
+from backend.app.interfaces.api.v1.routes.dashboards import router as dashboards_router
 
 api_v1_router = APIRouter()
 
@@ -48,6 +49,7 @@ api_v1_router.include_router(operations_router)
 api_v1_router.include_router(sales_router)
 api_v1_router.include_router(work_orders_router)
 api_v1_router.include_router(supply_chain_router)
+api_v1_router.include_router(dashboards_router)
 api_v1_router.include_router(inspection_templates_router)
 api_v1_router.include_router(finance_router)
 api_v1_router.include_router(reports_router)

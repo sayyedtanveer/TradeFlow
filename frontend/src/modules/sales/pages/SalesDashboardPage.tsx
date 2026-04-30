@@ -12,6 +12,7 @@ import { CardSkeleton } from '@/components/shared/LoadingSkeleton';
 import { ordersApi } from '@/services/sales.service';
 import { OrderStatistics, SalesOrder, OrderStatus } from '@/types/sales.types';
 import { ShoppingCart, Users, FileText, TrendingUp } from 'lucide-react';
+import { formatCurrency } from '@/utils/currency';
 
 export default function SalesDashboardPage() {
   const navigate = useNavigate();
@@ -164,7 +165,7 @@ export default function SalesDashboardPage() {
                     <tr key={order.id} className="border-b hover:bg-gray-50">
                       <td className="px-4 py-2 font-medium">{order.order_number}</td>
                       <td className="px-4 py-2">{order.client_id}</td>
-                      <td className="px-4 py-2">${order.grand_total.toFixed(2)}</td>
+                      <td className="px-4 py-2">{formatCurrency(order.grand_total)}</td>
                       <td className="px-4 py-2">
                         <Badge className={getStatusColor(order.status)}>{order.status}</Badge>
                       </td>

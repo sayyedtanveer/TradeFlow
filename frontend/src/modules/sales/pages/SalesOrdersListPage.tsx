@@ -14,6 +14,7 @@ import { TableSkeleton } from '@/components/shared/LoadingSkeleton';
 import { ordersApi } from '@/services/sales.service';
 import { SalesOrder, OrderStatus } from '@/types/sales.types';
 import { Plus, Filter, Eye, ShoppingCart } from 'lucide-react';
+import { formatCurrency } from '@/utils/currency';
 
 export default function SalesOrdersListPage() {
   const navigate = useNavigate();
@@ -36,17 +37,23 @@ export default function SalesOrdersListPage() {
         // Get today's date for default date range
         const today = new Date().toISOString().split('T')[0];
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const selectedStatus = status === 'all' ? undefined : (status as OrderStatus);
         
         const response = await ordersApi.list(
           pageSize,
           offset,
           undefined,
-          status ? (status as OrderStatus) : undefined,
+          selectedStatus,
           thirtyDaysAgo, // Default to last 30 days
           today
         );
-        setOrders(response.items);
-        setTotal(response.total);
+        const searchTerm = search.trim().toLowerCase();
+        const visibleOrders = searchTerm
+          ? response.items.filter((order) => order.order_number.toLowerCase().includes(searchTerm))
+          : response.items;
+
+        setOrders(visibleOrders);
+        setTotal(searchTerm ? visibleOrders.length : response.total);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load orders');
       } finally {
@@ -55,7 +62,7 @@ export default function SalesOrdersListPage() {
     };
 
     loadOrders();
-  }, [currentPage, pageSize, status]);
+  }, [currentPage, pageSize, search, status]);
 
   const getStatusColor = (orderStatus: OrderStatus) => {
     const colors: Record<OrderStatus, string> = {
@@ -109,7 +116,7 @@ export default function SalesOrdersListPage() {
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700 block mb-2">Status</label>
-              <Select value={status || 'all'} onValueChange={(value) => setStatus(value === 'all' ? '' : value)}>
+              <Select value={status} onValueChange={setStatus}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Status" />
                 </SelectTrigger>
@@ -180,7 +187,7 @@ export default function SalesOrdersListPage() {
                       <td className="px-4 py-3">{order.client_id}</td>
                       <td className="px-4 py-3">{new Date(order.order_date).toLocaleDateString()}</td>
                       <td className="px-4 py-3">{new Date(order.delivery_date).toLocaleDateString()}</td>
-                      <td className="px-4 py-3 font-semibold">${order.grand_total?.toFixed(2) || '0.00'}</td>
+                      <td className="px-4 py-3 font-semibold">{formatCurrency(order.grand_total || 0)}</td>
                       <td className="px-4 py-3">
                         <Badge className={getStatusColor(order.status)}>{order.status}</Badge>
                       </td>

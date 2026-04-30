@@ -11,6 +11,32 @@ from backend.app.domain.inventory.entities.material import Material, MaterialTyp
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.infrastructure.persistence.repositories.base_repository import BaseRepository
 
+_MATERIAL_TYPE_ALIASES = {
+    "raw": MaterialType.RAW.value,
+    "raw_material": MaterialType.RAW.value,
+    "raw-material": MaterialType.RAW.value,
+    "rm": MaterialType.RAW.value,
+    "finished": MaterialType.FINISHED.value,
+    "finished_good": MaterialType.FINISHED.value,
+    "finished_goods": MaterialType.FINISHED.value,
+    "finished-good": MaterialType.FINISHED.value,
+    "finished-goods": MaterialType.FINISHED.value,
+    "fg": MaterialType.FINISHED.value,
+}
+
+
+def _normalize_material_type(value: MaterialType | str | None) -> MaterialType:
+    if isinstance(value, MaterialType):
+        return value
+
+    normalized = str(value or "").strip().lower().replace(" ", "_")
+    mapped = _MATERIAL_TYPE_ALIASES.get(normalized, normalized)
+
+    if mapped == MaterialType.FINISHED.value:
+        return MaterialType.FINISHED
+
+    return MaterialType.RAW
+
 
 class MaterialRepository(BaseRepository[Material, MaterialModel]):
 
@@ -23,7 +49,7 @@ class MaterialRepository(BaseRepository[Material, MaterialModel]):
             tenant_id=model.tenant_id,
             code=model.code,
             name=model.name,
-            material_type=MaterialType(model.material_type),
+            material_type=_normalize_material_type(model.material_type),
             description=model.description,
             category_id=model.category_id,
             base_unit_id=model.base_unit_id,
@@ -49,7 +75,7 @@ class MaterialRepository(BaseRepository[Material, MaterialModel]):
             code=entity.code,
             name=entity.name,
             description=entity.description,
-            material_type=entity.material_type.value if hasattr(entity.material_type, 'value') else entity.material_type,
+            material_type=_normalize_material_type(entity.material_type).value,
             category_id=entity.category_id,
             base_unit_id=entity.base_unit_id,
             current_stock=float(entity.current_stock),

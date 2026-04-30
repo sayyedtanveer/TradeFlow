@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { financeService, type Invoice, type SupplierInvoice } from "@/services/finance.service"
 import { Link, useNavigate } from "react-router-dom"
 import {
-  DollarSign, TrendingUp, TrendingDown, AlertCircle, CheckCircle2,
+  IndianRupee, TrendingUp, TrendingDown, AlertCircle, CheckCircle2,
   Clock, FileText, Plus, Search, RefreshCw, Eye,
   CreditCard, Building2, BarChart3, ArrowUpRight, ArrowDownRight,
 } from "lucide-react"
@@ -247,7 +247,7 @@ export default function FinanceDashboardPage() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <div className="p-2 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl">
-                <DollarSign className="w-5 h-5 text-white" />
+                <IndianRupee className="w-5 h-5 text-white" />
               </div>
               Finance & Accounting
             </h1>

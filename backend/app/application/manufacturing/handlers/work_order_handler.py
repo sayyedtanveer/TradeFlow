@@ -211,17 +211,38 @@ class WorkOrderHandler:
         wo.scrap_quantity = float(new_scrap)
         wo.updated_at = datetime.now(timezone.utc)
 
-        # Resolve the finished-goods material_id.
-        # WO.product_id is an item_variant UUID; inventory is tracked on MaterialModel.
-        # We look for a material whose item_variant_id matches.
+        # Resolve the finished-goods material_id. Older schemas do not have an
+        # item_variant_id column, so mirror product search: first try a material
+        # with the variant UUID, then a finished material with the variant code.
+        from backend.app.infrastructure.persistence.models.item_variant_model import ItemVariantModel
         from backend.app.infrastructure.persistence.models.material_model import MaterialModel
+
         mat_stmt = select(MaterialModel).where(
-            MaterialModel.item_variant_id == wo.product_id,
+            MaterialModel.id == wo.product_id,
             MaterialModel.tenant_id == wo.tenant_id,
             MaterialModel.is_deleted.is_(False),
         ).limit(1)
         mat_result = await self._session.execute(mat_stmt)
         fg_material = mat_result.scalar_one_or_none()
+
+        if fg_material is None:
+            variant_stmt = select(ItemVariantModel).where(
+                ItemVariantModel.id == wo.product_id,
+                ItemVariantModel.tenant_id == wo.tenant_id,
+                ItemVariantModel.is_deleted.is_(False),
+            ).limit(1)
+            variant_result = await self._session.execute(variant_stmt)
+            variant = variant_result.scalar_one_or_none()
+
+            if variant is not None:
+                code_stmt = select(MaterialModel).where(
+                    MaterialModel.tenant_id == wo.tenant_id,
+                    MaterialModel.code == variant.code,
+                    MaterialModel.material_type == "finished",
+                    MaterialModel.is_deleted.is_(False),
+                ).limit(1)
+                code_result = await self._session.execute(code_stmt)
+                fg_material = code_result.scalar_one_or_none()
 
         if fg_material is None:
             # Fallback: no linked material found — skip inventory update but log warning.

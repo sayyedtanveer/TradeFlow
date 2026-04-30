@@ -37,7 +37,13 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       setAuth: (token, tenant_id) =>
         set({ token, tenant_id, isAuthenticated: true }),
-      setUser: (user) => set({ user }),
+      setUser: (user) =>
+        set((state) => ({
+          user,
+          tenant_id: user.tenant_id ?? state.tenant_id,
+          supplier_id: user.supplier_id ?? null,
+          client_id: user.client_id ?? null,
+        })),
       setSupplierAndClient: (supplier_id, client_id) =>
         set({ supplier_id, client_id }),
       logout: () => set({

@@ -30,6 +30,8 @@ from backend.app.infrastructure.persistence.models.quality_model import (
 from backend.app.infrastructure.persistence.models.stock_level_model import StockLevelModel
 from backend.app.infrastructure.persistence.models.subcontract_model import SubcontractMaterialIssueModel, SubcontractOrderModel
 from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel
+from backend.app.application.procurement.handlers.purchase_order_handler import PurchaseOrderHandler
+from backend.app.application.procurement.handlers.supplier_quotation_handler import SupplierQuotationHandler
 from backend.app.interfaces.api.v1.dependencies.auth import get_container, get_current_role, get_current_tenant_id, get_current_user_id
 from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.interfaces.api.v1.dependencies.supplier_portal import require_supplier_id
@@ -56,29 +58,113 @@ from backend.app.interfaces.api.v1.schemas.supply_chain_schemas import (
 router = APIRouter(tags=["Supply Chain"])
 
 
+async def _apply_po_receipt_to_material_requests(
+    session,
+    *,
+    tenant_id: uuid.UUID,
+    purchase_order_id: uuid.UUID,
+    material_id: uuid.UUID,
+    received_quantity: Decimal,
+) -> None:
+    """Close the shortage loop when a PO receipt fulfills an awarded RFQ's material request."""
+    if received_quantity <= 0:
+        return
+
+    from backend.app.infrastructure.persistence.models.rfq_model import RFQModel
+
+    rfq_result = await session.execute(
+        select(RFQModel.material_request_id).where(
+            RFQModel.tenant_id == tenant_id,
+            RFQModel.awarded_po_id == purchase_order_id,
+            RFQModel.material_request_id.isnot(None),
+            RFQModel.is_deleted.is_(False),
+        )
+    )
+    material_request_ids = list({mr_id for mr_id in rfq_result.scalars().all() if mr_id})
+    if not material_request_ids:
+        return
+
+    mr_result = await session.execute(
+        select(MaterialRequestModel)
+        .where(
+            MaterialRequestModel.id.in_(material_request_ids),
+            MaterialRequestModel.tenant_id == tenant_id,
+            MaterialRequestModel.item_type == "material",
+            MaterialRequestModel.item_id == material_id,
+            MaterialRequestModel.status == "open",
+            MaterialRequestModel.is_deleted.is_(False),
+        )
+        .with_for_update()
+    )
+    now = datetime.now(timezone.utc)
+    for material_request in mr_result.scalars().all():
+        required = Decimal(str(material_request.required_quantity))
+        fulfilled = Decimal(str(material_request.fulfilled_quantity or 0))
+        next_fulfilled = min(required, fulfilled + received_quantity)
+        material_request.fulfilled_quantity = float(next_fulfilled)
+        if next_fulfilled >= required:
+            material_request.status = "fulfilled"
+        material_request.updated_at = now
+
+
+def _po_status_text(value: str | None) -> str:
+    normalized = str(value or "draft").strip().lower()
+    status_aliases = {
+        "partial_receipt": "partial",
+        "partial-receipt": "partial",
+        "partial receipt": "partial",
+        "completed": "received",
+        "complete": "received",
+        "canceled": "cancelled",
+    }
+    return status_aliases.get(normalized, normalized)
+
+
+def _safe_float(value: object, default: float = 0.0) -> float:
+    try:
+        return float(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_iso_date(value: object) -> str | None:
+    return value.isoformat() if value else None
+
+
 def _po_to_dict(p: PurchaseOrderModel) -> dict:
     return {
         "id": str(p.id),
         "po_number": p.po_number,
         "supplier_id": str(p.supplier_id),
-        "status": p.status,
-        "order_date": p.order_date.isoformat(),
-        "expected_delivery": p.expected_delivery.isoformat() if p.expected_delivery else None,
-        "total_amount": float(p.total_amount),
+        "status": _po_status_text(p.status),
+        "order_date": _safe_iso_date(p.order_date),
+        "expected_delivery": _safe_iso_date(p.expected_delivery),
+        "total_amount": _safe_float(p.total_amount),
         "notes": p.notes,
         "lines": [
             {
                 "id": str(l.id),
                 "material_id": str(l.material_id),
-                "quantity": float(l.quantity),
-                "received_quantity": float(l.received_quantity),
-                "unit_price": float(l.unit_price),
-                "line_total": float(l.line_total),
+                "quantity": _safe_float(l.quantity),
+                "received_quantity": _safe_float(l.received_quantity),
+                "unit_price": _safe_float(l.unit_price),
+                "line_total": _safe_float(l.line_total),
             }
             for l in p.lines
             if not l.is_deleted
         ],
     }
+
+
+def _optional_uuid(value: str | uuid.UUID | None, field_name: str) -> Optional[uuid.UUID]:
+    if value is None:
+        return None
+    if isinstance(value, uuid.UUID):
+        return value
+    try:
+        return uuid.UUID(str(value))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name} format") from e
 
 
 async def _first_quarantine_location(session, tenant_id: uuid.UUID) -> Optional[uuid.UUID]:
@@ -155,7 +241,7 @@ async def list_suppliers(
             query = query.where(SupplierModel.is_active == is_active)
         
         # Count total
-        count_stmt = select(func.count(SupplierModel.id)).select_from(query.subquery())
+        count_stmt = select(func.count()).select_from(query.subquery())
         total = await session.execute(count_stmt)
         total_count = total.scalar_one()
         
@@ -323,7 +409,7 @@ async def list_purchase_orders(
             query = query.where(PurchaseOrderModel.supplier_id == supplier_id)
         
         # Count total
-        count_stmt = select(func.count(PurchaseOrderModel.id)).select_from(query.subquery())
+        count_stmt = select(func.count()).select_from(query.subquery())
         total = await session.execute(count_stmt)
         total_count = total.scalar_one()
         
@@ -581,15 +667,13 @@ async def send_purchase_order(
 ):
     container = get_container(request)
     async with container.session_factory() as session:
-        po = await session.get(PurchaseOrderModel, po_id)
-        if not po or po.tenant_id != tenant_id or po.is_deleted:
-            raise HTTPException(status_code=404, detail="PO not found")
-        if po.status != "draft":
-            raise HTTPException(status_code=400, detail="Only draft PO can be sent")
-        po.status = "sent"
-        po.updated_at = datetime.now(timezone.utc)
-        await session.commit()
-    return {"status": "ok"}
+        handler = PurchaseOrderHandler(session)
+        try:
+            result = await handler.send_po(po_id, tenant_id)
+            await session.commit()
+            return result
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.put(
@@ -603,15 +687,13 @@ async def acknowledge_purchase_order(
 ):
     container = get_container(request)
     async with container.session_factory() as session:
-        po = await session.get(PurchaseOrderModel, po_id)
-        if not po or po.tenant_id != tenant_id or po.is_deleted:
-            raise HTTPException(status_code=404, detail="PO not found")
-        if po.status not in ("sent", "acknowledged", "partial"):
-            raise HTTPException(status_code=400, detail="PO cannot be acknowledged from this status")
-        po.status = "acknowledged"
-        po.updated_at = datetime.now(timezone.utc)
-        await session.commit()
-    return {"status": "ok"}
+        handler = PurchaseOrderHandler(session)
+        try:
+            result = await handler.acknowledge_po(po_id, tenant_id)
+            await session.commit()
+            return result
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
 
 # ── GRN (Goods Receipt Note) ─────────────────────────────────────────────────
@@ -711,8 +793,15 @@ async def create_grn(
             )
             session.add(grn_line)
         
+        grn_id = grn.id
         await session.commit()
-        await session.refresh(grn)
+        stmt = (
+            select(GoodsReceiptNoteModel)
+            .options(selectinload(GoodsReceiptNoteModel.lines))
+            .where(GoodsReceiptNoteModel.id == grn_id)
+        )
+        r = await session.execute(stmt)
+        grn = r.scalar_one()
     
     return GRNResponse.model_validate(grn)
 
@@ -778,8 +867,18 @@ async def receive_grn_into_inventory(
         if grn.status != "pending_receipt":
             raise HTTPException(status_code=400, detail="GRN is not pending receipt")
         
-        # Get PO to update
-        po = await session.get(PurchaseOrderModel, grn.purchase_order_id)
+        # Get PO with lines to update receipt totals without async lazy-loading.
+        po_stmt = (
+            select(PurchaseOrderModel)
+            .options(selectinload(PurchaseOrderModel.lines))
+            .where(
+                PurchaseOrderModel.id == grn.purchase_order_id,
+                PurchaseOrderModel.tenant_id == tenant_id,
+                PurchaseOrderModel.is_deleted.is_(False),
+            )
+        )
+        po_result = await session.execute(po_stmt)
+        po = po_result.scalar_one_or_none()
         if not po:
             raise HTTPException(status_code=404, detail="PO not found")
         
@@ -814,6 +913,13 @@ async def receive_grn_into_inventory(
                 created_by=user_id,
                 warehouse_location_id=grn.warehouse_location_id,
                 unit_cost=grn_line.unit_price,
+            )
+            await _apply_po_receipt_to_material_requests(
+                session,
+                tenant_id=tenant_id,
+                purchase_order_id=po.id,
+                material_id=grn_line.material_id,
+                received_quantity=accepted_qty,
             )
             
             # Record supplier price history
@@ -912,6 +1018,13 @@ async def receive_goods(
                 warehouse_location_id=body.warehouse_location_id,
             )
             lid.received_quantity = float(Decimal(str(lid.received_quantity)) + qty)
+            await _apply_po_receipt_to_material_requests(
+                session,
+                tenant_id=tenant_id,
+                purchase_order_id=po.id,
+                material_id=lid.material_id,
+                received_quantity=qty,
+            )
             await session.execute(
                 text("""
                     INSERT INTO supplier_price_history (
@@ -1085,7 +1198,7 @@ async def list_material_requests(
             query = query.where(MaterialRequestModel.item_type == item_type)
         
         # Count total
-        count_stmt = select(func.count(MaterialRequestModel.id)).select_from(query.subquery())
+        count_stmt = select(func.count()).select_from(query.subquery())
         total = await session.execute(count_stmt)
         total_count = total.scalar_one()
         
@@ -1237,7 +1350,7 @@ async def list_grns(
             query = query.where(InventoryTransactionModel.reference_id == purchase_order_id)
         
         # Total count
-        count_stmt = select(func.count(InventoryTransactionModel.id)).select_from(query.subquery())
+        count_stmt = select(func.count()).select_from(query.subquery())
         total = await session.execute(count_stmt)
         total_count = total.scalar_one()
         
@@ -1556,7 +1669,7 @@ async def list_subcontract_orders(
             query = query.where(SubcontractOrderModel.supplier_id == supplier_id)
         
         # Count total
-        count_stmt = select(func.count(SubcontractOrderModel.id)).select_from(query.subquery())
+        count_stmt = select(func.count()).select_from(query.subquery())
         total = await session.execute(count_stmt)
         total_count = total.scalar_one()
         
@@ -1859,22 +1972,18 @@ async def supplier_ack_po(
 ):
     container = get_container(request)
     async with container.session_factory() as session:
-        stmt = select(PurchaseOrderModel).where(
-            PurchaseOrderModel.id == po_id,
-            PurchaseOrderModel.tenant_id == tenant_id,
-            PurchaseOrderModel.supplier_id == supplier_id,
-            PurchaseOrderModel.is_deleted.is_(False),
-        )
-        r = await session.execute(stmt)
-        po = r.scalar_one_or_none()
-        if not po:
+        # Verify PO belongs to this supplier
+        po_check = await session.get(PurchaseOrderModel, po_id)
+        if not po_check or po_check.tenant_id != tenant_id or po_check.supplier_id != supplier_id or po_check.is_deleted:
             raise HTTPException(status_code=404, detail="PO not found")
-        if po.status not in ("sent", "draft"):
-            raise HTTPException(status_code=400, detail=f"Cannot acknowledge PO in '{po.status}' status")
-        po.status = "acknowledged"
-        po.updated_at = datetime.now(timezone.utc)
-        await session.commit()
-    return {"status": "ok"}
+        
+        handler = PurchaseOrderHandler(session)
+        try:
+            result = await handler.acknowledge_po(po_id, tenant_id)
+            await session.commit()
+            return result
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/supplier/quotations", status_code=status.HTTP_201_CREATED)
@@ -1892,11 +2001,8 @@ async def supplier_submit_quotation(
             raise HTTPException(status_code=404, detail="Material not found")
 
         # If linked to a PO, ensure the PO exists and is assigned to this supplier and tenant
-        if body.purchase_order_id:
-            try:
-                po_uuid = uuid.UUID(body.purchase_order_id)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid purchase_order_id format")
+        po_uuid = _optional_uuid(body.purchase_order_id, "purchase_order_id")
+        if po_uuid:
             stmt = select(PurchaseOrderModel).where(
                 PurchaseOrderModel.id == po_uuid,
                 PurchaseOrderModel.tenant_id == tenant_id,
@@ -1912,16 +2018,85 @@ async def supplier_submit_quotation(
             id=uuid.uuid4(),
             tenant_id=tenant_id,
             supplier_id=supplier_id,
-            purchase_order_id=body.purchase_order_id,
+            purchase_order_id=po_uuid,
             material_id=body.material_id,
             quantity=float(body.quantity),
             unit_price=float(body.unit_price),
             valid_until=body.valid_until,
-            status="submitted",
+            status="draft",
         )
         session.add(q)
         await session.commit()
-    return {"id": str(q.id)}
+    return {"id": str(q.id), "status": "draft"}
+
+
+@router.put(
+    "/supplier/quotations/{quotation_id}/submit",
+    dependencies=[Depends(require_permission("supplier:write"))],
+)
+async def supplier_submit_quotation_transition(
+    quotation_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    """Supplier transitions quotation from DRAFT → SUBMITTED."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        # Verify quotation belongs to this supplier
+        q_check = await session.get(SupplierQuotationModel, quotation_id)
+        if not q_check or q_check.tenant_id != tenant_id or q_check.supplier_id != supplier_id or q_check.is_deleted:
+            raise HTTPException(status_code=404, detail="Quotation not found")
+        
+        handler = SupplierQuotationHandler(session)
+        try:
+            result = await handler.submit_quotation(quotation_id, tenant_id)
+            await session.commit()
+            return result
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put(
+    "/quotations/{quotation_id}/approve",
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
+async def approve_quotation(
+    quotation_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Admin approves quotation: SUBMITTED → APPROVED."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = SupplierQuotationHandler(session)
+        try:
+            result = await handler.approve_quotation(quotation_id, tenant_id)
+            await session.commit()
+            return result
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put(
+    "/quotations/{quotation_id}/reject",
+    dependencies=[Depends(require_permission("procurement:write"))],
+)
+async def reject_quotation(
+    quotation_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Admin rejects quotation from any state."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = SupplierQuotationHandler(session)
+        try:
+            result = await handler.reject_quotation(quotation_id, tenant_id)
+            await session.commit()
+            return result
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
 
 # ── Inspection results query ─────────────────────────────────────────────────
@@ -2399,6 +2574,7 @@ async def supplier_submit_rfq_quote(
     """Supplier submits a quotation in response to an RFQ."""
     container = get_container(request)
     async with container.session_factory() as session:
+        po_uuid = _optional_uuid(body.purchase_order_id, "purchase_order_id")
         # Validate invite exists
         stmt = select(RFQSupplierModel).where(
             RFQSupplierModel.rfq_id == rfq_id,
@@ -2414,7 +2590,7 @@ async def supplier_submit_rfq_quote(
             id=uuid.uuid4(),
             tenant_id=tenant_id,
             supplier_id=supplier_id,
-            purchase_order_id=body.purchase_order_id,
+            purchase_order_id=po_uuid,
             material_id=body.material_id,
             quantity=float(body.quantity),
             unit_price=float(body.unit_price),

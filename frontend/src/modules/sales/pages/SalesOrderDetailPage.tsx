@@ -13,6 +13,7 @@ import { ordersApi } from '@/services/sales.service';
 import { SalesOrder, OrderStatus } from '@/types/sales.types';
 import { ArrowLeft, Edit2, CheckCircle, Truck, Package, Trash2, Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { formatCurrency } from '@/utils/currency';
 
 export default function SalesOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -194,7 +195,7 @@ export default function SalesOrderDetailPage() {
             <CardTitle className="text-sm font-medium text-gray-600">Grand Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-lg font-semibold text-green-600">${order.grand_total.toFixed(2)}</p>
+            <p className="text-lg font-semibold text-green-600">{formatCurrency(order.grand_total)}</p>
           </CardContent>
         </Card>
       </div>
@@ -260,14 +261,14 @@ export default function SalesOrderDetailPage() {
                         <div className="text-xs text-gray-500">{line.product_type}</div>
                       </td>
                       <td className="px-4 py-3">{line.quantity}</td>
-                      <td className="px-4 py-3">${line.unit_price.toFixed(2)}</td>
+                      <td className="px-4 py-3">{formatCurrency(line.unit_price)}</td>
                       <td className="px-4 py-3">
                         <Badge variant="outline">{line.allocated_qty}</Badge>
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant="outline">{line.shipped_qty}</Badge>
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold">${line.total.toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right font-semibold">{formatCurrency(line.total)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -333,19 +334,19 @@ export default function SalesOrderDetailPage() {
           <div className="space-y-3">
             <div className="flex justify-between text-gray-600">
               <span>Subtotal:</span>
-              <span>${order.subtotal.toFixed(2)}</span>
+              <span>{formatCurrency(order.subtotal)}</span>
             </div>
             <div className="flex justify-between text-gray-600">
               <span>Discount:</span>
-              <span className="text-red-600">-${order.discount_amount.toFixed(2)}</span>
+              <span className="text-red-600">-{formatCurrency(order.discount_amount)}</span>
             </div>
             <div className="flex justify-between text-gray-600">
               <span>Tax:</span>
-              <span>${order.tax_amount.toFixed(2)}</span>
+              <span>{formatCurrency(order.tax_amount)}</span>
             </div>
             <div className="border-t pt-3 flex justify-between text-lg font-bold">
               <span>Grand Total:</span>
-              <span className="text-green-600">${order.grand_total.toFixed(2)}</span>
+              <span className="text-green-600">{formatCurrency(order.grand_total)}</span>
             </div>
           </div>
         </CardContent>

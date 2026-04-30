@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { financeService } from "@/services/finance.service"
 import {
   BarChart3, Package, Factory, ShoppingCart, Truck, ClipboardCheck,
-  DollarSign, RefreshCw, AlertTriangle,
+  IndianRupee, RefreshCw, AlertTriangle,
 } from "lucide-react"
 
 interface ReportSection {
@@ -66,7 +66,7 @@ const REPORT_SECTIONS: ReportSection[] = [
   {
     id: "finance",
     label: "Finance",
-    icon: DollarSign,
+    icon: IndianRupee,
     color: "from-rose-500 to-rose-600",
     endpoints: [
       { key: "finance-summary", label: "AR/AP Summary", fn: financeService.getFinanceSummary },

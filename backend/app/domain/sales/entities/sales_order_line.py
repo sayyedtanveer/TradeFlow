@@ -1,5 +1,6 @@
 """Sales Order Line Entity."""
 
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -26,7 +27,16 @@ class SalesOrderLine:
         quantity: Decimal,
         unit_price: Decimal,
         tax_rate: Decimal = Decimal("0"),
-        status: LineStatus = LineStatus.PENDING,
+        status: LineStatus | str = LineStatus.PENDING,
+        allocated_quantity: Decimal = Decimal("0"),
+        shipped_quantity: Decimal = Decimal("0"),
+        backorder_quantity: Decimal = Decimal("0"),
+        tax_amount: Decimal | None = None,
+        line_total: Decimal | None = None,
+        work_order_id: UUID | None = None,
+        notes: str | None = None,
+        created_at: datetime | None = None,
+        updated_at: datetime | None = None,
     ):
         """Initialize Sales Order Line."""
         self.id = id
@@ -39,20 +49,23 @@ class SalesOrderLine:
         self.tax_rate = Decimal(str(tax_rate))
         
         # Allocations
-        self.allocated_quantity = Decimal("0")
-        self.shipped_quantity = Decimal("0")
-        self.backorder_quantity = Decimal("0")
+        self.allocated_quantity = Decimal(str(allocated_quantity))
+        self.shipped_quantity = Decimal(str(shipped_quantity))
+        self.backorder_quantity = Decimal(str(backorder_quantity))
         
         # Denormalized for efficiency
-        self.tax_amount = Decimal("0")
-        self.line_total = Decimal("0")
+        self.tax_amount = Decimal(str(tax_amount)) if tax_amount is not None else Decimal("0")
+        self.line_total = Decimal(str(line_total)) if line_total is not None else Decimal("0")
         
-        self.status = status
-        self.work_order_id: UUID | None = None
-        self.notes: str | None = None
+        self.status = status if isinstance(status, LineStatus) else LineStatus(str(status).lower())
+        self.work_order_id = work_order_id
+        self.notes = notes
+        self.created_at = created_at or datetime.now(timezone.utc)
+        self.updated_at = updated_at or datetime.now(timezone.utc)
         
         self._validate()
-        self._calculate_totals()
+        if tax_amount is None or line_total is None:
+            self._calculate_totals()
 
     def _validate(self) -> None:
         """Validate line invariants."""
@@ -96,6 +109,7 @@ class SalesOrderLine:
             )
         self.allocated_quantity += qty
         self.status = LineStatus.ALLOCATED
+        self.updated_at = datetime.now(timezone.utc)
 
     def backorder(self, qty: Decimal) -> None:
         """
@@ -113,6 +127,7 @@ class SalesOrderLine:
             )
         self.backorder_quantity = qty
         self.status = LineStatus.BACKORDER
+        self.updated_at = datetime.now(timezone.utc)
 
     def ship(self, qty: Decimal) -> None:
         """
@@ -133,6 +148,7 @@ class SalesOrderLine:
         self.shipped_quantity += qty
         if self.shipped_quantity >= self.allocated_quantity:
             self.status = LineStatus.SHIPPED
+        self.updated_at = datetime.now(timezone.utc)
 
     def get_unshipped_quantity(self) -> Decimal:
         """Get quantity allocated but not yet shipped."""
@@ -159,5 +175,7 @@ class SalesOrderLine:
             "backorder_quantity": str(self.backorder_quantity),
             "status": self.status.value,
             "work_order_id": str(self.work_order_id) if self.work_order_id else None,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
         }
 

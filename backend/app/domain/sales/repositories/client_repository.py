@@ -3,7 +3,7 @@
 from typing import Type
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from backend.app.domain.sales.entities.client import Client
 from backend.app.infrastructure.persistence.models.sales_models import ClientModel
@@ -28,6 +28,9 @@ class ClientRepository(BaseRepository):
             name=model.name,
             email=model.email,
             phone=model.phone,
+            address=model.address,
+            gst_number=model.gst_number,
+            payment_terms_days=model.payment_terms_days,
             is_active=model.is_active,
             credit_limit=model.credit_limit,
             credit_used=model.credit_used,
@@ -46,6 +49,9 @@ class ClientRepository(BaseRepository):
             name=entity.name,
             email=entity.email,
             phone=entity.phone,
+            address=entity.address,
+            gst_number=entity.gst_number,
+            payment_terms_days=entity.payment_terms_days,
             is_active=entity.is_active,
             credit_limit=entity.credit_limit,
             credit_used=entity.credit_used,
@@ -83,6 +89,7 @@ class ClientRepository(BaseRepository):
         self,
         tenant_id: UUID,
         is_active: bool = True,
+        search: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Client]:
@@ -98,13 +105,25 @@ class ClientRepository(BaseRepository):
         Returns:
             List of clients
         """
+        filters = [
+            self._model_class().tenant_id == tenant_id,
+            self._model_class().is_active.is_(is_active),
+            self._model_class().is_deleted.is_(False),
+        ]
+        if search:
+            pattern = f"%{search.strip()}%"
+            filters.append(
+                or_(
+                    self._model_class().code.ilike(pattern),
+                    self._model_class().name.ilike(pattern),
+                    self._model_class().email.ilike(pattern),
+                )
+            )
+
         stmt = (
             select(self._model_class())
-            .where(
-                self._model_class().tenant_id == tenant_id,
-                self._model_class().is_active.is_(is_active),
-                self._model_class().is_deleted.is_(False),
-            )
+            .where(*filters)
+            .order_by(self._model_class().created_at.desc())
             .limit(limit)
             .offset(offset)
         )

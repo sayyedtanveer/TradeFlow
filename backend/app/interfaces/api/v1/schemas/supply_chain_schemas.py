@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
@@ -113,7 +113,7 @@ class SupplierQuotationCreate(BaseModel):
     quantity: Decimal
     unit_price: Decimal
     valid_until: Optional[date] = None
-    purchase_order_id: Optional[uuid.UUID] = None
+    purchase_order_id: Optional[str] = None
     rfq_id: Optional[uuid.UUID] = None
 
 
@@ -141,7 +141,7 @@ class MaterialRequestResponse(BaseModel):
     status: str
     source_ref_type: Optional[str] = None
     source_ref_id: Optional[uuid.UUID] = None
-    created_at: str
+    created_at: datetime
 
     class Config:
         from_attributes = True
@@ -214,7 +214,7 @@ class GRNLineResponse(BaseModel):
     rejected_quantity: float
     unit_price: float
     remarks: Optional[str] = None
-    created_at: str
+    created_at: datetime
 
     class Config:
         from_attributes = True
@@ -226,7 +226,7 @@ class GRNResponse(BaseModel):
     purchase_order_id: uuid.UUID
     supplier_id: uuid.UUID
     status: str
-    actual_receipt_date: str
+    actual_receipt_date: datetime
     warehouse_location_id: Optional[uuid.UUID] = None
     driver_name: Optional[str] = None
     vehicle_number: Optional[str] = None
@@ -234,7 +234,7 @@ class GRNResponse(BaseModel):
     tracking_number: Optional[str] = None
     remarks: Optional[str] = None
     lines: List[GRNLineResponse] = []
-    created_at: str
+    created_at: datetime
     created_by: uuid.UUID
 
     class Config:

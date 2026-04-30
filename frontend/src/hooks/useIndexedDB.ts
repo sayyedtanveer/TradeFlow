@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 
 export interface IndexedDBConfig {
   dbName: string
@@ -21,16 +21,31 @@ export const useIndexedDB = (config: IndexedDBConfig) => {
   const [db, setDb] = useState<IDBDatabase | null>(null)
   const [isReady, setIsReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const storesKey = JSON.stringify(config.stores)
+  const dbRef = useRef<IDBDatabase | null>(null)
+  const readyPromiseRef = useRef<Promise<IDBDatabase> | null>(null)
+  const resolveReadyRef = useRef<((database: IDBDatabase) => void) | null>(null)
+  const rejectReadyRef = useRef<((reason?: unknown) => void) | null>(null)
 
   // Initialize IndexedDB
   useEffect(() => {
     const initDB = async () => {
+      setDb(null)
+      setIsReady(false)
+      setError(null)
+      dbRef.current = null
+      readyPromiseRef.current = new Promise<IDBDatabase>((resolve, reject) => {
+        resolveReadyRef.current = resolve
+        rejectReadyRef.current = reject
+      })
+
       try {
         const request = indexedDB.open(config.dbName, config.version)
 
         request.onerror = () => {
           const err = request.error?.message || 'Failed to open IndexedDB'
           setError(err)
+          rejectReadyRef.current?.(new Error(err))
         }
 
         request.onupgradeneeded = (event) => {
@@ -45,33 +60,47 @@ export const useIndexedDB = (config: IndexedDBConfig) => {
         }
 
         request.onsuccess = () => {
+          dbRef.current = request.result
           setDb(request.result)
           setIsReady(true)
           setError(null)
+          resolveReadyRef.current?.(request.result)
         }
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
         setError(errorMsg)
+        rejectReadyRef.current?.(new Error(errorMsg))
       }
     }
 
-    initDB()
+    void initDB()
 
     return () => {
       // Cleanup on unmount
-      if (db) {
-        db.close()
+      if (dbRef.current) {
+        dbRef.current.close()
+        dbRef.current = null
       }
     }
-  }, [config.dbName, config.version, config.stores])
+  }, [config.dbName, config.version, storesKey])
+
+  const getDatabase = useCallback(async (): Promise<IDBDatabase> => {
+    if (dbRef.current) {
+      return dbRef.current
+    }
+    if (!readyPromiseRef.current) {
+      throw new Error('IndexedDB initialization not started')
+    }
+    return readyPromiseRef.current
+  }, [])
 
   // Add item to store
   const add = useCallback(
     async (storeName: string, item: StoredEntity): Promise<void> => {
-      if (!db) throw new Error('IndexedDB not initialized')
+      const database = await getDatabase()
 
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction([storeName], 'readwrite')
+        const transaction = database.transaction([storeName], 'readwrite')
         const store = transaction.objectStore(storeName)
         const request = store.add(item)
 
@@ -79,16 +108,16 @@ export const useIndexedDB = (config: IndexedDBConfig) => {
         request.onsuccess = () => resolve()
       })
     },
-    [db]
+    [getDatabase]
   )
 
   // Update item in store
   const update = useCallback(
     async (storeName: string, item: StoredEntity): Promise<void> => {
-      if (!db) throw new Error('IndexedDB not initialized')
+      const database = await getDatabase()
 
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction([storeName], 'readwrite')
+        const transaction = database.transaction([storeName], 'readwrite')
         const store = transaction.objectStore(storeName)
         const request = store.put(item)
 
@@ -96,16 +125,16 @@ export const useIndexedDB = (config: IndexedDBConfig) => {
         request.onsuccess = () => resolve()
       })
     },
-    [db]
+    [getDatabase]
   )
 
   // Get item by ID
   const get = useCallback(
     async (storeName: string, id: string): Promise<StoredEntity | null> => {
-      if (!db) throw new Error('IndexedDB not initialized')
+      const database = await getDatabase()
 
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction([storeName], 'readonly')
+        const transaction = database.transaction([storeName], 'readonly')
         const store = transaction.objectStore(storeName)
         const request = store.get(id)
 
@@ -113,16 +142,16 @@ export const useIndexedDB = (config: IndexedDBConfig) => {
         request.onsuccess = () => resolve(request.result || null)
       })
     },
-    [db]
+    [getDatabase]
   )
 
   // Get all items from store
   const getAll = useCallback(
     async (storeName: string): Promise<StoredEntity[]> => {
-      if (!db) throw new Error('IndexedDB not initialized')
+      const database = await getDatabase()
 
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction([storeName], 'readonly')
+        const transaction = database.transaction([storeName], 'readonly')
         const store = transaction.objectStore(storeName)
         const request = store.getAll()
 
@@ -130,7 +159,7 @@ export const useIndexedDB = (config: IndexedDBConfig) => {
         request.onsuccess = () => resolve(request.result)
       })
     },
-    [db]
+    [getDatabase]
   )
 
   // Get all unsynced items
@@ -145,10 +174,10 @@ export const useIndexedDB = (config: IndexedDBConfig) => {
   // Delete item
   const delete_ = useCallback(
     async (storeName: string, id: string): Promise<void> => {
-      if (!db) throw new Error('IndexedDB not initialized')
+      const database = await getDatabase()
 
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction([storeName], 'readwrite')
+        const transaction = database.transaction([storeName], 'readwrite')
         const store = transaction.objectStore(storeName)
         const request = store.delete(id)
 
@@ -156,16 +185,16 @@ export const useIndexedDB = (config: IndexedDBConfig) => {
         request.onsuccess = () => resolve()
       })
     },
-    [db]
+    [getDatabase]
   )
 
   // Clear entire store
   const clear = useCallback(
     async (storeName: string): Promise<void> => {
-      if (!db) throw new Error('IndexedDB not initialized')
+      const database = await getDatabase()
 
       return new Promise((resolve, reject) => {
-        const transaction = db.transaction([storeName], 'readwrite')
+        const transaction = database.transaction([storeName], 'readwrite')
         const store = transaction.objectStore(storeName)
         const request = store.clear()
 
@@ -173,7 +202,7 @@ export const useIndexedDB = (config: IndexedDBConfig) => {
         request.onsuccess = () => resolve()
       })
     },
-    [db]
+    [getDatabase]
   )
 
   return {
