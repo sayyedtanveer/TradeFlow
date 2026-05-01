@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.application.manufacturing.services.inventory_service import InventoryService
 from backend.app.application.supply_chain.po_number_service import PONumberService
+from backend.app.application.supply_chain.supplier_portal_service import SupplierPortalService
 from backend.app.application.supply_chain.subcontract_number_service import SubcontractNumberService
 from backend.app.infrastructure.persistence.models.location_model import LocationModel
 from backend.app.infrastructure.persistence.models.inventory_transaction_model import InventoryTransactionModel
@@ -32,7 +33,12 @@ from backend.app.infrastructure.persistence.models.subcontract_model import Subc
 from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel
 from backend.app.application.procurement.handlers.purchase_order_handler import PurchaseOrderHandler
 from backend.app.application.procurement.handlers.supplier_quotation_handler import SupplierQuotationHandler
-from backend.app.interfaces.api.v1.dependencies.auth import get_container, get_current_role, get_current_tenant_id, get_current_user_id
+from backend.app.interfaces.api.v1.dependencies.auth import (
+    get_container,
+    get_current_tenant_id,
+    get_current_user_id,
+    get_current_user_payload,
+)
 from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.interfaces.api.v1.dependencies.supplier_portal import require_supplier_id
 from backend.app.interfaces.api.v1.schemas.supply_chain_schemas import (
@@ -50,12 +56,24 @@ from backend.app.interfaces.api.v1.schemas.supply_chain_schemas import (
     SubcontractOrderCreate,
     SubcontractReceiveRequest,
     SupplierCreate,
+    SupplierInvoiceSubmit,
+    SupplierProfileUpdate,
     SupplierQuotationCreate,
     SupplierResponse,
+    SupplierShipmentNoticeCreate,
     SupplierUpdate,
 )
 
 router = APIRouter(tags=["Supply Chain"])
+
+
+def _supplier_portal_service(request: Request, session) -> SupplierPortalService:
+    container = get_container(request)
+    return SupplierPortalService(
+        session,
+        email_service=getattr(container, "email_service", None),
+        connection_manager=getattr(container, "connection_manager", None),
+    )
 
 
 async def _apply_po_receipt_to_material_requests(
@@ -460,7 +478,7 @@ async def list_purchase_orders(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    _role: str = Depends(get_current_role),
+    payload: dict = Depends(get_current_user_payload),
 ):
     """List purchase orders with pagination and filtering.
     
@@ -469,7 +487,7 @@ async def list_purchase_orders(
     """
     # SECURITY: Supplier-role users have procurement:read but must NOT access the tenant-wide list.
     # The /supplier/purchase-orders endpoint enforces JWT-derived supplier_id isolation.
-    if _role == "supplier":
+    if payload.get("sid"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Supplier users must use GET /supplier/purchase-orders to view their orders",
@@ -1067,7 +1085,7 @@ async def receive_grn_into_inventory(
                     INSERT INTO supplier_price_history (
                         id, tenant_id, supplier_id, material_id, unit_price, effective_from, created_at
                     ) VALUES (
-                        :id, :tid, :sid, :mid, :up, CURRENT_DATE, NOW()
+                        :id, :tid, :sid, :mid, :up, :effective_from, :created_at
                     )
                     ON CONFLICT DO NOTHING
                 """),
@@ -1077,6 +1095,8 @@ async def receive_grn_into_inventory(
                     "sid": str(po.supplier_id),
                     "mid": str(grn_line.material_id),
                     "up": float(grn_line.unit_price),
+                    "effective_from": date.today(),
+                    "created_at": datetime.now(timezone.utc),
                 },
             )
         
@@ -1183,7 +1203,7 @@ async def receive_goods(
                     INSERT INTO supplier_price_history (
                         id, tenant_id, supplier_id, material_id, unit_price, effective_from, created_at
                     ) VALUES (
-                        :id, :tid, :sid, :mid, :up, CURRENT_DATE, NOW()
+                        :id, :tid, :sid, :mid, :up, :effective_from, :created_at
                     )
                 """),
                 {
@@ -1192,6 +1212,8 @@ async def receive_goods(
                     "sid": str(po.supplier_id),
                     "mid": str(lid.material_id),
                     "up": float(lid.unit_price),
+                    "effective_from": date.today(),
+                    "created_at": datetime.now(timezone.utc),
                 },
             )
 
@@ -2063,6 +2085,58 @@ async def run_mrp(
 # ── Supplier portal ───────────────────────────────────────────────────────────
 
 
+@router.get("/supplier/dashboard", tags=["Supplier Portal"])
+async def supplier_portal_dashboard(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    """Supplier self-service dashboard/action queue."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        try:
+            return await _supplier_portal_service(request, session).dashboard(tenant_id, supplier_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/supplier/profile", tags=["Supplier Portal"])
+async def supplier_portal_profile(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    """Supplier views its own master/profile data."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        try:
+            return await _supplier_portal_service(request, session).get_profile(tenant_id, supplier_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.put("/supplier/profile", tags=["Supplier Portal"])
+async def supplier_portal_update_profile(
+    body: SupplierProfileUpdate,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Supplier maintains contact/profile data without accessing other suppliers."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        try:
+            return await _supplier_portal_service(request, session).update_profile(
+                tenant_id,
+                supplier_id,
+                user_id,
+                body.model_dump(exclude_unset=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+
 @router.get("/supplier/purchase-orders", tags=["Supplier Portal"])
 async def supplier_list_pos(
     request: Request,
@@ -2137,6 +2211,56 @@ async def supplier_get_po(
         if not p:
             raise HTTPException(status_code=404, detail="PO not found")
     return _po_to_dict(p)
+
+
+@router.post(
+    "/supplier/purchase-orders/{po_id}/shipment-notices",
+    status_code=status.HTTP_201_CREATED,
+    tags=["Supplier Portal"],
+)
+async def supplier_create_shipment_notice(
+    po_id: uuid.UUID,
+    body: SupplierShipmentNoticeCreate,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Supplier submits an advance shipment notice for an open PO."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        try:
+            notice = await _supplier_portal_service(request, session).create_shipping_notice(
+                tenant_id,
+                supplier_id,
+                user_id,
+                po_id,
+                {
+                    **body.model_dump(exclude={"lines"}, exclude_none=True),
+                    "lines": [
+                        {
+                            "po_line_id": line.po_line_id,
+                            "quantity": line.quantity,
+                            "remarks": line.remarks,
+                        }
+                        for line in body.lines
+                    ],
+                },
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    await _log_business_event(
+        request,
+        action="SUPPLIER_SHIPMENT_NOTICE",
+        entity_type="goods_receipt_note",
+        entity_id=uuid.UUID(notice["id"]),
+        summary=f"Supplier shipment notice {notice['grn_number']} submitted",
+        business_step="Supplier shipment",
+        document_no=notice["grn_number"],
+        after_value=notice,
+        extra={"supplier_id": str(supplier_id), "purchase_order_id": str(po_id)},
+    )
+    return notice
 
 
 @router.put("/supplier/purchase-orders/{po_id}/acknowledge")
@@ -2235,6 +2359,37 @@ async def supplier_submit_quotation(
     return {"id": str(q.id), "status": "draft"}
 
 
+@router.get("/supplier/quotations", tags=["Supplier Portal"])
+async def supplier_list_quotations(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    """Supplier sees only its own quotations."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        return await _supplier_portal_service(request, session).list_quotations(tenant_id, supplier_id)
+
+
+@router.get("/supplier/quotations/{quotation_id}", tags=["Supplier Portal"])
+async def supplier_get_quotation(
+    quotation_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        try:
+            return await _supplier_portal_service(request, session).get_quotation(
+                tenant_id,
+                supplier_id,
+                quotation_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+
 @router.put(
     "/supplier/quotations/{quotation_id}/submit",
     dependencies=[Depends(require_permission("supplier:write"))],
@@ -2272,6 +2427,114 @@ async def supplier_submit_quotation_transition(
         extra={"supplier_id": str(supplier_id)},
     )
     return result
+
+
+@router.get("/supplier/receipts", tags=["Supplier Portal"])
+async def supplier_list_receipts(
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        return await _supplier_portal_service(request, session).list_receipts(
+            tenant_id,
+            supplier_id,
+            page,
+            page_size,
+        )
+
+
+@router.get("/supplier/invoices", tags=["Supplier Portal"])
+async def supplier_list_invoices(
+    request: Request,
+    invoice_status: Optional[str] = Query(None, alias="status"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        return await _supplier_portal_service(request, session).list_invoices(
+            tenant_id,
+            supplier_id,
+            invoice_status,
+            page,
+            page_size,
+        )
+
+
+@router.post("/supplier/invoices", status_code=status.HTTP_201_CREATED, tags=["Supplier Portal"])
+async def supplier_create_invoice(
+    body: SupplierInvoiceSubmit,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        try:
+            invoice = await _supplier_portal_service(request, session).create_invoice(
+                tenant_id,
+                supplier_id,
+                user_id,
+                body.model_dump(exclude_none=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    await _log_business_event(
+        request,
+        action="SUPPLIER_INVOICE_SUBMITTED",
+        entity_type="supplier_invoice",
+        entity_id=uuid.UUID(invoice["id"]),
+        summary=f"Supplier invoice {invoice['invoice_number']} submitted",
+        business_step="Supplier invoice",
+        document_no=invoice["invoice_number"],
+        after_value=invoice,
+        extra={"supplier_id": str(supplier_id), "purchase_order_id": invoice.get("purchase_order_id")},
+    )
+    return invoice
+
+
+@router.get("/supplier/invoices/{invoice_id}", tags=["Supplier Portal"])
+async def supplier_get_invoice(
+    invoice_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        try:
+            return await _supplier_portal_service(request, session).get_invoice(
+                tenant_id,
+                supplier_id,
+                invoice_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/supplier/payments", tags=["Supplier Portal"])
+async def supplier_list_payments(
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    supplier_id: uuid.UUID = Depends(require_supplier_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        return await _supplier_portal_service(request, session).list_payments(
+            tenant_id,
+            supplier_id,
+            page,
+            page_size,
+        )
 
 
 @router.put(

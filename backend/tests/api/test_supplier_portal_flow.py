@@ -266,3 +266,112 @@ async def test_supplier_user_can_reset_password_from_main_login_flow(async_clien
     )
     assert login_resp.status_code == 200
     assert login_resp.json()["role"] == "supplier"
+
+
+async def test_supplier_portal_profile_shipment_invoice_and_payment_views(async_client, token_headers):
+    admin_headers = _build_admin_headers(token_headers)
+    supplier_id, po_id = await _create_supplier_and_material_and_po(async_client, admin_headers)
+    supplier_user_id = await _create_supplier_user(async_client, admin_headers, supplier_id)
+
+    supplier_token = jwt_handler.create_access_token(
+        user_id=str(supplier_user_id),
+        tenant_id=token_headers["X-Tenant-ID"],
+        role="supplier",
+        extra_claims={"sid": supplier_id},
+    )
+    supplier_headers = {
+        "Authorization": f"Bearer {supplier_token}",
+        "X-Tenant-ID": token_headers["X-Tenant-ID"],
+    }
+
+    dashboard_response = await async_client.get("/api/v1/supplier/dashboard", headers=supplier_headers)
+    assert dashboard_response.status_code == 200
+    assert dashboard_response.json()["purchase_orders"]["total"] == 1
+
+    profile_response = await async_client.get("/api/v1/supplier/profile", headers=supplier_headers)
+    assert profile_response.status_code == 200
+    assert profile_response.json()["id"] == supplier_id
+
+    update_profile_response = await async_client.put(
+        "/api/v1/supplier/profile",
+        json={
+            "contact_person": "Supplier Portal Owner",
+            "email": "portal-supplier@example.com",
+            "phone": "9000000000",
+            "address": "Dock 7, Supplier Industrial Area",
+            "gst": "GSTPORTAL123",
+            "payment_terms": "Net 30",
+        },
+        headers=supplier_headers,
+    )
+    assert update_profile_response.status_code == 200
+    assert update_profile_response.json()["profile_completeness"] == 100
+
+    detail_response = await async_client.get(
+        f"/api/v1/supplier/purchase-orders/{po_id}",
+        headers=supplier_headers,
+    )
+    assert detail_response.status_code == 200
+    po_detail = detail_response.json()
+    line = po_detail["lines"][0]
+
+    acknowledge_response = await async_client.put(
+        f"/api/v1/supplier/purchase-orders/{po_id}/acknowledge",
+        headers=supplier_headers,
+    )
+    assert acknowledge_response.status_code == 200
+
+    shipment_response = await async_client.post(
+        f"/api/v1/supplier/purchase-orders/{po_id}/shipment-notices",
+        json={
+            "vehicle_number": "MH12AB1234",
+            "tracking_number": "ASN-TRACK-1",
+            "remarks": "Dispatching against portal E2E PO",
+            "lines": [{"po_line_id": line["id"], "quantity": 5, "remarks": "First shipment"}],
+        },
+        headers=supplier_headers,
+    )
+    assert shipment_response.status_code == 201
+    shipment_body = shipment_response.json()
+    assert shipment_body["status"] == "pending_receipt"
+    assert shipment_body["purchase_order_id"] == po_id
+    assert shipment_body["lines"][0]["received_quantity"] == 5
+
+    receipts_response = await async_client.get("/api/v1/supplier/receipts", headers=supplier_headers)
+    assert receipts_response.status_code == 200
+    assert receipts_response.json()["items"][0]["id"] == shipment_body["id"]
+
+    invoice_response = await async_client.post(
+        "/api/v1/supplier/invoices",
+        json={
+            "purchase_order_id": po_id,
+            "supplier_invoice_ref": "SUP-INV-E2E-001",
+            "invoice_date": "2026-05-01",
+            "due_date": "2026-05-31",
+            "subtotal": 102.0,
+            "tax_amount": 18.36,
+            "grand_total": 120.36,
+            "notes": "Portal E2E supplier invoice",
+        },
+        headers=supplier_headers,
+    )
+    assert invoice_response.status_code == 201
+    invoice_body = invoice_response.json()
+    assert invoice_body["status"] == "PENDING"
+    assert invoice_body["purchase_order_id"] == po_id
+    assert invoice_body["balance_due"] == 120.36
+
+    invoices_response = await async_client.get("/api/v1/supplier/invoices", headers=supplier_headers)
+    assert invoices_response.status_code == 200
+    assert invoices_response.json()["items"][0]["id"] == invoice_body["id"]
+
+    invoice_detail_response = await async_client.get(
+        f"/api/v1/supplier/invoices/{invoice_body['id']}",
+        headers=supplier_headers,
+    )
+    assert invoice_detail_response.status_code == 200
+    assert invoice_detail_response.json()["supplier_invoice_ref"] == "SUP-INV-E2E-001"
+
+    payments_response = await async_client.get("/api/v1/supplier/payments", headers=supplier_headers)
+    assert payments_response.status_code == 200
+    assert payments_response.json()["items"] == []

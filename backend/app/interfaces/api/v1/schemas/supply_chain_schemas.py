@@ -41,10 +41,46 @@ class SupplierResponse(BaseModel):
     address: Optional[str] = None
     gst: Optional[str] = None
     payment_terms: Optional[str] = None
+    performance_rating: Optional[Decimal] = None
     is_active: bool
 
     class Config:
         from_attributes = True
+
+
+class SupplierProfileUpdate(BaseModel):
+    contact_person: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    gst: Optional[str] = None
+    payment_terms: Optional[str] = None
+
+
+class SupplierShipmentNoticeLine(BaseModel):
+    po_line_id: uuid.UUID
+    quantity: Decimal = Field(gt=0)
+    remarks: Optional[str] = None
+
+
+class SupplierShipmentNoticeCreate(BaseModel):
+    lines: List[SupplierShipmentNoticeLine]
+    driver_name: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    transport_company: Optional[str] = None
+    tracking_number: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+class SupplierInvoiceSubmit(BaseModel):
+    purchase_order_id: Optional[uuid.UUID] = None
+    supplier_invoice_ref: Optional[str] = None
+    invoice_date: date
+    due_date: date
+    subtotal: Decimal = Field(gt=0)
+    tax_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    grand_total: Decimal = Field(gt=0)
+    notes: Optional[str] = None
 
 
 class POLineIn(BaseModel):

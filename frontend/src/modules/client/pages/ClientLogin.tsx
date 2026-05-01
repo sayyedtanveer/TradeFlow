@@ -17,7 +17,7 @@ export default function ClientLogin() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const erpLoginUrl = `${window.location.origin}/login`
-  const { setAuth, setUser, setSupplierAndClient } = useAuthStore()
+  const { setAuth, setUser, setPermissions, setSupplierAndClient } = useAuthStore()
   const [loginForm, setLoginForm] = useState({ email: "", password: "", tenant_id: "" })
   const [forgotForm, setForgotForm] = useState({ email: "", tenant_id: "" })
   const [resetForm, setResetForm] = useState({ token: searchParams.get("token") ?? "", new_password: "" })
@@ -33,6 +33,7 @@ export default function ClientLogin() {
     onSuccess: async (session) => {
       setAuth(session.access_token, session.tenant_id)
       setSupplierAndClient(null, session.client_id)
+      setPermissions(["client:read", "sales:read", "sales:view_orders", "sales:create_order", "inventory:read"])
       try {
         const profile = await clientService.getProfile()
         setUser({

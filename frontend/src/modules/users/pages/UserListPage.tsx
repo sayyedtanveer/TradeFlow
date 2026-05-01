@@ -11,6 +11,7 @@ import { useSearchParams } from "react-router-dom"
 import { ColumnDef } from "@tanstack/react-table"
 import { User } from "@/types/auth.types"
 import { UserFormDrawer } from "../components/UserFormDrawer"
+import { RoleManagementPanel } from "../components/RoleManagementPanel"
 
 export default function UserListPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -82,6 +83,8 @@ export default function UserListPage() {
         description="Manage access control, roles, and user accounts for your tenant."
         action={actionButtons}
       />
+
+      <RoleManagementPanel />
 
       {isLoading ? (
         <TableSkeleton rows={5} />

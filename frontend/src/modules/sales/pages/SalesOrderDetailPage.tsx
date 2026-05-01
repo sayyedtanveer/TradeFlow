@@ -3,7 +3,7 @@
  * View complete order details, line items, and perform status transitions
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +14,7 @@ import { SalesOrder, OrderStatus } from '@/types/sales.types';
 import { ArrowLeft, Edit2, CheckCircle, Truck, Package, Trash2, Plus, XCircle, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/utils/currency';
+import { REALTIME_EVENT_NAME } from '@/components/notifications/RealtimeNotificationsBridge';
 
 export default function SalesOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -32,22 +33,31 @@ export default function SalesOrderDetailPage() {
     tax_rate: 0
   });
 
-  useEffect(() => {
-    const loadOrder = async () => {
-      if (!id) return;
-      try {
-        setError(null);
-        const data = await ordersApi.get(id);
-        setOrder(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load order');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadOrder();
+  const loadOrder = useCallback(async (silent = false) => {
+    if (!id) return;
+    try {
+      setError(null);
+      if (!silent) setLoading(true);
+      const data = await ordersApi.get(id);
+      setOrder(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load order');
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => {
+    void loadOrder();
+  }, [loadOrder]);
+
+  useEffect(() => {
+    const handleRealtime = () => {
+      void loadOrder(true);
+    };
+    window.addEventListener(REALTIME_EVENT_NAME, handleRealtime);
+    return () => window.removeEventListener(REALTIME_EVENT_NAME, handleRealtime);
+  }, [loadOrder]);
 
   const handleStatusChange = async (action: 'submit' | 'approve' | 'reject' | 'confirm' | 'ship' | 'deliver' | 'cancel') => {
     if (!order) return;

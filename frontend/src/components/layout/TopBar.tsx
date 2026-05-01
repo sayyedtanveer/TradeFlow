@@ -15,9 +15,11 @@ import { financeService } from "@/services/finance.service"
 import { useAuth } from "@/hooks/useAuth"
 import { useUIStore } from "@/app/store/uiStore"
 import { formatDistanceToNow } from "date-fns"
+import { useNavigate } from "react-router-dom"
 
 export function TopBar() {
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
   const { toggleSidebar, theme, setTheme, pendingSyncCount, clearSyncQueue } = useUIStore()
   const [isOffline, setIsOffline] = useState(!navigator.onLine)
   const qc = useQueryClient()
@@ -38,6 +40,23 @@ export function TopBar() {
     mutationFn: () => financeService.markAllRead(),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["notifications"] }),
   })
+
+  const notificationHref = (referenceType?: string, referenceId?: string) => {
+    if (!referenceType || !referenceId) return "/activity-log"
+    const type = referenceType.toLowerCase()
+    if (type === "sales_order") return `/sales/orders/${referenceId}`
+    if (type === "invoice") return `/finance/invoices/${referenceId}`
+    if (type === "purchase_order") return `/procurement/purchase-orders/${referenceId}`
+    if (type === "work_order") return `/work-orders/${referenceId}`
+    return "/activity-log"
+  }
+
+  const openNotification = (notification: NonNullable<typeof notifData>["items"][number]) => {
+    if (!notification.is_read) {
+      markReadMutation.mutate(notification.id)
+    }
+    navigate(notificationHref(notification.reference_type, notification.reference_id))
+  }
 
   useEffect(() => {
     const handleOnline = () => {
@@ -116,7 +135,13 @@ export function TopBar() {
                   {notifData.items.map((n) => (
                     <div
                       key={n.id}
-                      className={`p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${!n.is_read ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openNotification(n)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") openNotification(n)
+                      }}
+                      className={`cursor-pointer p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${!n.is_read ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="space-y-1">
@@ -130,7 +155,10 @@ export function TopBar() {
                         </div>
                         {!n.is_read && (
                           <button
-                            onClick={() => markReadMutation.mutate(n.id)}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              markReadMutation.mutate(n.id)
+                            }}
                             className="h-2 w-2 rounded-full bg-blue-500 shrink-0 mt-1"
                             title="Mark as read"
                           />

@@ -8,7 +8,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from backend.app.domain.sales.repositories.client_repository import ClientRepository
 from backend.app.domain.sales.repositories.sales_order_repository import SalesOrderRepository
@@ -16,12 +16,14 @@ from backend.app.domain.sales.repositories.price_list_repository import PriceLis
 from backend.app.infrastructure.persistence.models.sales_models import ClientModel
 from backend.app.infrastructure.persistence.models.user_model import UserModel
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
+from backend.app.application.finance.notification_service import NotificationService
 from backend.app.interfaces.api.v1.dependencies.auth import (
     get_container,
-    get_current_role,
     get_current_tenant_id,
     get_current_user_id,
 )
+from backend.app.application.rbac.service import role_has_permission
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 
 from backend.app.interfaces.api.sales.schemas import (
     ClientCreateRequest,
@@ -117,7 +119,6 @@ from backend.app.application.sales import (
 # Create router
 router = APIRouter(prefix="/sales", tags=["sales"])
 logger = logging.getLogger(__name__)
-APPROVER_ROLES = ("manager", "admin", "tenant_admin")
 
 
 def _normalize_email(email: Optional[str]) -> Optional[str]:
@@ -172,32 +173,202 @@ async def _ensure_client_email_available(
 
 
 async def _resolve_order_approver_id(session, tenant_id: UUID) -> Optional[UUID]:
-    """Find the best available approver from tenant users."""
-    for role in APPROVER_ROLES:
-        approver_id = (
-            await session.execute(
-                select(UserModel.id)
-                .where(
-                    UserModel.tenant_id == tenant_id,
-                    UserModel.role == role,
-                    UserModel.is_active.is_(True),
-                    UserModel.is_deleted.is_(False),
-                )
-                .order_by(UserModel.created_at.asc())
-                .limit(1)
+    """Find the first active user whose role can approve sales orders."""
+    users = (
+        await session.execute(
+            select(UserModel)
+            .where(
+                UserModel.tenant_id == tenant_id,
+                UserModel.is_active.is_(True),
+                UserModel.is_deleted.is_(False),
             )
-        ).scalar_one_or_none()
-        if approver_id:
-            return approver_id
+            .order_by(UserModel.created_at.asc())
+        )
+    ).scalars().all()
+    for user in users:
+        if await role_has_permission(session, tenant_id, user.role, "sales:approve_order"):
+            return user.id
     return None
 
 
-def _ensure_order_approver_role(role: str) -> None:
-    if (role or "").lower() not in APPROVER_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only manager/admin users can approve or reject sales orders",
+def _status_name(order) -> str:
+    status_value = getattr(order, "status", "")
+    return getattr(status_value, "name", str(status_value)).upper()
+
+
+async def _notify_client_order_status(
+    session,
+    container,
+    tenant_id: UUID,
+    order,
+    *,
+    notification_type: str,
+    title: str,
+    message: str,
+) -> None:
+    """Notify users linked to the order client, scoped by tenant/client."""
+    notification_service = NotificationService(
+        session,
+        email_service=getattr(container, "email_service", None),
+        connection_manager=getattr(container, "connection_manager", None),
+    )
+    user_ids = (
+        await session.execute(
+            select(UserModel.id).where(
+                UserModel.tenant_id == tenant_id,
+                UserModel.client_id == order.client_id,
+                UserModel.is_active.is_(True),
+                UserModel.is_deleted.is_(False),
+            )
         )
+    ).scalars().all()
+    for client_user_id in user_ids:
+        await notification_service.send(
+            tenant_id=tenant_id,
+            user_id=client_user_id,
+            notification_type=notification_type,
+            title=title,
+            message=message,
+            reference_type="sales_order",
+            reference_id=order.id,
+        )
+
+
+async def _notify_order_action_owner(
+    session,
+    container,
+    tenant_id: UUID,
+    order,
+) -> None:
+    """Notify the next internal role that needs to act on the order."""
+    notification_service = NotificationService(
+        session,
+        email_service=getattr(container, "email_service", None),
+        connection_manager=getattr(container, "connection_manager", None),
+    )
+    order_status = _status_name(order)
+    order_number = str(order.order_number)
+
+    if order_status in {"PRODUCTION", "PROCESSING"}:
+        work_order_ids = {
+            line.work_order_id
+            for line in getattr(order, "lines", [])
+            if getattr(line, "work_order_id", None)
+        }
+        if work_order_ids:
+            for work_order_id in work_order_ids:
+                await notification_service.broadcast_to_permission(
+                    tenant_id=tenant_id,
+                    permission="manufacturing:write",
+                    notification_type="WORK_ORDER_ACTION_REQUIRED",
+                    title=f"Production action required for {order_number}",
+                    message=f"Sales order {order_number} was approved and needs production work order execution.",
+                    reference_type="work_order",
+                    reference_id=work_order_id,
+                )
+            await _notify_purchase_order_owners(
+                session=session,
+                container=container,
+                tenant_id=tenant_id,
+                work_order_ids=work_order_ids,
+                order_number=order_number,
+            )
+            return
+
+        await notification_service.broadcast_to_permission(
+            tenant_id=tenant_id,
+            permission="manufacturing:write",
+            notification_type="PRODUCTION_ACTION_REQUIRED",
+            title=f"Production action required for {order_number}",
+            message=f"Sales order {order_number} was approved and is waiting for production execution.",
+            reference_type="sales_order",
+            reference_id=order.id,
+        )
+        return
+
+    if order_status in {"READY", "CONFIRMED"}:
+        await notification_service.broadcast_to_permission(
+            tenant_id=tenant_id,
+            permission="inventory:write",
+            notification_type="ORDER_READY_TO_FULFILL",
+            title=f"Order {order_number} is ready to fulfill",
+            message=f"Sales order {order_number} has stock allocated and is ready for shipment handling.",
+            reference_type="sales_order",
+            reference_id=order.id,
+        )
+
+
+async def _notify_purchase_order_owners(
+    *,
+    session,
+    container,
+    tenant_id: UUID,
+    work_order_ids: set[UUID],
+    order_number: str,
+) -> None:
+    """Notify only the supplier users linked to auto-created shortage POs."""
+    if not work_order_ids:
+        return
+
+    from backend.app.infrastructure.persistence.models.purchase_order_model import PurchaseOrderModel
+
+    notification_service = NotificationService(
+        session,
+        email_service=getattr(container, "email_service", None),
+        connection_manager=getattr(container, "connection_manager", None),
+    )
+    filters = [
+        PurchaseOrderModel.notes.ilike(f"%{work_order_id}%")
+        for work_order_id in work_order_ids
+    ]
+    purchase_orders = (
+        await session.execute(
+            select(PurchaseOrderModel.id, PurchaseOrderModel.po_number, PurchaseOrderModel.supplier_id).where(
+                PurchaseOrderModel.tenant_id == tenant_id,
+                PurchaseOrderModel.is_deleted.is_(False),
+                or_(*filters),
+            )
+        )
+    ).all()
+
+    for po_id, po_number, supplier_id in purchase_orders:
+        supplier_user_ids = (
+            await session.execute(
+                select(UserModel.id).where(
+                    UserModel.tenant_id == tenant_id,
+                    UserModel.supplier_id == supplier_id,
+                    UserModel.is_active.is_(True),
+                    UserModel.is_deleted.is_(False),
+                )
+            )
+        ).scalars().all()
+        for supplier_user_id in supplier_user_ids:
+            await notification_service.send(
+                tenant_id=tenant_id,
+                user_id=supplier_user_id,
+                notification_type="SUPPLIER_PO_ACTION_REQUIRED",
+                title=f"Purchase order {po_number} needs supplier action",
+                message=f"Sales order {order_number} created a material shortage PO. Please review and acknowledge it.",
+                reference_type="purchase_order",
+                reference_id=po_id,
+            )
+
+
+async def _notify_sales_order_submitted(session, container, tenant_id: UUID, order) -> None:
+    notification_service = NotificationService(
+        session,
+        email_service=getattr(container, "email_service", None),
+        connection_manager=getattr(container, "connection_manager", None),
+    )
+    await notification_service.broadcast_to_permission(
+        tenant_id=tenant_id,
+        permission="sales:approve_order",
+        notification_type="SALES_ORDER_PENDING_APPROVAL",
+        title=f"Order {order.order_number} needs approval",
+        message=f"Sales order {order.order_number} is waiting for manager approval.",
+        reference_type="sales_order",
+        reference_id=order.id,
+    )
 
 
 # ==================== CLIENT ENDPOINTS ====================
@@ -680,6 +851,8 @@ async def submit_order_for_approval(
                 )
             )
             order = await order_repo.get_by_id(order_id, tenant_id)
+            if order:
+                await _notify_sales_order_submitted(session, container, tenant_id, order)
             return order.to_dict() if order else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -688,17 +861,19 @@ async def submit_order_for_approval(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Approval submission failed")
 
 
-@router.post("/orders/{order_id}/approve", response_model=SalesOrderResponse)
+@router.post(
+    "/orders/{order_id}/approve",
+    response_model=SalesOrderResponse,
+    dependencies=[Depends(require_permission("sales:approve_order"))],
+)
 async def approve_order(
     order_id: UUID,
     body: ApprovalActionRequest,
     request: Request,
     tenant_id: UUID = Depends(get_current_tenant_id),
     user_id: UUID = Depends(get_current_user_id),
-    role: str = Depends(get_current_role),
 ):
     """Approve an order and immediately start execution."""
-    _ensure_order_approver_role(role)
     container = get_container(request)
     async with container.session_factory() as session:
         order_repo = SalesOrderRepository(session)
@@ -742,6 +917,18 @@ async def approve_order(
                 )
             )
             order = await order_repo.get_by_id(order_id, tenant_id)
+            if order:
+                order_status = _status_name(order).replace("_", " ").title()
+                await _notify_client_order_status(
+                    session,
+                    container,
+                    tenant_id,
+                    order,
+                    notification_type="ORDER_APPROVED",
+                    title=f"Order {order.order_number} approved",
+                    message=f"Your order has been approved and is now {order_status}.",
+                )
+                await _notify_order_action_owner(session, container, tenant_id, order)
             return order.to_dict() if order else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -750,17 +937,19 @@ async def approve_order(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Approval failed")
 
 
-@router.post("/orders/{order_id}/reject", response_model=SalesOrderResponse)
+@router.post(
+    "/orders/{order_id}/reject",
+    response_model=SalesOrderResponse,
+    dependencies=[Depends(require_permission("sales:approve_order"))],
+)
 async def reject_order(
     order_id: UUID,
     body: ApprovalActionRequest,
     request: Request,
     tenant_id: UUID = Depends(get_current_tenant_id),
     user_id: UUID = Depends(get_current_user_id),
-    role: str = Depends(get_current_role),
 ):
     """Reject a submitted order and stop execution."""
-    _ensure_order_approver_role(role)
     container = get_container(request)
     async with container.session_factory() as session:
         order_repo = SalesOrderRepository(session)
@@ -776,6 +965,16 @@ async def reject_order(
                 )
             )
             order = await order_repo.get_by_id(order_id, tenant_id)
+            if order:
+                await _notify_client_order_status(
+                    session,
+                    container,
+                    tenant_id,
+                    order,
+                    notification_type="ORDER_REJECTED",
+                    title=f"Order {order.order_number} rejected",
+                    message="Your order was rejected during approval review. Please contact support for details.",
+                )
             return order.to_dict() if order else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -827,6 +1026,18 @@ async def confirm_order(
                 )
             )
             order = await order_repo.get_by_id(order_id, tenant_id)
+            if order:
+                order_status = _status_name(order).replace("_", " ").title()
+                await _notify_client_order_status(
+                    session,
+                    container,
+                    tenant_id,
+                    order,
+                    notification_type="ORDER_CONFIRMED",
+                    title=f"Order {order.order_number} confirmed",
+                    message=f"Your order has entered execution and is now {order_status}.",
+                )
+                await _notify_order_action_owner(session, container, tenant_id, order)
             return order.to_dict() if order else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -876,6 +1087,16 @@ async def ship_order(
                 )
             )
             order = await order_repo.get_by_id(order_id, tenant_id)
+            if order:
+                await _notify_client_order_status(
+                    session,
+                    container,
+                    tenant_id,
+                    order,
+                    notification_type="ORDER_SHIPPED",
+                    title=f"Order {order.order_number} shipped",
+                    message="Your order has shipped and is on the way.",
+                )
             return order.to_dict() if order else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -914,6 +1135,16 @@ async def deliver_order(
                 notes="Auto-generated on sales order delivery.",
             )
             order = await order_repo.get_by_id(order_id, tenant_id)
+            if order:
+                await _notify_client_order_status(
+                    session,
+                    container,
+                    tenant_id,
+                    order,
+                    notification_type="ORDER_DELIVERED",
+                    title=f"Order {order.order_number} delivered",
+                    message="Your order has been delivered and the invoice is now available.",
+                )
             return order.to_dict() if order else None
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

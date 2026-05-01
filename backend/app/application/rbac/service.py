@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.domain.shared.permissions import ROLE_PERMISSIONS, Permission
@@ -22,15 +23,22 @@ def normalize_role_name(value: str) -> str:
     return str(value or "").strip().lower()
 
 
+def _permission_value(permission: Permission | str) -> str:
+    return permission.value if isinstance(permission, Permission) else str(permission)
+
+
 def all_permission_values() -> list[str]:
     values = {permission.value for permission in Permission}
     for permissions in ROLE_PERMISSIONS.values():
-        values.update(str(permission) for permission in permissions)
+        values.update(_permission_value(permission) for permission in permissions)
     return sorted(values)
 
 
 def default_permissions_for_role(role_name: str) -> set[str]:
-    return {str(permission) for permission in ROLE_PERMISSIONS.get(normalize_role_name(role_name), frozenset())}
+    return {
+        _permission_value(permission)
+        for permission in ROLE_PERMISSIONS.get(normalize_role_name(role_name), frozenset())
+    }
 
 
 @dataclass(frozen=True)
@@ -54,15 +62,23 @@ async def get_effective_role_permissions(
 ) -> EffectiveRolePermissions:
     """Return DB-managed role permissions, falling back to built-in defaults."""
     normalized = normalize_role_name(role_name)
-    role = await session.scalar(
-        select(TenantRoleModel).where(
-            TenantRoleModel.tenant_id == tenant_id,
-            TenantRoleModel.name == normalized,
-            TenantRoleModel.is_active.is_(True),
+    try:
+        role = await session.scalar(
+            select(TenantRoleModel).where(
+                TenantRoleModel.tenant_id == tenant_id,
+                TenantRoleModel.name == normalized,
+                TenantRoleModel.is_active.is_(True),
+            )
         )
-    )
+    except SQLAlchemyError:
+        try:
+            await session.rollback()
+        except SQLAlchemyError:
+            pass
+        role = None
+
     if role is not None:
-        permissions = {row.permission for row in role.permissions}
+        permissions = set(await _permission_strings_for_role(session, role.id))
         return EffectiveRolePermissions(role=normalized, permissions=permissions, source="database")
 
     return EffectiveRolePermissions(
@@ -109,7 +125,7 @@ async def ensure_default_roles(session: AsyncSession, tenant_id: uuid.UUID) -> N
                 TenantRolePermissionModel(
                     id=uuid.uuid4(),
                     role_id=role.id,
-                    permission=str(permission),
+                    permission=_permission_value(permission),
                 )
             )
     await session.commit()
@@ -124,7 +140,7 @@ async def list_roles(session: AsyncSession, tenant_id: uuid.UUID) -> list[dict]:
             .order_by(TenantRoleModel.is_system.desc(), TenantRoleModel.name.asc())
         )
     ).scalars().all()
-    return [serialize_role(row) for row in rows]
+    return [await serialize_role(session, row) for row in rows]
 
 
 async def create_role(
@@ -160,7 +176,7 @@ async def create_role(
     await replace_role_permissions(session, role.id, permissions)
     await session.commit()
     await session.refresh(role)
-    return serialize_role(role)
+    return await serialize_role(session, role)
 
 
 async def update_role_permissions(
@@ -179,7 +195,7 @@ async def update_role_permissions(
     await replace_role_permissions(session, role.id, permissions)
     await session.commit()
     await session.refresh(role)
-    return serialize_role(role)
+    return await serialize_role(session, role)
 
 
 async def replace_role_permissions(
@@ -202,8 +218,17 @@ async def replace_role_permissions(
         )
 
 
-def serialize_role(role: TenantRoleModel) -> dict:
-    permissions = sorted(row.permission for row in role.permissions)
+async def _permission_strings_for_role(session: AsyncSession, role_id: uuid.UUID) -> list[str]:
+    rows = await session.execute(
+        select(TenantRolePermissionModel.permission)
+        .where(TenantRolePermissionModel.role_id == role_id)
+        .order_by(TenantRolePermissionModel.permission.asc())
+    )
+    return [row[0] for row in rows.all()]
+
+
+async def serialize_role(session: AsyncSession, role: TenantRoleModel) -> dict:
+    permissions = await _permission_strings_for_role(session, role.id)
     return {
         "id": str(role.id),
         "tenant_id": str(role.tenant_id),

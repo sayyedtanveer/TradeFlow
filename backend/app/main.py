@@ -116,8 +116,10 @@ def create_application() -> FastAPI:
     app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
     # ── Routers ───────────────────────────────────────
-    # WebSocket routes (no prefix, as they use specific path pattern)
+    # WebSocket routes. Keep the legacy /ws path and expose /api/v1/ws for
+    # the Vite dev proxy/front-end API base.
     app.include_router(websocket_router)
+    app.include_router(websocket_router, prefix="/api/v1")
     
     # REST API routes
     app.include_router(api_v1_router, prefix="/api/v1")

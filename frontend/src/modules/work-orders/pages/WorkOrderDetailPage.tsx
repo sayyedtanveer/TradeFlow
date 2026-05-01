@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { REALTIME_EVENT_NAME } from '@/components/notifications/RealtimeNotificationsBridge';
 import workOrderService, {
   type WorkOrderDetail,
   type WorkOrderMaterial,
@@ -38,9 +39,9 @@ export default function WorkOrderDetailPage() {
   const [actionPending, setActionPending] = useState(false);
   const [tab, setTab] = useState<'materials' | 'job-cards'>('materials');
 
-  const load = async () => {
+  const load = useCallback(async (silent = false) => {
     if (!id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const res = await workOrderService.get(id);
@@ -48,11 +49,19 @@ export default function WorkOrderDetailPage() {
     } catch {
       setError('Failed to load work order.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
+  }, [id]);
 
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const handleRealtime = () => {
+      void load(true);
+    };
+    window.addEventListener(REALTIME_EVENT_NAME, handleRealtime);
+    return () => window.removeEventListener(REALTIME_EVENT_NAME, handleRealtime);
+  }, [load]);
 
   const handleAction = async (actionKey: string) => {
     if (!id || actionPending) return;

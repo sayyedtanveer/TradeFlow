@@ -8,6 +8,7 @@ from backend.app.application.tenant.commands.register_tenant import RegisterTena
 from backend.app.application.tenant.commands.login_user import LoginUserCommand
 from backend.app.application.tenant.handlers.register_tenant_handler import RegisterTenantHandler
 from backend.app.application.tenant.handlers.login_user_handler import LoginUserHandler
+from backend.app.application.rbac.service import get_effective_role_permissions
 from backend.app.infrastructure.persistence.repositories.tenant_repository import TenantRepository
 from backend.app.infrastructure.persistence.repositories.user_repository import UserRepository
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
@@ -154,6 +155,7 @@ async def me(
         user_repo = UserRepository(session)
         tenant = await tenant_repo.get_by_tenant_id(tenant_id)
         user = await user_repo.get_by_id(user_id, tenant_id)
+        effective_role = await get_effective_role_permissions(session, tenant_id, user.role) if user else None
 
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
@@ -179,6 +181,6 @@ async def me(
             plan=tenant.plan,
             is_active=tenant.is_active,
         ),
-        permissions=[],
+        permissions=sorted(effective_role.permissions) if effective_role else [],
     )
 

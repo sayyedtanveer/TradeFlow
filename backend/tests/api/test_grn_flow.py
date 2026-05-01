@@ -62,10 +62,13 @@ async def test_po_receive_creates_grn_and_updates_inventory(async_client, token_
     admin_headers = _build_admin_headers(token_headers)
     supplier_id, material_id, po_id, warehouse_location_id = await _create_supplier_material_po_and_warehouse(async_client, admin_headers)
 
+    send_resp = await async_client.put(f"/api/v1/purchase-orders/{po_id}/send", headers=admin_headers)
+    assert send_resp.status_code == 200
+
     # Receive 5 units for the PO
     receive_resp = await async_client.put(
         f"/api/v1/purchase-orders/{po_id}/receive",
-        json={"lines": [{"line_id": uuid.UUID(await _get_first_po_line_id(async_client, admin_headers, po_id)), "quantity": 5}], "warehouse_location_id": warehouse_location_id},
+        json={"lines": [{"line_id": await _get_first_po_line_id(async_client, admin_headers, po_id), "quantity": 5}], "warehouse_location_id": warehouse_location_id},
         headers=admin_headers,
     )
     assert receive_resp.status_code == 200

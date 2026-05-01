@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { REALTIME_EVENT_NAME } from '@/components/notifications/RealtimeNotificationsBridge';
 import workOrderService, { type WorkOrderSummary } from '@/services/work-order.service';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -26,8 +27,8 @@ export default function WorkOrdersListPage() {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const res = await workOrderService.list(statusFilter ? { status: statusFilter } : undefined);
@@ -35,11 +36,19 @@ export default function WorkOrdersListPage() {
     } catch {
       setError('Failed to load work orders.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [statusFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const handleRealtime = () => {
+      void load(true);
+    };
+    window.addEventListener(REALTIME_EVENT_NAME, handleRealtime);
+    return () => window.removeEventListener(REALTIME_EVENT_NAME, handleRealtime);
+  }, [load]);
 
   return (
     <div className="min-h-screen bg-[#0d0f14] text-white">

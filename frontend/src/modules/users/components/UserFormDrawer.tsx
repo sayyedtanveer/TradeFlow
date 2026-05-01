@@ -3,6 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { usersService } from "@/services/users.service"
+import { rbacService } from "@/services/rbac.service"
 import { supplyChainApi } from "@/services/supply-chain.service"
 import { clientsApi } from "@/services/sales.service"
 import { AVAILABLE_ROLES } from "@/lib/roles.config"
@@ -29,6 +30,19 @@ const userSchema = z.object({
 
 type UserFormValues = z.infer<typeof userSchema>
 
+type RoleOption = {
+  value: string
+  label: string
+  description?: string | null
+  permissions: string[]
+}
+
+const grantsClientPortal = (role?: RoleOption) =>
+  role?.value === "client" || role?.permissions.includes("client:read")
+
+const grantsSupplierPortal = (role?: RoleOption) =>
+  role?.value === "supplier" || role?.permissions.includes("supplier:read")
+
 interface Props {
   userId: string | null
   open: boolean
@@ -45,7 +59,7 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
   const [tempPasswordMode, setTempPasswordMode] = useState<"created" | "reset">("created")
   const [copiedPassword, setCopiedPassword] = useState(false)
 
-  const { data: user, isLoading: isFetching } = useQuery({
+  const { data: user, isLoading: isFetching, isError: isUserError } = useQuery({
     queryKey: ["user", userId],
     queryFn: () => usersService.getUser(userId!),
     enabled: isEditing && open,
@@ -67,6 +81,12 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
     },
   })
 
+  const { data: rolesData } = useQuery({
+    queryKey: ["rbac", "roles"],
+    queryFn: rbacService.listRoles,
+    enabled: open,
+  })
+
   const { register, handleSubmit, formState: { errors }, setValue, watch, reset } = useForm<UserFormValues>({
     resolver: zodResolver(userSchema),
     defaultValues: {
@@ -81,7 +101,23 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
   })
 
   const selectedRole = watch("role")
-  const loginUrl = selectedRole === "client" ? `${window.location.origin}/client/login` : `${window.location.origin}/login`
+  const roleOptions: RoleOption[] = rolesData?.items?.length
+    ? rolesData.items.map((role) => ({
+        value: role.name,
+        label: role.label,
+        description: role.description || `${role.permission_count} permissions`,
+        permissions: role.permissions,
+      }))
+    : AVAILABLE_ROLES.map((role) => ({
+        value: role.value,
+        label: role.label,
+        description: role.description,
+        permissions: [],
+      }))
+  const selectedRoleOption = roleOptions.find((role) => role.value === selectedRole)
+  const selectedIsClient = grantsClientPortal(selectedRoleOption)
+  const selectedIsSupplier = grantsSupplierPortal(selectedRoleOption)
+  const loginUrl = selectedIsClient ? `${window.location.origin}/client/login` : `${window.location.origin}/login`
 
   // Reset form when user data loads or modal opens for "new"
   useEffect(() => {
@@ -92,8 +128,8 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
         last_name: user.last_name,
         role: user.role,
         is_active: user.is_active,
-        supplier_id: (user as any).supplier_id || null,
-        client_id: (user as any).client_id || null,
+        supplier_id: user.supplier_id || null,
+        client_id: user.client_id || null,
       })
     } else if (userId === "new") {
       reset({
@@ -213,7 +249,7 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
 
             <div className="space-y-2">
               <Label className="text-sm font-medium">Login URL</Label>
-              <a className="block bg-white border border-gray-300 rounded px-3 py-2 text-sm text-blue-700 underline break-all" href="/login">
+              <a className="block bg-white border border-gray-300 rounded px-3 py-2 text-sm text-blue-700 underline break-all" href={loginUrl}>
                 {loginUrl}
               </a>
             </div>
@@ -284,12 +320,16 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
     >
       {isEditing && isFetching ? (
         <FormSkeleton fields={4} />
+      ) : isEditing && isUserError ? (
+        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          Unable to load this user. Close and reopen the drawer, or refresh the user list.
+        </div>
       ) : (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 pb-8">
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
-              <Input id="email" type="email" placeholder="user@acme.com" {...register("email")} disabled={isEditing} autoFocus />
+              <Input id="email" type="email" placeholder="user@acme.com" {...register("email")} autoFocus />
               {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
             </div>
 
@@ -312,15 +352,16 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
                 value={watch("role")} 
                 onValueChange={(val) => {
                   setValue("role", val, { shouldValidate: true })
-                  if (val !== "supplier") setValue("supplier_id", null)
-                  if (val !== "client") setValue("client_id", null)
+                  const nextRole = roleOptions.find((role) => role.value === val)
+                  if (!grantsSupplierPortal(nextRole)) setValue("supplier_id", null)
+                  if (!grantsClientPortal(nextRole)) setValue("client_id", null)
                 }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Role" />
                 </SelectTrigger>
                 <SelectContent>
-                  {AVAILABLE_ROLES.map((role) => (
+                  {roleOptions.map((role) => (
                     <SelectItem key={role.value} value={role.value}>
                       {role.label} ({role.description})
                     </SelectItem>
@@ -330,12 +371,12 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
               {errors.role && <p className="text-xs text-destructive">{errors.role.message}</p>}
             </div>
 
-            {watch("role") === "supplier" && (
+            {selectedIsSupplier && (
               <div className="space-y-2 bg-blue-50 p-3 rounded border border-blue-200">
                 <Label htmlFor="supplier_id">Link to Supplier (Required for Supplier Portal)</Label>
                 <Select 
-                  value={watch("supplier_id") || ""} 
-                  onValueChange={(val) => setValue("supplier_id", val || null, { shouldValidate: true })}
+                  value={watch("supplier_id") || "__none__"} 
+                  onValueChange={(val) => setValue("supplier_id", val === "__none__" ? null : val, { shouldValidate: true })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select Supplier" />
@@ -355,18 +396,18 @@ export function UserFormDrawer({ userId, open, onClose }: Props) {
               </div>
             )}
 
-            {watch("role") === "client" && (
+            {selectedIsClient && (
               <div className="space-y-2 bg-blue-50 p-3 rounded border border-blue-200">
                 <Label htmlFor="client_id">Link to Client (Required for Client Portal)</Label>
                 <Select
-                  value={watch("client_id") || ""}
-                  onValueChange={(val) => setValue("client_id", val || null, { shouldValidate: true })}
+                  value={watch("client_id") || "__none__"}
+                  onValueChange={(val) => setValue("client_id", val === "__none__" ? null : val, { shouldValidate: true })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select Client" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="__none__">None</SelectItem>
                     {clientsData?.map((client: any) => (
                       <SelectItem key={client.id} value={client.id}>
                         {client.code} - {client.name}

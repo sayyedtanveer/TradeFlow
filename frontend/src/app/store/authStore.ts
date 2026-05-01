@@ -19,9 +19,11 @@ interface AuthState {
   tenant_id: string | null
   supplier_id: string | null
   client_id: string | null
+  permissions: string[]
   isAuthenticated: boolean
   setAuth: (token: string, tenant_id: string) => void
   setUser: (user: User) => void
+  setPermissions: (permissions: string[]) => void
   setSupplierAndClient: (supplier_id: string | null, client_id: string | null) => void
   logout: () => void
 }
@@ -34,6 +36,7 @@ export const useAuthStore = create<AuthState>()(
       tenant_id: null,
       supplier_id: null,
       client_id: null,
+      permissions: [],
       isAuthenticated: false,
       setAuth: (token, tenant_id) =>
         set({ token, tenant_id, isAuthenticated: true }),
@@ -44,6 +47,7 @@ export const useAuthStore = create<AuthState>()(
           supplier_id: user.supplier_id ?? null,
           client_id: user.client_id ?? null,
         })),
+      setPermissions: (permissions) => set({ permissions }),
       setSupplierAndClient: (supplier_id, client_id) =>
         set({ supplier_id, client_id }),
       logout: () => set({
@@ -52,6 +56,7 @@ export const useAuthStore = create<AuthState>()(
         tenant_id: null,
         supplier_id: null,
         client_id: null,
+        permissions: [],
         isAuthenticated: false,
       }),
     }),

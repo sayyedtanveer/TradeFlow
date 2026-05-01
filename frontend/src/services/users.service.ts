@@ -38,6 +38,7 @@ export const usersService = {
   },
 
   async updateUser(id: string, payload: Partial<{
+    email: string
     first_name: string
     last_name: string
     role: string

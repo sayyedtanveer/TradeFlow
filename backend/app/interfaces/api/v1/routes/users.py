@@ -17,8 +17,8 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_tenant_id,
     get_container,
 )
-from backend.app.interfaces.api.v1.dependencies.permissions import require_role
-from backend.app.domain.tenant.value_objects.role import Role
+from backend.app.application.rbac.service import get_effective_role_permissions
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.interfaces.api.v1.schemas.auth_schemas import (
     UserInMeResponse,
 )
@@ -38,6 +38,7 @@ class UserCreateRequest(BaseModel):
 
 
 class UserUpdateRequest(BaseModel):
+    email: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     role: Optional[str] = None
@@ -82,10 +83,24 @@ def _generate_temporary_password(length: int = 12) -> str:
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
+def _user_response(user: UserModel) -> UserInMeResponse:
+    return UserInMeResponse(
+        id=str(user.id),
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        role=user.role,
+        tenant_id=str(user.tenant_id),
+        is_active=user.is_active,
+        supplier_id=str(user.supplier_id) if user.supplier_id else None,
+        client_id=str(user.client_id) if user.client_id else None,
+    )
+
+
 @router.get(
     "",
     response_model=List[UserInMeResponse],
-    dependencies=[Depends(require_role(Role.ADMIN))],
+    dependencies=[Depends(require_permission("user:read"))],
     summary="List all users in tenant",
 )
 async def list_users(
@@ -142,7 +157,7 @@ async def list_users(
 @router.get(
     "/{user_id}",
     response_model=UserInMeResponse,
-    dependencies=[Depends(require_role(Role.ADMIN))],
+    dependencies=[Depends(require_permission("user:read"))],
     summary="Get user by ID",
 )
 async def get_user(
@@ -165,14 +180,14 @@ async def get_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return UserInMeResponse.model_validate(user)
+    return _user_response(user)
 
 
 @router.post(
     "",
     response_model=UserCreateResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_role(Role.ADMIN))],
+    dependencies=[Depends(require_permission("user:write"))],
     summary="Create a new user",
 )
 async def create_user(
@@ -194,6 +209,11 @@ async def create_user(
         )
         if result.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Email already exists")
+
+        role_name = body.role.strip().lower()
+        effective_role = await get_effective_role_permissions(session, tenant_id, role_name)
+        if not effective_role.permissions:
+            raise HTTPException(status_code=400, detail=f"Role '{body.role}' does not exist")
 
         # CRITICAL: If supplier_id provided, validate it belongs to current tenant
         supplier_id_value = None
@@ -231,7 +251,7 @@ async def create_user(
             email=body.email,
             first_name=body.first_name,
             last_name=body.last_name,
-            role=body.role.lower(),
+            role=role_name,
             is_active=body.is_active,
             hashed_password=container.password_hasher.hash(temporary_password),
             supplier_id=supplier_id_value,  # Set supplier_id if provided
@@ -301,7 +321,7 @@ async def create_user(
 @router.put(
     "/{user_id}",
     response_model=UserInMeResponse,
-    dependencies=[Depends(require_role(Role.ADMIN))],
+    dependencies=[Depends(require_permission("user:write"))],
     summary="Update user",
 )
 async def update_user(
@@ -314,6 +334,13 @@ async def update_user(
     container = get_container(request)
 
     async with container.session_factory() as session:
+        normalized_role = None
+        if body.role is not None:
+            normalized_role = body.role.strip().lower()
+            effective_role = await get_effective_role_permissions(session, tenant_id, normalized_role)
+            if not effective_role.permissions:
+                raise HTTPException(status_code=400, detail=f"Role '{normalized_role}' does not exist")
+
         result = await session.execute(
             select(UserModel).where(
                 UserModel.id == user_id,
@@ -359,20 +386,34 @@ async def update_user(
         for key, value in data.items():
             if key in {"supplier_id", "client_id"}:
                 continue  # Already handled above
+            if key == "email" and isinstance(value, str):
+                value = value.strip().lower()
+                if not value:
+                    raise HTTPException(status_code=400, detail="Email is required")
+                existing = await session.scalar(
+                    select(UserModel.id).where(
+                        UserModel.tenant_id == tenant_id,
+                        UserModel.email == value,
+                        UserModel.id != user_id,
+                        UserModel.is_deleted.is_(False),
+                    )
+                )
+                if existing:
+                    raise HTTPException(status_code=409, detail="Email already exists")
             if key == "role" and isinstance(value, str):
-                value = value.lower()
+                value = normalized_role or value.strip().lower()
             setattr(user, key, value)
 
         await session.commit()
         await session.refresh(user)
 
-    return UserInMeResponse.model_validate(user)
+    return _user_response(user)
 
 
 @router.post(
     "/{user_id}/temporary-password",
     response_model=UserTemporaryPasswordResponse,
-    dependencies=[Depends(require_role(Role.ADMIN))],
+    dependencies=[Depends(require_permission("user:write"))],
     summary="Regenerate a user's temporary password",
 )
 async def regenerate_temporary_password(

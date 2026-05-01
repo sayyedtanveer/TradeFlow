@@ -3,8 +3,8 @@
  * Display all sales orders with filtering, search, and bulk actions
  */
 
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -15,54 +15,76 @@ import { ordersApi } from '@/services/sales.service';
 import { SalesOrder, OrderStatus } from '@/types/sales.types';
 import { Plus, Filter, Eye, ShoppingCart } from 'lucide-react';
 import { formatCurrency } from '@/utils/currency';
+import { REALTIME_EVENT_NAME } from '@/components/notifications/RealtimeNotificationsBridge';
 
 export default function SalesOrdersListPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<string>('all');
+  const [status, setStatus] = useState<string>(searchParams.get('status') || 'all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
 
-  useEffect(() => {
-    const loadOrders = async () => {
-      try {
-        setError(null);
-        setLoading(true);
-        const offset = (currentPage - 1) * pageSize;
-        
-        // Get today's date for default date range
-        const today = new Date().toISOString().split('T')[0];
-        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        const selectedStatus = status === 'all' ? undefined : (status as OrderStatus);
-        
-        const response = await ordersApi.list(
-          pageSize,
-          offset,
-          undefined,
-          selectedStatus,
-          thirtyDaysAgo, // Default to last 30 days
-          today
-        );
-        const searchTerm = search.trim().toLowerCase();
-        const visibleOrders = searchTerm
-          ? response.items.filter((order) => order.order_number.toLowerCase().includes(searchTerm))
-          : response.items;
+  const handleStatusChange = (nextStatus: string) => {
+    setStatus(nextStatus);
+    setCurrentPage(1);
+    const next = new URLSearchParams(searchParams);
+    if (nextStatus === 'all') {
+      next.delete('status');
+    } else {
+      next.set('status', nextStatus);
+    }
+    setSearchParams(next, { replace: true });
+  };
 
-        setOrders(visibleOrders);
-        setTotal(searchTerm ? visibleOrders.length : response.total);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load orders');
-      } finally {
-        setLoading(false);
-      }
-    };
+  const loadOrders = useCallback(async (silent = false) => {
+    try {
+      setError(null);
+      if (!silent) setLoading(true);
+      const offset = (currentPage - 1) * pageSize;
 
-    loadOrders();
+      // Get today's date for default date range
+      const today = new Date().toISOString().split('T')[0];
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const selectedStatus = status === 'all' ? undefined : (status as OrderStatus);
+
+      const response = await ordersApi.list(
+        pageSize,
+        offset,
+        undefined,
+        selectedStatus,
+        thirtyDaysAgo, // Default to last 30 days
+        today
+      );
+      const searchTerm = search.trim().toLowerCase();
+      const visibleOrders = searchTerm
+        ? response.items.filter((order) => order.order_number.toLowerCase().includes(searchTerm))
+        : response.items;
+
+      setOrders(visibleOrders);
+      setTotal(searchTerm ? visibleOrders.length : response.total);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load orders');
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, [currentPage, pageSize, search, status]);
+
+  useEffect(() => {
+    void loadOrders();
+  }, [loadOrders]);
+
+  useEffect(() => {
+    const handleRealtime = () => {
+      void loadOrders(true);
+    };
+    window.addEventListener(REALTIME_EVENT_NAME, handleRealtime);
+    return () => window.removeEventListener(REALTIME_EVENT_NAME, handleRealtime);
+  }, [loadOrders]);
 
   const getStatusColor = (orderStatus: OrderStatus) => {
     const colors: Record<OrderStatus, string> = {
@@ -121,7 +143,7 @@ export default function SalesOrdersListPage() {
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700 block mb-2">Status</label>
-              <Select value={status} onValueChange={setStatus}>
+              <Select value={status} onValueChange={handleStatusChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Status" />
                 </SelectTrigger>

@@ -9,7 +9,7 @@ import { apiClient } from "@/services/api-client"
  * This ensures users are logged out when backend session is lost
  */
 export function useAuthInitialize() {
-  const { token, logout, isAuthenticated, user, client_id } = useAuthStore()
+  const { token, logout, isAuthenticated, user, client_id, setUser, setPermissions } = useAuthStore()
 
   useEffect(() => {
     const validateToken = async () => {
@@ -26,7 +26,11 @@ export function useAuthInitialize() {
         })
           ? "/client/profile"
           : "/auth/me"
-        await apiClient.get(validationEndpoint)
+        const response = await apiClient.get(validationEndpoint)
+        if (validationEndpoint === "/auth/me") {
+          setUser(response.data.user)
+          setPermissions(response.data.permissions ?? [])
+        }
       } catch (error) {
         // If token validation fails, user is not actually authenticated
         // This handles cases where:
@@ -38,5 +42,5 @@ export function useAuthInitialize() {
     }
 
     validateToken()
-  }, [token, isAuthenticated, logout, user?.role, client_id])
+  }, [token, isAuthenticated, logout, user?.role, client_id, setUser, setPermissions])
 }

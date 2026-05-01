@@ -13,7 +13,7 @@ from backend.app.infrastructure.logging.logger import get_logger
 logger = get_logger(__name__)
 
 
-@dataclass
+@dataclass(eq=False)
 class ConnectionContext:
     """Context for an active WebSocket connection."""
 

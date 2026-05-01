@@ -6,8 +6,9 @@ import { hasPermission as checkPermission, Permission } from "@/lib/permissions.
  * Permission checks mirror backend domain/shared/permissions.py — use hasPermission(), not raw role strings.
  */
 export function usePermissions() {
-  const { user } = useAuthStore()
+  const { user, permissions } = useAuthStore()
   const roleRaw = user?.role
+  const dynamicPermissions = permissions ?? []
 
   const hasRole = (roles: (UserRole | string)[]): boolean => {
     if (!user) return false
@@ -15,9 +16,14 @@ export function usePermissions() {
     return roles.some((r) => normalizeRole(r as string) === normalized)
   }
 
-  const hasPermission = (permission: string): boolean => checkPermission(roleRaw, permission)
+  const hasPermission = (permission: string): boolean => {
+    if (dynamicPermissions.length > 0) {
+      return dynamicPermissions.includes(Permission.ALL) || dynamicPermissions.includes(permission)
+    }
+    return checkPermission(roleRaw, permission)
+  }
 
-  const isAdmin = (): boolean => hasRole([UserRole.ADMIN, UserRole.TENANT_ADMIN])
+  const isAdmin = (): boolean => hasPermission(Permission.ALL) || hasRole([UserRole.ADMIN, UserRole.TENANT_ADMIN])
   const isManager = (): boolean => hasRole([UserRole.MANAGER])
   const isOperator = (): boolean => hasRole([UserRole.OPERATOR, UserRole.STOREKEEPER])
   const isViewer = (): boolean => hasRole([UserRole.VIEWER])

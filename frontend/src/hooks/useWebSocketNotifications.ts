@@ -45,10 +45,15 @@ export const useWebSocketNotifications = ({
 
   // Get API base URL (supports both HTTP and WebSocket protocols)
   const getWebSocketUrl = useCallback(() => {
-    const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-    const protocol = apiBase.startsWith('https') ? 'wss' : 'ws'
-    const host = apiBase.replace(/^https?:\/\//, '')
-    return `${protocol}://${host}/api/v1/ws/notifications?token=${token}`
+    const apiBase = import.meta.env.VITE_API_URL || '/api/v1'
+    const absoluteBase = apiBase.startsWith('http')
+      ? apiBase
+      : `${window.location.origin}${apiBase.startsWith('/') ? apiBase : `/${apiBase}`}`
+    const url = new URL(absoluteBase)
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    url.pathname = `${url.pathname.replace(/\/$/, '')}/ws/notifications`
+    url.searchParams.set('token', token || '')
+    return url.toString()
   }, [token])
 
   // Connect to WebSocket
@@ -82,6 +87,10 @@ export const useWebSocketNotifications = ({
 
       ws.onmessage = (event) => {
         try {
+          if (event.data === 'pong') {
+            return
+          }
+
           const data = JSON.parse(event.data)
 
           if (data.type === 'pong') {

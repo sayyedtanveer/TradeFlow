@@ -3,7 +3,7 @@
  * Overview of sales orders, statistics, and quick actions
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,35 +11,50 @@ import { Badge } from '@/components/ui/badge';
 import { CardSkeleton } from '@/components/shared/LoadingSkeleton';
 import { ordersApi } from '@/services/sales.service';
 import { OrderStatistics, SalesOrder, OrderStatus } from '@/types/sales.types';
-import { ShoppingCart, Users, FileText, TrendingUp } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ShoppingCart, Users, FileText } from 'lucide-react';
 import { formatCurrency } from '@/utils/currency';
+import { REALTIME_EVENT_NAME } from '@/components/notifications/RealtimeNotificationsBridge';
 
 export default function SalesDashboardPage() {
   const navigate = useNavigate();
   const [statistics, setStatistics] = useState<OrderStatistics | null>(null);
   const [recentOrders, setRecentOrders] = useState<SalesOrder[]>([]);
+  const [pendingApprovalOrders, setPendingApprovalOrders] = useState<SalesOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadDashboard = async () => {
-      try {
-        setError(null);
-        const [stats, orders] = await Promise.all([
-          ordersApi.getStatistics(),
-          ordersApi.listDraft(5),
-        ]);
-        setStatistics(stats);
-        setRecentOrders(orders.items);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load dashboard');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadDashboard();
+  const loadDashboard = useCallback(async (silent = false) => {
+    try {
+      setError(null);
+      if (!silent) setLoading(true);
+      const today = new Date().toISOString().split('T')[0];
+      const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const [stats, pendingOrders, recent] = await Promise.all([
+        ordersApi.getStatistics(),
+        ordersApi.list(6, 0, undefined, OrderStatus.PENDING_APPROVAL, ninetyDaysAgo, today),
+        ordersApi.list(8, 0, undefined, undefined, ninetyDaysAgo, today),
+      ]);
+      setStatistics(stats);
+      setPendingApprovalOrders(pendingOrders.items);
+      setRecentOrders(recent.items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load dashboard');
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadDashboard();
+  }, [loadDashboard]);
+
+  useEffect(() => {
+    const handleRealtime = () => {
+      void loadDashboard(true);
+    };
+    window.addEventListener(REALTIME_EVENT_NAME, handleRealtime);
+    return () => window.removeEventListener(REALTIME_EVENT_NAME, handleRealtime);
+  }, [loadDashboard]);
 
   if (loading) {
     return (
@@ -51,21 +66,21 @@ export default function SalesDashboardPage() {
 
   const statsCards = [
     {
+      title: 'Pending Approval',
+      value: statistics?.pending_approval_count || 0,
+      icon: AlertCircle,
+      color: 'bg-amber-500',
+    },
+    {
       title: 'Draft Orders',
       value: statistics?.draft_count || 0,
       icon: FileText,
       color: 'bg-slate-500',
     },
     {
-      title: 'Confirmed',
-      value: statistics?.confirmed_count || 0,
-      icon: ShoppingCart,
-      color: 'bg-blue-500',
-    },
-    {
       title: 'Ready to Ship',
       value: statistics?.ready_count || 0,
-      icon: TrendingUp,
+      icon: CheckCircle2,
       color: 'bg-green-500',
     },
     {
@@ -130,11 +145,50 @@ export default function SalesDashboardPage() {
         })}
       </div>
 
+      {/* Approval Queue */}
+      <Card className="border-amber-200 bg-amber-50/40">
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <div>
+            <CardTitle>Orders Waiting for Approval</CardTitle>
+            <CardDescription>Client portal and admin-submitted orders that need manager review</CardDescription>
+          </div>
+          <Button variant="outline" onClick={() => navigate('/sales/orders?status=PENDING_APPROVAL')}>
+            Open Sales Orders
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {pendingApprovalOrders.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-amber-200 bg-white p-6 text-center text-sm text-gray-500">
+              No orders are waiting for approval right now.
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {pendingApprovalOrders.map((order) => (
+                <button
+                  key={order.id}
+                  onClick={() => navigate(`/sales/orders/${order.id}`)}
+                  className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-gray-900">{order.order_number}</span>
+                      <Badge className={getStatusColor(order.status)}>{order.status}</Badge>
+                    </div>
+                    <p className="mt-1 text-sm text-gray-500">Client {order.client_id}</p>
+                  </div>
+                  <div className="text-sm font-semibold text-gray-900">{formatCurrency(order.grand_total || 0)}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Recent Orders */}
       <Card>
         <CardHeader>
-          <CardTitle>Draft Orders Pending Confirmation</CardTitle>
-          <CardDescription>Orders waiting for your confirmation before processing</CardDescription>
+          <CardTitle>Recent Sales Orders</CardTitle>
+          <CardDescription>Latest order activity across draft, approval, production, and delivery states</CardDescription>
         </CardHeader>
         <CardContent>
           {error && (
@@ -144,7 +198,7 @@ export default function SalesDashboardPage() {
           )}
           {recentOrders.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
-              <p>No draft orders pending</p>
+              <p>No recent sales orders found</p>
               <Button
                 variant="link"
                 onClick={() => navigate('/sales/orders/new')}

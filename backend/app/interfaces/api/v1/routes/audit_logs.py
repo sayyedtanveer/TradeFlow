@@ -6,16 +6,15 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, or_, select
 
-from backend.app.domain.tenant.value_objects.role import Role
 from backend.app.infrastructure.persistence.models.audit_log_model import AuditLogModel
 from backend.app.infrastructure.persistence.models.user_model import UserModel
 from backend.app.interfaces.api.v1.dependencies.auth import get_container, get_current_tenant_id
-from backend.app.interfaces.api.v1.dependencies.permissions import require_role
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 
 router = APIRouter(
     prefix="/audit-logs",
     tags=["Audit Logs"],
-    dependencies=[Depends(require_role(Role.ADMIN))],
+    dependencies=[Depends(require_permission("audit:read"))],
 )
 
 

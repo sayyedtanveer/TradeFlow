@@ -48,6 +48,7 @@ def _service(request: Request, session: AsyncSession) -> ClientPortalService:
         password_hasher=container.password_hasher,
         jwt_handler=container.jwt_handler,
         email_service=container.email_service,
+        connection_manager=getattr(container, "connection_manager", None),
         environment=getattr(container, "environment", "development"),
     )
 

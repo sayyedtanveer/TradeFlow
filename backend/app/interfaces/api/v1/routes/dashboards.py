@@ -33,6 +33,7 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_tenant_id,
     get_current_user_id,
 )
+from backend.app.application.rbac.service import get_effective_role_permissions
 from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 
 router = APIRouter(prefix="/api/v1/dashboards", tags=["Dashboards"])
@@ -246,7 +247,7 @@ async def supplier_dashboard(
 
 @router.get(
     "/manager",
-    dependencies=[Depends(require_permission("sales:read"))],
+    dependencies=[Depends(require_permission("sales:approve_order"))],
 )
 async def manager_dashboard(
     request: Request,
@@ -262,7 +263,8 @@ async def manager_dashboard(
             SalesOrderModel.status == "PENDING_APPROVAL",
             SalesOrderModel.is_deleted.is_(False),
         )
-        if role == "manager":
+        effective_role = await get_effective_role_permissions(session, tenant_id, role)
+        if not effective_role.has_all:
             pending_query = pending_query.where(
                 (SalesOrderModel.approver_id == user_id) | (SalesOrderModel.approver_id.is_(None))
             )

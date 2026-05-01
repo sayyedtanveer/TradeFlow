@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.infrastructure.persistence.models.finance_models import NotificationModel
 from backend.app.infrastructure.persistence.models.user_model import UserModel
+from backend.app.application.rbac.service import role_has_permission
 
 
 NOTIFICATION_TYPES = {
@@ -30,9 +31,10 @@ class NotificationService:
     Email sending is delegated to IEmailService (can be stub or real SMTP).
     """
 
-    def __init__(self, session: AsyncSession, email_service=None):
+    def __init__(self, session: AsyncSession, email_service=None, connection_manager=None):
         self.session = session
         self.email_service = email_service
+        self.connection_manager = connection_manager
 
     async def send(
         self,
@@ -59,6 +61,21 @@ class NotificationService:
         )
         self.session.add(notification)
         await self.session.flush()
+        payload = {
+            "id": str(notification.id),
+            "type": notification_type,
+            "title": title,
+            "message": message,
+            "reference_type": reference_type,
+            "reference_id": str(reference_id) if reference_id else None,
+            "is_read": False,
+            "sent_at": (notification.sent_at or datetime.now(timezone.utc)).isoformat(),
+            "timestamp": (notification.sent_at or datetime.now(timezone.utc)).isoformat(),
+            "data": {
+                "reference_type": reference_type,
+                "reference_id": str(reference_id) if reference_id else None,
+            },
+        }
 
         if send_email and self.email_service:
             try:
@@ -78,7 +95,22 @@ class NotificationService:
                 pass  # Email failure should not fail the operation
 
         await self.session.commit()
+        await self._push_realtime(tenant_id, user_id, payload)
         return notification
+
+    async def _push_realtime(self, tenant_id: uuid.UUID, user_id: uuid.UUID, payload: dict) -> None:
+        """Best-effort live delivery; persisted notification remains source of truth."""
+        if not self.connection_manager:
+            return
+        try:
+            await self.connection_manager.send_to_user(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                message_type="notification",
+                payload=payload,
+            )
+        except Exception:
+            pass
 
     async def broadcast_to_role(
         self,
@@ -104,6 +136,42 @@ class NotificationService:
             await self.send(
                 tenant_id=tenant_id,
                 user_id=user.id,
+                notification_type=notification_type,
+                title=title,
+                message=message,
+                reference_type=reference_type,
+                reference_id=reference_id,
+            )
+            count += 1
+        await self.session.commit()
+        return count
+
+    async def broadcast_to_permission(
+        self,
+        tenant_id: uuid.UUID,
+        permission: str,
+        notification_type: str,
+        title: str,
+        message: str,
+        reference_type: Optional[str] = None,
+        reference_id: Optional[uuid.UUID] = None,
+    ) -> int:
+        """Send notification to active users whose role grants a permission."""
+        users_q = await self.session.execute(
+            select(UserModel.id, UserModel.role).where(
+                UserModel.tenant_id == tenant_id,
+                UserModel.is_active == True,
+                UserModel.is_deleted == False,
+            )
+        )
+        users = users_q.all()
+        count = 0
+        for user_id, role in users:
+            if not await role_has_permission(self.session, tenant_id, role, permission):
+                continue
+            await self.send(
+                tenant_id=tenant_id,
+                user_id=user_id,
                 notification_type=notification_type,
                 title=title,
                 message=message,

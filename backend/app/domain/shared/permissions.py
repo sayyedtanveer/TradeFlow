@@ -178,5 +178,8 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
 
 def has_permission(role: str, permission: str) -> bool:
     """Return True if the given role grants the requested permission."""
-    perms = ROLE_PERMISSIONS.get(role.lower(), frozenset())
-    return Permission.ALL in perms or permission in perms
+    perms = {
+        granted.value if isinstance(granted, Permission) else str(granted)
+        for granted in ROLE_PERMISSIONS.get(role.lower(), frozenset())
+    }
+    return Permission.ALL.value in perms or permission in perms

@@ -11,6 +11,13 @@ import SubcontractListPage from "./pages/SubcontractListPage"
 import SubcontractOrderDetailPage from "./pages/SubcontractOrderDetailPage"
 import SupplierPortalPage from "./pages/SupplierPortalPage"
 import SupplierPortalPoDetailPage from "./pages/SupplierPortalPoDetailPage"
+import SupplierPortalProfilePage from "./pages/SupplierPortalProfilePage"
+import SupplierPortalInvoicesPage from "./pages/SupplierPortalInvoicesPage"
+import SupplierPortalInvoiceCreatePage from "./pages/SupplierPortalInvoiceCreatePage"
+import SupplierPortalPaymentsPage from "./pages/SupplierPortalPaymentsPage"
+import SupplierPortalQuotationsPage from "./pages/SupplierPortalQuotationsPage"
+import SupplierPortalQuotationDetailPage from "./pages/SupplierPortalQuotationDetailPage"
+import SupplierPortalReceiptsPage from "./pages/SupplierPortalReceiptsPage"
 import RFQListPage from "./pages/RFQListPage"
 import RFQCreatePage from "./pages/RFQCreatePage"
 import RFQDetailPage from "./pages/RFQDetailPage"
@@ -46,6 +53,62 @@ export const procurementRoutes: RouteObject[] = [
     element: (
       <ProtectedRoute allowedRoles={["SUPPLIER"]}>
         <SupplierPortalPoDetailPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "supplier-portal/profile",
+    element: (
+      <ProtectedRoute allowedRoles={["SUPPLIER"]}>
+        <SupplierPortalProfilePage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "supplier-portal/quotations",
+    element: (
+      <ProtectedRoute allowedRoles={["SUPPLIER"]}>
+        <SupplierPortalQuotationsPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "supplier-portal/quotations/:quotationId",
+    element: (
+      <ProtectedRoute allowedRoles={["SUPPLIER"]}>
+        <SupplierPortalQuotationDetailPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "supplier-portal/receipts",
+    element: (
+      <ProtectedRoute allowedRoles={["SUPPLIER"]}>
+        <SupplierPortalReceiptsPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "supplier-portal/invoices",
+    element: (
+      <ProtectedRoute allowedRoles={["SUPPLIER"]}>
+        <SupplierPortalInvoicesPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "supplier-portal/invoices/new",
+    element: (
+      <ProtectedRoute allowedRoles={["SUPPLIER"]}>
+        <SupplierPortalInvoiceCreatePage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "supplier-portal/payments",
+    element: (
+      <ProtectedRoute allowedRoles={["SUPPLIER"]}>
+        <SupplierPortalPaymentsPage />
       </ProtectedRoute>
     ),
   },

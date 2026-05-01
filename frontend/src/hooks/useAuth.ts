@@ -7,7 +7,16 @@ import { useNavigate } from "react-router-dom"
 import { useToast } from "@/hooks/use-toast"
 
 export function useAuth() {
-  const { setAuth, setUser, setSupplierAndClient, logout: clearAuthStore, isAuthenticated, user, tenant_id } = useAuthStore()
+  const {
+    setAuth,
+    setUser,
+    setPermissions,
+    setSupplierAndClient,
+    logout: clearAuthStore,
+    isAuthenticated,
+    user,
+    tenant_id,
+  } = useAuthStore()
   const { clearTenant, setTenantInfo } = useTenantStore()
   const navigate = useNavigate()
   const { toast } = useToast()
@@ -23,6 +32,7 @@ export function useAuth() {
       try {
         const meResult = await authService.getMe()
         setUser(meResult.user)
+        setPermissions(meResult.permissions ?? [])
         setSupplierAndClient(meResult.user.supplier_id ?? null, meResult.user.client_id ?? null)
         setTenantInfo(meResult.tenant.name, meResult.tenant.slug, meResult.tenant.plan)
         
@@ -52,6 +62,7 @@ export function useAuth() {
       try {
         const meResult = await authService.getMe()
         setUser(meResult.user)
+        setPermissions(meResult.permissions ?? [])
         setSupplierAndClient(meResult.user.supplier_id ?? null, meResult.user.client_id ?? null)
         setTenantInfo(meResult.tenant.name, meResult.tenant.slug, meResult.tenant.plan)
         

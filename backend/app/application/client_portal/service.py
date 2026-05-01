@@ -12,6 +12,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.application.finance.notification_service import NotificationService
+from backend.app.application.rbac.service import role_has_permission
 from backend.app.infrastructure.persistence.models.finance_models import InvoiceModel, NotificationModel
 from backend.app.infrastructure.persistence.models.item_template_model import ItemTemplateModel
 from backend.app.infrastructure.persistence.models.item_variant_model import ItemVariantModel
@@ -125,13 +126,22 @@ class ClientPortalService:
         password_hasher,
         jwt_handler,
         email_service=None,
+        connection_manager=None,
         environment: str = "development",
     ) -> None:
         self.session = session
         self.password_hasher = password_hasher
         self.jwt_handler = jwt_handler
         self.email_service = email_service
+        self.connection_manager = connection_manager
         self.environment = environment
+
+    def _notification_service(self) -> NotificationService:
+        return NotificationService(
+            self.session,
+            email_service=self.email_service,
+            connection_manager=self.connection_manager,
+        )
 
     async def login_client(self, email: str, password: str, tenant_id: uuid.UUID) -> dict[str, Any]:
         user = await self._get_client_user_by_email(email=email, tenant_id=tenant_id)
@@ -394,19 +404,23 @@ class ClientPortalService:
         credit_warning = credit["credit_limit"] is not None and projected_usage > float(credit["credit_limit"])
         await self.session.commit()
 
-        notification_service = NotificationService(self.session)
-        for role in ("manager", "admin", "tenant_admin"):
-            await notification_service.broadcast_to_role(
+        order_id = order.id
+        order_number = order.order_number
+        try:
+            notification_service = self._notification_service()
+            await notification_service.broadcast_to_permission(
                 tenant_id=tenant_id,
-                role=role,
+                permission="sales:approve_order",
                 notification_type="CLIENT_ORDER_PENDING_APPROVAL",
-                title=f"Order {order.order_number} needs approval",
+                title=f"Order {order_number} needs approval",
                 message=f"{client.name} submitted a client portal order for approval.",
                 reference_type="sales_order",
-                reference_id=order.id,
+                reference_id=order_id,
             )
+        except Exception:
+            await self.session.rollback()
 
-        created_order = await self._get_client_order(tenant_id, client_id, order.id)
+        created_order = await self._get_client_order(tenant_id, client_id, order_id)
         result = await self._serialize_order(created_order, include_lines=True)
         result["credit_warning"] = credit_warning
         result["availability"] = availability
@@ -609,17 +623,16 @@ class ClientPortalService:
         order.notes = ((order.notes or "").strip() + "\nClient requested cancellation on " + date.today().isoformat()).strip()
         await self.session.commit()
 
-        notification_service = NotificationService(self.session)
-        for role in ("admin", "tenant_admin", "manager"):
-            await notification_service.broadcast_to_role(
-                tenant_id=tenant_id,
-                role=role,
-                notification_type="CLIENT_CANCEL_REQUEST",
-                title=f"Cancellation requested for {order.order_number}",
-                message=f"Client requested cancellation for order {order.order_number}.",
-                reference_type="sales_order",
-                reference_id=order.id,
-            )
+        notification_service = self._notification_service()
+        await notification_service.broadcast_to_permission(
+            tenant_id=tenant_id,
+            permission="sales:approve_order",
+            notification_type="CLIENT_CANCEL_REQUEST",
+            title=f"Cancellation requested for {order.order_number}",
+            message=f"Client requested cancellation for order {order.order_number}.",
+            reference_type="sales_order",
+            reference_id=order.id,
+        )
         return {"status": "requested"}
 
     async def list_invoices(
@@ -872,17 +885,16 @@ class ClientPortalService:
     ) -> dict[str, Any]:
         ticket_id = uuid.uuid4()
         client = await self._get_client(tenant_id, client_id)
-        notification_service = NotificationService(self.session)
-        for role in ("admin", "tenant_admin", "manager"):
-            await notification_service.broadcast_to_role(
-                tenant_id=tenant_id,
-                role=role,
-                notification_type="CLIENT_SUPPORT",
-                title=f"Client support request: {subject}",
-                message=f"{client.name}: {message}",
-                reference_type="support_request",
-                reference_id=ticket_id,
-            )
+        notification_service = self._notification_service()
+        await notification_service.broadcast_to_permission(
+            tenant_id=tenant_id,
+            permission="sales:approve_order",
+            notification_type="CLIENT_SUPPORT",
+            title=f"Client support request: {subject}",
+            message=f"{client.name}: {message}",
+            reference_type="support_request",
+            reference_id=ticket_id,
+        )
         await notification_service.send(
             tenant_id=tenant_id,
             user_id=user_id,
@@ -1107,20 +1119,20 @@ class ClientPortalService:
         }
 
     async def _resolve_order_approver_id(self, tenant_id: uuid.UUID) -> Optional[uuid.UUID]:
-        for role in ("manager", "admin", "tenant_admin"):
-            approver_id = await self.session.scalar(
-                select(UserModel.id)
+        users = (
+            await self.session.execute(
+                select(UserModel.id, UserModel.role)
                 .where(
                     UserModel.tenant_id == tenant_id,
-                    UserModel.role == role,
                     UserModel.is_active.is_(True),
                     UserModel.is_deleted.is_(False),
                 )
                 .order_by(UserModel.created_at.asc())
-                .limit(1)
             )
-            if approver_id:
-                return approver_id
+        ).all()
+        for user_id, role in users:
+            if await role_has_permission(self.session, tenant_id, role, "sales:approve_order"):
+                return user_id
         return None
 
     async def _resolve_unit_price(
@@ -1319,12 +1331,28 @@ class ClientPortalService:
         return f"Product {str(product_id)[:8]}", None
 
     async def _get_client_user_by_email(self, email: str, tenant_id: uuid.UUID) -> Optional[UserModel]:
-        return await self.session.scalar(
+        user = await self.session.scalar(
             select(UserModel).where(
                 UserModel.email == email,
                 UserModel.tenant_id == tenant_id,
                 UserModel.is_deleted.is_(False),
-                UserModel.role == "client",
+            )
+        )
+        if user is None:
+            return None
+
+        user_id = user.id
+        user_role = user.role
+        if not await role_has_permission(self.session, tenant_id, user_role, "client:read"):
+            return None
+        # role_has_permission can rollback while falling back if the optional
+        # tenant RBAC tables have not been migrated yet; re-read the user so
+        # password verification never touches an expired async ORM instance.
+        return await self.session.scalar(
+            select(UserModel).where(
+                UserModel.id == user_id,
+                UserModel.tenant_id == tenant_id,
+                UserModel.is_deleted.is_(False),
             )
         )
 
@@ -1455,7 +1483,7 @@ class ClientPortalService:
 
     async def _ensure_notifications(self, tenant_id: uuid.UUID, client_id: uuid.UUID, user_id: uuid.UUID) -> None:
         settings = await self._get_or_create_notification_settings(tenant_id, client_id, user_id)
-        notification_service = NotificationService(self.session)
+        notification_service = self._notification_service()
 
         async def exists(notification_type: str, ref_type: str, ref_id: uuid.UUID) -> bool:
             return bool(

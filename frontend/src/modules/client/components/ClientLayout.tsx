@@ -6,6 +6,7 @@ import { useAuthStore } from "@/app/store/authStore"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Toaster } from "@/components/ui/toaster"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,7 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { clientService } from "../services/client.service"
+import { type ClientNotification, clientService } from "../services/client.service"
 
 const navItems = [
   { label: "Dashboard", to: "/client", icon: LayoutDashboard },
@@ -69,6 +70,21 @@ export default function ClientLayout() {
   const handleSearchSubmit = (event: FormEvent) => {
     event.preventDefault()
     navigate(`/client/orders${search ? `?search=${encodeURIComponent(search)}` : ""}`)
+  }
+
+  const notificationPath = (referenceType?: string | null, referenceId?: string | null) => {
+    if (!referenceType || !referenceId) return "/client"
+    const type = referenceType.toLowerCase()
+    if (type === "sales_order") return `/client/orders/${referenceId}`
+    if (type === "invoice") return "/client/invoices"
+    return "/client"
+  }
+
+  const openNotification = (item: ClientNotification) => {
+    if (!item.is_read) {
+      markNotificationRead.mutate(item.id)
+    }
+    navigate(notificationPath(item.reference_type, item.reference_id))
   }
 
   return (
@@ -152,7 +168,7 @@ export default function ClientLayout() {
                   <DropdownMenuSeparator />
                   {notificationsQuery.data?.items?.length ? (
                     notificationsQuery.data.items.map((item) => (
-                      <DropdownMenuItem key={item.id} className="block cursor-pointer py-3" onClick={() => !item.is_read && markNotificationRead.mutate(item.id)}>
+                      <DropdownMenuItem key={item.id} className="block cursor-pointer py-3" onClick={() => openNotification(item)}>
                         <p className="font-medium">{item.title}</p>
                         <p className="mt-1 text-xs text-muted-foreground">{item.message}</p>
                       </DropdownMenuItem>
@@ -196,6 +212,7 @@ export default function ClientLayout() {
           </nav>
         </div>
       </div>
+      <Toaster />
     </div>
   )
 }

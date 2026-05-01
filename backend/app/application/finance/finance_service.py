@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from sqlalchemy import select, func, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.infrastructure.persistence.models.finance_models import (
@@ -41,32 +42,32 @@ class FinanceService:
     #  Invoice Numbering
     # ------------------------------------------------------------------ #
     async def _next_invoice_number(self, tenant_id: uuid.UUID, prefix: str = "INV") -> str:
-        result = await self.session.execute(
-            text("SELECT nextval('invoice_seq')")
-        )
-        seq = result.scalar()
+        seq = await self._next_sequence_or_count("invoice_seq", InvoiceModel, tenant_id)
         return f"{prefix}-{seq:06d}"
 
     async def _next_supplier_invoice_number(self, tenant_id: uuid.UUID) -> str:
-        result = await self.session.execute(
-            text("SELECT nextval('supplier_invoice_seq')")
-        )
-        seq = result.scalar()
+        seq = await self._next_sequence_or_count("supplier_invoice_seq", SupplierInvoiceModel, tenant_id)
         return f"SINV-{seq:06d}"
 
     async def _next_payment_number(self, tenant_id: uuid.UUID) -> str:
-        result = await self.session.execute(
-            text("SELECT nextval('payment_seq')")
-        )
-        seq = result.scalar()
+        seq = await self._next_sequence_or_count("payment_seq", PaymentModel, tenant_id)
         return f"PAY-{seq:06d}"
 
     async def _next_supplier_payment_number(self, tenant_id: uuid.UUID) -> str:
-        result = await self.session.execute(
-            text("SELECT nextval('supplier_payment_seq')")
-        )
-        seq = result.scalar()
+        seq = await self._next_sequence_or_count("supplier_payment_seq", SupplierPaymentModel, tenant_id)
         return f"SPAY-{seq:06d}"
+
+    async def _next_sequence_or_count(self, sequence_name: str, model, tenant_id: uuid.UUID) -> int:
+        """Use Postgres sequences when available, with a safe dev/test fallback."""
+        try:
+            result = await self.session.execute(text(f"SELECT nextval('{sequence_name}')"))
+            return int(result.scalar() or 1)
+        except SQLAlchemyError:
+            await self.session.rollback()
+            count = await self.session.scalar(
+                select(func.count(model.id)).where(model.tenant_id == tenant_id)
+            )
+            return int(count or 0) + 1
 
     # ------------------------------------------------------------------ #
     #  Invoice CRUD
@@ -84,6 +85,8 @@ class FinanceService:
         One invoice per sales order enforced.
         SO must be in DELIVERED status.
         """
+        invoice_number = await self._next_invoice_number(tenant_id)
+
         # 1. Fetch SO
         so_q = await self.session.execute(
             select(SalesOrderModel).where(
@@ -123,7 +126,6 @@ class FinanceService:
         due_date = today + timedelta(days=client.payment_terms_days or 30)
 
         # 5. Create invoice
-        invoice_number = await self._next_invoice_number(tenant_id)
         invoice = InvoiceModel(
             tenant_id=tenant_id,
             invoice_number=invoice_number,
@@ -198,6 +200,8 @@ class FinanceService:
         terms: Optional[str] = None,
     ) -> InvoiceModel:
         """Create a manual invoice not tied to a sales order."""
+        invoice_number = await self._next_invoice_number(tenant_id)
+
         client_q = await self.session.execute(
             select(ClientModel).where(ClientModel.id == client_id, ClientModel.tenant_id == tenant_id)
         )
@@ -207,7 +211,6 @@ class FinanceService:
         tax_amount = sum(d.get("tax_amount", 0) for d in lines_data)
         grand_total = subtotal + tax_amount
 
-        invoice_number = await self._next_invoice_number(tenant_id)
         invoice = InvoiceModel(
             tenant_id=tenant_id,
             invoice_number=invoice_number,
@@ -352,6 +355,8 @@ class FinanceService:
         notes: Optional[str] = None,
     ) -> PaymentModel:
         """Record a customer payment. Enforces: amount <= balance_due."""
+        payment_number = await self._next_payment_number(tenant_id)
+
         invoice = await self._get_invoice(tenant_id, invoice_id)
         balance = float(invoice.grand_total) - float(invoice.paid_amount)
 
@@ -360,7 +365,6 @@ class FinanceService:
         if amount > balance + 0.001:  # small tolerance for rounding
             raise ValueError(f"Payment amount ({amount}) exceeds balance due ({balance:.2f})")
 
-        payment_number = await self._next_payment_number(tenant_id)
         payment = PaymentModel(
             tenant_id=tenant_id,
             payment_number=payment_number,
@@ -452,12 +456,13 @@ class FinanceService:
         created_by: uuid.UUID,
         notes: Optional[str] = None,
     ) -> SupplierInvoiceModel:
+        invoice_number = await self._next_supplier_invoice_number(tenant_id)
+
         supplier_q = await self.session.execute(
             select(SupplierModel).where(SupplierModel.id == supplier_id, SupplierModel.tenant_id == tenant_id)
         )
         supplier = supplier_q.scalar_one()
 
-        invoice_number = await self._next_supplier_invoice_number(tenant_id)
         si = SupplierInvoiceModel(
             tenant_id=tenant_id,
             invoice_number=invoice_number,
@@ -504,6 +509,8 @@ class FinanceService:
         reference_number: Optional[str] = None,
         notes: Optional[str] = None,
     ) -> SupplierPaymentModel:
+        pay_number = await self._next_supplier_payment_number(tenant_id)
+
         si_q = await self.session.execute(
             select(SupplierInvoiceModel).where(
                 SupplierInvoiceModel.id == supplier_invoice_id,
@@ -519,7 +526,6 @@ class FinanceService:
         if amount > balance + 0.001:
             raise ValueError(f"Payment ({amount}) exceeds balance ({balance:.2f})")
 
-        pay_number = await self._next_supplier_payment_number(tenant_id)
         payment = SupplierPaymentModel(
             tenant_id=tenant_id,
             payment_number=pay_number,

@@ -45,6 +45,8 @@ export type Supplier = {
   address?: string | null
   gst?: string | null
   payment_terms?: string | null
+  performance_rating?: number | null
+  profile_completeness?: number
   is_active: boolean
 }
 
@@ -246,7 +248,16 @@ export const supplyChainApi = {
   supplierPortalPO: (id: string) =>
     withData(apiClient.get<PurchaseOrder>(`${BASE}/supplier/purchase-orders/${id}`), normalizePo),
   supplierAckPO: (id: string) => apiClient.put(`${BASE}/supplier/purchase-orders/${id}/acknowledge`),
+  supplierDashboard: () => apiClient.get<SupplierDashboard>(`${BASE}/supplier/dashboard`),
+  supplierProfile: () => apiClient.get<SupplierProfile>(`${BASE}/supplier/profile`),
+  supplierUpdateProfile: (body: SupplierProfileUpdateInput) =>
+    apiClient.put<SupplierProfile>(`${BASE}/supplier/profile`, body),
+  supplierCreateShipmentNotice: (poId: string, body: SupplierShipmentNoticeInput) =>
+    apiClient.post<SupplierReceipt>(`${BASE}/supplier/purchase-orders/${poId}/shipment-notices`, body),
   supplierQuotation: (body: Record<string, unknown>) => apiClient.post(`${BASE}/supplier/quotations`, body),
+  supplierListQuotations: () => apiClient.get<SupplierQuotation[]>(`${BASE}/supplier/quotations`),
+  supplierGetQuotation: (id: string) => apiClient.get<SupplierQuotation>(`${BASE}/supplier/quotations/${id}`),
+  supplierSubmitQuotation: (id: string) => apiClient.put(`${BASE}/supplier/quotations/${id}/submit`),
 
   // ── RFQ ─────────────────────────────────────────────────────────────────
   listRFQs: () => apiClient.get<RFQSummary[]>(`${BASE}/rfq`),
@@ -267,6 +278,32 @@ export const supplyChainApi = {
   supplierSubmitRFQQuote: (rfqId: string, body: Record<string, unknown>) =>
     apiClient.post<{ id: string }>(`${BASE}/supplier/rfq/${rfqId}/quote`, body),
   supplierOwnPerformance: () => apiClient.get<SupplierPerformance>(`${BASE}/supplier/performance`),
+  supplierListReceipts: (params?: PageParams) => {
+    const qs = new URLSearchParams()
+    if (params?.page) qs.set("page", String(params.page))
+    if (params?.page_size) qs.set("page_size", String(params.page_size))
+    const query = qs.toString() ? `?${qs.toString()}` : ""
+    return apiClient.get<PagedResponse<SupplierReceipt>>(`${BASE}/supplier/receipts${query}`)
+  },
+  supplierListInvoices: (params?: PageParams & { status?: string }) => {
+    const qs = new URLSearchParams()
+    if (params?.status) qs.set("status", params.status)
+    if (params?.page) qs.set("page", String(params.page))
+    if (params?.page_size) qs.set("page_size", String(params.page_size))
+    const query = qs.toString() ? `?${qs.toString()}` : ""
+    return apiClient.get<PagedResponse<SupplierInvoice>>(`${BASE}/supplier/invoices${query}`)
+  },
+  supplierGetInvoice: (invoiceId: string) =>
+    apiClient.get<SupplierInvoice>(`${BASE}/supplier/invoices/${invoiceId}`),
+  supplierCreateInvoice: (body: SupplierInvoiceInput) =>
+    apiClient.post<SupplierInvoice>(`${BASE}/supplier/invoices`, body),
+  supplierListPayments: (params?: PageParams) => {
+    const qs = new URLSearchParams()
+    if (params?.page) qs.set("page", String(params.page))
+    if (params?.page_size) qs.set("page_size", String(params.page_size))
+    const query = qs.toString() ? `?${qs.toString()}` : ""
+    return apiClient.get<PagedResponse<SupplierPayment>>(`${BASE}/supplier/payments${query}`)
+  },
   supplierDisputeInvoice: (invoiceId: string, body: { disputed_amount: number; reason: string }) =>
     apiClient.post<{ id: string; status: string }>(`${BASE}/supplier/invoices/${invoiceId}/dispute`, body),
   supplierGetInvoiceDisputes: (invoiceId: string) =>
@@ -276,6 +313,131 @@ export const supplyChainApi = {
 }
 
 // ── Additional types ─────────────────────────────────────────────────────────
+
+export type PageParams = {
+  page?: number
+  page_size?: number
+}
+
+export type PagedResponse<T> = {
+  items: T[]
+  total: number
+  page: number
+  pages: number
+}
+
+export type SupplierProfile = Supplier & {
+  changed_fields?: string[]
+}
+
+export type SupplierProfileUpdateInput = Pick<
+  Supplier,
+  "contact_person" | "email" | "phone" | "address" | "gst" | "payment_terms"
+>
+
+export type SupplierDashboard = {
+  supplier: SupplierProfile
+  purchase_orders: { by_status: Record<string, number>; total: number }
+  quotations: { by_status: Record<string, number>; total: number }
+  invoices: { by_status: Record<string, number>; total: number; outstanding: number }
+  receipts: { pending: number }
+  performance: { rating?: number | null }
+  recent_purchase_orders: PurchaseOrder[]
+  action_items: { type: string; label: string; count: number; href: string }[]
+}
+
+export type SupplierQuotation = {
+  id: string
+  supplier_id: string
+  purchase_order_id?: string | null
+  material_id: string
+  quantity: number
+  unit_price: number
+  valid_until?: string | null
+  status: string
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type SupplierReceiptLine = {
+  id: string
+  po_line_id: string
+  material_id: string
+  po_quantity: number
+  received_quantity: number
+  accepted_quantity: number
+  rejected_quantity: number
+  unit_price: number
+  remarks?: string | null
+}
+
+export type SupplierReceipt = {
+  id: string
+  grn_number: string
+  purchase_order_id: string
+  supplier_id: string
+  status: string
+  actual_receipt_date?: string | null
+  driver_name?: string | null
+  vehicle_number?: string | null
+  transport_company?: string | null
+  tracking_number?: string | null
+  remarks?: string | null
+  created_at?: string | null
+  lines: SupplierReceiptLine[]
+}
+
+export type SupplierShipmentNoticeInput = {
+  driver_name?: string
+  vehicle_number?: string
+  transport_company?: string
+  tracking_number?: string
+  remarks?: string
+  lines: { po_line_id: string; quantity: number; remarks?: string }[]
+}
+
+export type SupplierInvoice = {
+  id: string
+  invoice_number: string
+  supplier_invoice_ref?: string | null
+  purchase_order_id?: string | null
+  supplier_id: string
+  supplier_name: string
+  status: string
+  invoice_date?: string | null
+  due_date?: string | null
+  subtotal: number
+  tax_amount: number
+  grand_total: number
+  paid_amount: number
+  balance_due: number
+  notes?: string | null
+  created_at?: string | null
+}
+
+export type SupplierInvoiceInput = {
+  purchase_order_id?: string
+  supplier_invoice_ref?: string
+  invoice_date: string
+  due_date: string
+  subtotal: number
+  tax_amount?: number
+  grand_total: number
+  notes?: string
+}
+
+export type SupplierPayment = {
+  id: string
+  payment_number: string
+  supplier_invoice_id: string
+  supplier_id: string
+  amount: number
+  payment_date?: string | null
+  payment_method?: string | null
+  reference_number?: string | null
+  notes?: string | null
+  created_at?: string | null
+}
 
 export type RFQLine = {
   id: string
