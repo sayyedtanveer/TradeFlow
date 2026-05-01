@@ -165,3 +165,104 @@ async def test_supplier_portal_flow_lists_and_acknowledges_pos(async_client, tok
     )
     assert refreshed_detail_response.status_code == 200
     assert refreshed_detail_response.json()["status"] == "acknowledged"
+
+
+async def test_admin_can_regenerate_supplier_user_temporary_password(async_client, token_headers):
+    admin_headers = _build_admin_headers(token_headers)
+    supplier_resp = await async_client.post(
+        "/api/v1/suppliers",
+        json={"code": f"SUP-{uuid.uuid4().hex[:8]}", "name": "Password Reset Supplier"},
+        headers=admin_headers,
+    )
+    assert supplier_resp.status_code == 201
+    supplier_id = supplier_resp.json()["id"]
+    email = f"supplier-reset-{uuid.uuid4().hex[:8]}@example.com"
+
+    user_resp = await async_client.post(
+        "/api/v1/users",
+        json={
+            "email": email,
+            "first_name": "Reset",
+            "last_name": "Supplier",
+            "role": "supplier",
+            "is_active": True,
+            "supplier_id": supplier_id,
+        },
+        headers=admin_headers,
+    )
+    assert user_resp.status_code == 201
+    user_body = user_resp.json()
+
+    reset_resp = await async_client.post(
+        f"/api/v1/users/{user_body['id']}/temporary-password",
+        headers=admin_headers,
+    )
+    assert reset_resp.status_code == 200
+    reset_body = reset_resp.json()
+    assert reset_body["email"] == email
+    assert reset_body["supplier_id"] == supplier_id
+    assert reset_body["temporary_password"]
+    assert reset_body["temporary_password"] != user_body["temporary_password"]
+
+    login_resp = await async_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": reset_body["temporary_password"],
+            "tenant_id": token_headers["X-Tenant-ID"],
+        },
+    )
+    assert login_resp.status_code == 200
+    assert login_resp.json()["role"] == "supplier"
+
+
+async def test_supplier_user_can_reset_password_from_main_login_flow(async_client, token_headers):
+    admin_headers = _build_admin_headers(token_headers)
+    supplier_resp = await async_client.post(
+        "/api/v1/suppliers",
+        json={"code": f"SUP-{uuid.uuid4().hex[:8]}", "name": "Forgot Password Supplier"},
+        headers=admin_headers,
+    )
+    assert supplier_resp.status_code == 201
+    supplier_id = supplier_resp.json()["id"]
+    email = f"supplier-forgot-{uuid.uuid4().hex[:8]}@example.com"
+
+    user_resp = await async_client.post(
+        "/api/v1/users",
+        json={
+            "email": email,
+            "first_name": "Forgot",
+            "last_name": "Supplier",
+            "role": "supplier",
+            "is_active": True,
+            "supplier_id": supplier_id,
+        },
+        headers=admin_headers,
+    )
+    assert user_resp.status_code == 201
+
+    request_resp = await async_client.post(
+        "/api/v1/forgot-password/request",
+        json={"email": email},
+    )
+    assert request_resp.status_code == 200
+    reset_token = request_resp.json()["reset_token"]
+    assert reset_token
+
+    new_password = "SupplierReset123!"
+    reset_resp = await async_client.post(
+        "/api/v1/forgot-password/reset",
+        json={"token": reset_token, "new_password": new_password},
+    )
+    assert reset_resp.status_code == 200
+
+    login_resp = await async_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": new_password,
+            "tenant_id": token_headers["X-Tenant-ID"],
+        },
+    )
+    assert login_resp.status_code == 200
+    assert login_resp.json()["role"] == "supplier"

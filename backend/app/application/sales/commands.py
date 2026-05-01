@@ -16,6 +16,7 @@ class CreateSalesOrderCommand:
     delivery_date: date
     created_by: str
     notes: str | None = None
+    approver_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,37 @@ class ApplyDiscountToOrderCommand:
     tenant_id: UUID
     sales_order_id: UUID
     discount_amount: Decimal
+
+
+@dataclass(frozen=True)
+class SubmitSalesOrderForApprovalCommand:
+    """Submit a draft sales order for manager approval."""
+
+    tenant_id: UUID
+    sales_order_id: UUID
+    submitted_by: str
+    approver_id: UUID | None = None
+    notes: str | None = None
+
+
+@dataclass(frozen=True)
+class ApproveSalesOrderCommand:
+    """Approve a sales order before execution."""
+
+    tenant_id: UUID
+    sales_order_id: UUID
+    approver_id: UUID
+    notes: str | None = None
+
+
+@dataclass(frozen=True)
+class RejectSalesOrderCommand:
+    """Reject a submitted sales order."""
+
+    tenant_id: UUID
+    sales_order_id: UUID
+    approver_id: UUID
+    notes: str | None = None
 
 
 @dataclass(frozen=True)

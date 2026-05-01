@@ -1,6 +1,6 @@
 import { type FormEvent, useMemo, useState } from "react"
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
-import { Bell, CreditCard, Headset, LayoutDashboard, LogOut, Menu, Package2, ReceiptText, RefreshCcw, UserCircle2, X } from "lucide-react"
+import { Bell, CreditCard, Headset, LayoutDashboard, LogOut, Menu, Package2, PlusCircle, ReceiptText, RefreshCcw, UserCircle2, X } from "lucide-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useAuthStore } from "@/app/store/authStore"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,7 @@ import { clientService } from "../services/client.service"
 const navItems = [
   { label: "Dashboard", to: "/client", icon: LayoutDashboard },
   { label: "My Orders", to: "/client/orders", icon: Package2 },
+  { label: "New Order", to: "/client/orders/new", icon: PlusCircle },
   { label: "Invoices", to: "/client/invoices", icon: ReceiptText },
   { label: "Reorder", to: "/client/reorder", icon: RefreshCcw },
   { label: "Credit Status", to: "/client/credit", icon: CreditCard },
@@ -27,7 +28,7 @@ const navItems = [
   { label: "Support", to: "/client/support", icon: Headset },
 ]
 
-const mobileNavItems = [navItems[0], navItems[1], navItems[2], navItems[5]]
+const mobileNavItems = [navItems[0], navItems[1], navItems[3], navItems[6]]
 
 export default function ClientLayout() {
   const navigate = useNavigate()

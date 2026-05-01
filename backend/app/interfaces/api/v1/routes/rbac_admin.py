@@ -4,21 +4,41 @@ Provides endpoints for managing roles, permissions, and audit logging.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from typing import Dict, List
+from typing import List
 import uuid
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_tenant_id,
     get_current_user_id,
     get_current_role,
 )
-from backend.app.interfaces.api.v1.dependencies.permissions import require_role
-from backend.app.domain.tenant.value_objects.role import Role
-from backend.app.domain.shared.permissions import ROLE_PERMISSIONS, Permission
-from backend.app.infrastructure.persistence.repositories.user_repository import UserRepository
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
+from backend.app.application.rbac.service import (
+    all_permission_values,
+    create_role,
+    default_permissions_for_role,
+    get_effective_role_permissions,
+    list_roles,
+    update_role_permissions,
+)
+from backend.app.domain.shared.permissions import Permission
+from backend.app.infrastructure.persistence.models.user_model import UserModel
 from backend.app.interfaces.api.v1.dependencies.auth import get_container
 
 router = APIRouter(prefix="/admin/rbac", tags=["Admin - RBAC"])
+
+
+class RoleCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=50, pattern=r"^[a-z][a-z0-9_]{1,49}$")
+    label: str | None = Field(default=None, max_length=100)
+    description: str | None = None
+    permissions: List[str] = Field(min_length=1)
+
+
+class RolePermissionsUpdateRequest(BaseModel):
+    permissions: List[str] = Field(min_length=1)
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -28,50 +48,97 @@ router = APIRouter(prefix="/admin/rbac", tags=["Admin - RBAC"])
 @router.get(
     "/roles",
     summary="List all roles with permissions",
-    dependencies=[Depends(require_role(Role.ADMIN))],
+    dependencies=[Depends(require_permission("rbac:read"))],
 )
-async def list_all_roles():
+async def list_all_roles(
+    request: Request,
+    current_tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
     """
     Return all roles and their permissions.
     
     Only accessible by ADMIN.
     """
-    result = {}
-    for role, perms in ROLE_PERMISSIONS.items():
-        result[role] = {
-            "permissions": sorted(list(perms)),
-            "permission_count": len(perms),
-        }
+    container = get_container(request)
+    async with container.session_factory() as session:
+        roles = await list_roles(session, current_tenant_id)
     
     return {
-        "roles": result,
-        "total_roles": len(result),
+        "roles": {role["name"]: role for role in roles},
+        "items": roles,
+        "total_roles": len(roles),
     }
 
 
 @router.get(
     "/roles/{role_name}/permissions",
     summary="Get permissions for a specific role",
-    dependencies=[Depends(require_role(Role.ADMIN))],
+    dependencies=[Depends(require_permission("rbac:read"))],
 )
-async def get_role_permissions(role_name: str):
+async def get_role_permissions(
+    role_name: str,
+    request: Request,
+    current_tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
     """Get detailed permissions for a specific role."""
-    role_name_lower = role_name.lower()
-    
-    if role_name_lower not in ROLE_PERMISSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Role '{role_name}' not found"
-        )
-    
-    perms = ROLE_PERMISSIONS[role_name_lower]
+    container = get_container(request)
+    async with container.session_factory() as session:
+        effective = await get_effective_role_permissions(session, current_tenant_id, role_name)
+    if not effective.permissions and not default_permissions_for_role(role_name):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{role_name}' not found")
     
     return {
-        "role": role_name,
-        "permissions": sorted(list(perms)),
-        "permission_count": len(perms),
-        "has_all_permissions": Permission.ALL in perms,
+        "role": effective.role,
+        "permissions": sorted(effective.permissions),
+        "permission_count": len(effective.permissions),
+        "has_all_permissions": effective.has_all,
+        "source": effective.source,
     }
+
+
+@router.post(
+    "/roles",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a tenant role",
+    dependencies=[Depends(require_permission("rbac:write"))],
+)
+async def create_tenant_role(
+    body: RoleCreateRequest,
+    request: Request,
+    current_tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        try:
+            return await create_role(
+                session,
+                current_tenant_id,
+                name=body.name,
+                label=body.label,
+                description=body.description,
+                permissions=body.permissions,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.put(
+    "/roles/{role_name}/permissions",
+    summary="Replace permissions for a role",
+    dependencies=[Depends(require_permission("rbac:write"))],
+)
+async def replace_role_permissions(
+    role_name: str,
+    body: RolePermissionsUpdateRequest,
+    request: Request,
+    current_tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        try:
+            return await update_role_permissions(session, current_tenant_id, role_name, body.permissions)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -81,11 +148,11 @@ async def get_role_permissions(role_name: str):
 @router.get(
     "/permissions",
     summary="List all available permissions",
-    dependencies=[Depends(require_role(Role.ADMIN))],
+    dependencies=[Depends(require_permission("rbac:read"))],
 )
 async def list_all_permissions():
     """Return all available permissions in the system."""
-    perms = [p.value for p in Permission]
+    perms = all_permission_values()
     
     return {
         "permissions": sorted(perms),
@@ -101,7 +168,7 @@ async def list_all_permissions():
 @router.get(
     "/users/{user_id}/permissions",
     summary="Get effective permissions for a user",
-    dependencies=[Depends(require_role(Role.ADMIN))],
+    dependencies=[Depends(require_permission("rbac:read"))],
 )
 async def get_user_permissions(
     user_id: str,
@@ -127,8 +194,13 @@ async def get_user_permissions(
         )
     
     async with container.session_factory() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_id(user_uuid)
+        user = await session.scalar(
+            select(UserModel).where(
+                UserModel.id == user_uuid,
+                UserModel.tenant_id == current_tenant_id,
+                UserModel.is_deleted.is_(False),
+            )
+        )
         
         if not user:
             raise HTTPException(
@@ -136,30 +208,24 @@ async def get_user_permissions(
                 detail="User not found"
             )
         
-        if user.tenant_id != current_tenant_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="User belongs to different tenant"
-            )
-        
-        role_str = user.role.value
-        perms = ROLE_PERMISSIONS.get(role_str, frozenset())
+        effective = await get_effective_role_permissions(session, current_tenant_id, user.role)
         
         return {
             "user_id": str(user.id),
-            "email": str(user.email),
-            "role": role_str,
+            "email": user.email,
+            "role": effective.role,
             "is_active": user.is_active,
-            "permissions": sorted(list(perms)),
-            "permission_count": len(perms),
-            "has_all_permissions": Permission.ALL in perms,
+            "permissions": sorted(effective.permissions),
+            "permission_count": len(effective.permissions),
+            "has_all_permissions": effective.has_all,
+            "source": effective.source,
         }
 
 
 @router.post(
     "/users/{user_id}/change-role",
     summary="Change a user's role",
-    dependencies=[Depends(require_role(Role.ADMIN))],
+    dependencies=[Depends(require_permission("user:write"))],
 )
 async def change_user_role(
     user_id: str,
@@ -187,14 +253,7 @@ async def change_user_role(
             detail="Cannot change your own role"
         )
     
-    # Validate new role
-    try:
-        new_role_enum = Role(new_role.lower())
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid role '{new_role}'"
-        )
+    new_role_name = new_role.strip().lower()
     
     try:
         user_uuid = uuid.UUID(user_id)
@@ -205,8 +264,13 @@ async def change_user_role(
         )
     
     async with container.session_factory() as session:
-        user_repo = UserRepository(session)
-        user = await user_repo.get_by_id(user_uuid)
+        user = await session.scalar(
+            select(UserModel).where(
+                UserModel.id == user_uuid,
+                UserModel.tenant_id == current_tenant_id,
+                UserModel.is_deleted.is_(False),
+            )
+        )
         
         if not user:
             raise HTTPException(
@@ -214,15 +278,14 @@ async def change_user_role(
                 detail="User not found"
             )
         
-        if user.tenant_id != current_tenant_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="User belongs to different tenant"
-            )
-        
+        effective = await get_effective_role_permissions(session, current_tenant_id, new_role_name)
+        if not effective.permissions and new_role_name != Permission.ALL.value:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Role '{new_role}' does not exist")
+
         old_role = user.role
-        user.change_role(new_role_enum)
-        await user_repo.save(user)
+        user.role = new_role_name
+        await session.commit()
+        await session.refresh(user)
         
         # Log to audit trail
         import logging
@@ -231,17 +294,17 @@ async def change_user_role(
             "event": "ROLE_CHANGE",
             "admin_id": str(current_user_id),
             "user_id": str(user.id),
-            "old_role": old_role.value,
-            "new_role": new_role,
+            "old_role": old_role,
+            "new_role": new_role_name,
             "timestamp": str(__import__('datetime').datetime.utcnow()),
         })
     
     return {
         "user_id": str(user.id),
         "email": str(user.email),
-        "old_role": old_role.value,
-        "new_role": new_role,
-        "message": f"Role changed from {old_role.value} to {new_role}",
+        "old_role": old_role,
+        "new_role": new_role_name,
+        "message": f"Role changed from {old_role} to {new_role_name}",
     }
 
 
@@ -252,7 +315,7 @@ async def change_user_role(
 @router.get(
     "/audit-log",
     summary="Get permission denial audit log",
-    dependencies=[Depends(require_role(Role.ADMIN))],
+    dependencies=[Depends(require_permission("audit:read"))],
 )
 async def get_audit_log(
     limit: int = 100,
@@ -287,7 +350,7 @@ async def get_audit_log(
 @router.get(
     "/audit-log/permission-denials",
     summary="Get all 403 permission denial events",
-    dependencies=[Depends(require_role(Role.ADMIN))],
+    dependencies=[Depends(require_permission("audit:read"))],
 )
 async def get_permission_denials(
     user_id: str = None,
@@ -325,6 +388,7 @@ async def get_permission_denials(
     summary="Get RBAC system status",
 )
 async def get_rbac_status(
+    request: Request,
     current_user_id: uuid.UUID = Depends(get_current_user_id),
     current_tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     current_role: str = Depends(get_current_role),
@@ -334,7 +398,10 @@ async def get_rbac_status(
     
     Accessible by all authenticated users.
     """
-    user_perms = ROLE_PERMISSIONS.get(current_role, frozenset())
+    container = get_container(request)
+    async with container.session_factory() as session:
+        effective = await get_effective_role_permissions(session, current_tenant_id, current_role)
+        roles = await list_roles(session, current_tenant_id)
     
     return {
         "current_user": {
@@ -343,12 +410,13 @@ async def get_rbac_status(
             "role": current_role,
         },
         "effective_permissions": {
-            "count": len(user_perms),
-            "has_all": Permission.ALL in user_perms,
+            "count": len(effective.permissions),
+            "has_all": effective.has_all,
+            "source": effective.source,
         },
         "rbac_system": {
-            "total_roles": len(ROLE_PERMISSIONS),
-            "total_permissions": len([p for p in Permission]),
+            "total_roles": len(roles),
+            "total_permissions": len(all_permission_values()),
             "audit_logging": "ENABLED",
             "status": "ACTIVE",
         },

@@ -192,6 +192,10 @@ class BulkOperationResponse(BaseModel):
     message: str
 
 
+class VariantIdsRequest(BaseModel):
+    variant_ids: List[uuid.UUID] = Field(default_factory=list)
+
+
 class VariantTemplateCsvResponse(BaseModel):
     csv_content: str
     file_name: str = "variant_import_template.csv"

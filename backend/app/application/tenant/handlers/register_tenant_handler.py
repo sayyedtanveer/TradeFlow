@@ -94,7 +94,7 @@ class RegisterTenantHandler(ICommandHandler[RegisterTenantCommand, RegisterTenan
         access_token = self._jwt_handler.create_access_token(
             user_id=str(user.id),
             tenant_id=str(tenant.id),
-            role=user.role.value,
+            role=user.role,
         )
 
         return RegisterTenantResult(
@@ -103,6 +103,6 @@ class RegisterTenantHandler(ICommandHandler[RegisterTenantCommand, RegisterTenan
             slug=tenant.slug,
             user_id=str(user.id),
             email=command.admin_email,
-            role=user.role.value,
+            role=user.role,
             access_token=access_token,
         )

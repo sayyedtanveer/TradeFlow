@@ -9,21 +9,46 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { TableSkeleton } from '@/components/shared/LoadingSkeleton';
 import { clientsApi } from '@/services/sales.service';
+import { usersService } from '@/services/users.service';
 import { SalesClient } from '@/types/sales.types';
-import { Plus, Edit2, IndianRupee } from 'lucide-react';
+import type { User } from '@/types/auth.types';
+import { Plus, Edit2, IndianRupee, KeyRound, Copy, Check } from 'lucide-react';
 import { formatCurrency } from '@/utils/currency';
+import { useToast } from '@/hooks/use-toast';
+import { useAuthStore } from '@/app/store/authStore';
+
+type PortalCredentials = {
+  email: string;
+  password: string;
+};
+
+const clientUserName = (client: SalesClient) => {
+  const parts = client.name.split(/\s+/).filter(Boolean);
+  return {
+    first_name: parts[0] || 'Client',
+    last_name: parts.slice(1).join(' ') || 'Portal',
+  };
+};
 
 export default function ClientsListPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const tenantId = useAuthStore((state) => state.tenant_id);
+  const clientLoginUrl = `${window.location.origin}/client/login`;
   const [clients, setClients] = useState<SalesClient[]>([]);
+  const [clientUsers, setClientUsers] = useState<User[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
+  const [portalCredentials, setPortalCredentials] = useState<PortalCredentials | null>(null);
+  const [copiedCredentials, setCopiedCredentials] = useState(false);
+  const [portalSavingClientId, setPortalSavingClientId] = useState<string | null>(null);
 
   useEffect(() => {
     const loadClients = async () => {
@@ -43,6 +68,102 @@ export default function ClientsListPage() {
 
     loadClients();
   }, [currentPage, pageSize, search]);
+
+  useEffect(() => {
+    usersService
+      .getUsers({ role: 'client' })
+      .then(setClientUsers)
+      .catch(() => toast({ title: 'Failed to load client portal users', variant: 'destructive' }));
+  }, [toast]);
+
+  const refreshClientUsers = async () => {
+    setClientUsers(await usersService.getUsers({ role: 'client' }));
+  };
+
+  const clientUserByClientId = new Map(
+    clientUsers
+      .filter((user) => user.client_id)
+      .map((user) => [user.client_id as string, user])
+  );
+
+  const copyPortalCredentials = async () => {
+    if (!portalCredentials) return;
+
+    await navigator.clipboard.writeText(
+      [
+        'Client portal login',
+        `URL: ${clientLoginUrl}`,
+        `Email: ${portalCredentials.email}`,
+        tenantId ? `Tenant ID: ${tenantId}` : null,
+        `Temporary password: ${portalCredentials.password}`,
+      ].filter(Boolean).join('\n')
+    );
+    setCopiedCredentials(true);
+    setTimeout(() => setCopiedCredentials(false), 2000);
+  };
+
+  const createPortalLogin = async (client: SalesClient) => {
+    if (!client.email) {
+      toast({ title: 'Client email is required before creating portal login', variant: 'destructive' });
+      return;
+    }
+
+    const names = clientUserName(client);
+    try {
+      setPortalSavingClientId(client.id);
+      const createdUser = await usersService.createUser({
+        email: client.email,
+        first_name: names.first_name,
+        last_name: names.last_name,
+        role: 'client',
+        client_id: client.id,
+        is_active: true,
+      });
+
+      if (createdUser.temporary_password) {
+        setPortalCredentials({
+          email: createdUser.email,
+          password: createdUser.temporary_password,
+        });
+      }
+      await refreshClientUsers();
+      toast({
+        title: 'Client portal login created',
+        description: 'Copy the temporary password and share it securely with the client.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Portal login failed',
+        description: error?.response?.data?.detail || error?.message || 'Unable to create client portal login',
+        variant: 'destructive',
+      });
+    } finally {
+      setPortalSavingClientId(null);
+    }
+  };
+
+  const resetPortalPassword = async (client: SalesClient, clientUser: User) => {
+    try {
+      setPortalSavingClientId(client.id);
+      const response = await usersService.resetTemporaryPassword(clientUser.id);
+      setPortalCredentials({
+        email: response.email,
+        password: response.temporary_password,
+      });
+      toast({
+        title: 'Temporary password regenerated',
+        description: "Copy it now. The client's previous password will no longer work.",
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Password reset failed',
+        description: error?.response?.data?.detail || error?.message || 'Unable to reset client password',
+        variant: 'destructive',
+      });
+    } finally {
+      setPortalSavingClientId(null);
+    }
+  };
 
   const getCreditUsagePercent = (client: SalesClient) => {
     if (client.credit_limit === 0) return 0;
@@ -97,6 +218,42 @@ export default function ClientsListPage() {
         </div>
       )}
 
+      {portalCredentials && (
+        <Alert className="border-green-200 bg-green-50 text-green-950">
+          <KeyRound className="h-4 w-4" />
+          <AlertTitle>Client portal credentials ready</AlertTitle>
+          <AlertDescription>
+            <div className="mt-2 space-y-2">
+              <p>The password is shown only once. Copy and share it securely with the client.</p>
+              <div className="rounded-md border bg-white p-3 text-sm">
+                <div>
+                  <span className="font-medium">Login URL:</span>{' '}
+                  <a className="text-blue-700 underline" href="/client/login">
+                    {clientLoginUrl}
+                  </a>
+                </div>
+                <div>
+                  <span className="font-medium">Email:</span> {portalCredentials.email}
+                </div>
+                {tenantId && (
+                  <div>
+                    <span className="font-medium">Tenant ID:</span> {tenantId}
+                  </div>
+                )}
+                <div>
+                  <span className="font-medium">Temporary password:</span>{' '}
+                  <code>{portalCredentials.password}</code>
+                </div>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={copyPortalCredentials}>
+                {copiedCredentials ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                {copiedCredentials ? 'Copied' : 'Copy credentials'}
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Clients Table */}
       <Card>
         <CardHeader>
@@ -124,6 +281,7 @@ export default function ClientsListPage() {
                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Name</th>
                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Email</th>
                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Credit Usage</th>
+                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Portal Access</th>
                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
                     <th className="px-4 py-3 text-right font-semibold text-gray-700">Actions</th>
                   </tr>
@@ -131,6 +289,8 @@ export default function ClientsListPage() {
                 <tbody>
                   {clients.map((client) => {
                     const usagePercent = getCreditUsagePercent(client);
+                    const clientUser = clientUserByClientId.get(client.id);
+                    const portalActionLoading = portalSavingClientId === client.id;
                     return (
                       <tr key={client.id} className="border-b hover:bg-gray-50">
                         <td className="px-4 py-3 font-medium">{client.code}</td>
@@ -142,6 +302,29 @@ export default function ClientsListPage() {
                             {formatCurrency(client.credit_used)} / {formatCurrency(client.credit_limit)}
                             ({usagePercent.toFixed(0)}%)
                           </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {clientUser ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => resetPortalPassword(client, clientUser)}
+                              disabled={portalActionLoading}
+                            >
+                              <KeyRound className="mr-2 h-4 w-4" />
+                              {portalActionLoading ? 'Generating...' : 'Reset password'}
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => createPortalLogin(client)}
+                              disabled={portalActionLoading || !client.email}
+                            >
+                              <KeyRound className="mr-2 h-4 w-4" />
+                              {portalActionLoading ? 'Creating...' : 'Create login'}
+                            </Button>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <Badge className={client.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>

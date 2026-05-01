@@ -8,13 +8,17 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import func, select
 
 from backend.app.domain.sales.repositories.client_repository import ClientRepository
 from backend.app.domain.sales.repositories.sales_order_repository import SalesOrderRepository
 from backend.app.domain.sales.repositories.price_list_repository import PriceListRepository
+from backend.app.infrastructure.persistence.models.sales_models import ClientModel
+from backend.app.infrastructure.persistence.models.user_model import UserModel
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
 from backend.app.interfaces.api.v1.dependencies.auth import (
     get_container,
+    get_current_role,
     get_current_tenant_id,
     get_current_user_id,
 )
@@ -34,6 +38,7 @@ from backend.app.interfaces.api.sales.schemas import (
     SalesOrderListResponse,
     SalesOrderLineCreateRequest,
     ApplyDiscountRequest,
+    ApprovalActionRequest,
     ConfirmOrderRequest,
     ShipOrderRequest,
     CancelOrderRequest,
@@ -52,6 +57,9 @@ from backend.app.application.sales import (
     AddLineToSalesOrderCommand,
     RemoveLineFromSalesOrderCommand,
     ApplyDiscountToOrderCommand,
+    SubmitSalesOrderForApprovalCommand,
+    ApproveSalesOrderCommand,
+    RejectSalesOrderCommand,
     ConfirmSalesOrderCommand,
     CancelSalesOrderCommand,
     ShipOrderCommand,
@@ -83,6 +91,9 @@ from backend.app.application.sales import (
     AddLineToSalesOrderCommandHandler,
     RemoveLineFromSalesOrderCommandHandler,
     ApplyDiscountToOrderCommandHandler,
+    SubmitSalesOrderForApprovalCommandHandler,
+    ApproveSalesOrderCommandHandler,
+    RejectSalesOrderCommandHandler,
     ConfirmSalesOrderCommandHandler,
     CancelSalesOrderCommandHandler,
     ShipOrderCommandHandler,
@@ -106,6 +117,87 @@ from backend.app.application.sales import (
 # Create router
 router = APIRouter(prefix="/sales", tags=["sales"])
 logger = logging.getLogger(__name__)
+APPROVER_ROLES = ("manager", "admin", "tenant_admin")
+
+
+def _normalize_email(email: Optional[str]) -> Optional[str]:
+    cleaned = (email or "").strip().lower()
+    return cleaned or None
+
+
+async def _ensure_client_email_available(
+    session,
+    tenant_id: UUID,
+    email: Optional[str],
+    exclude_client_id: Optional[UUID] = None,
+) -> Optional[str]:
+    normalized_email = _normalize_email(email)
+    if not normalized_email:
+        return None
+
+    existing_users = (
+        await session.execute(
+            select(UserModel).where(
+                UserModel.tenant_id == tenant_id,
+                UserModel.is_deleted.is_(False),
+                func.lower(UserModel.email) == normalized_email,
+            )
+        )
+    ).scalars().all()
+
+    for user in existing_users:
+        if exclude_client_id and user.client_id == exclude_client_id:
+            continue
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already exists as a user login. Use a different client email or link the existing user to this client.",
+        )
+
+    client_stmt = select(ClientModel.id).where(
+        ClientModel.tenant_id == tenant_id,
+        ClientModel.is_deleted.is_(False),
+        func.lower(ClientModel.email) == normalized_email,
+    )
+    if exclude_client_id:
+        client_stmt = client_stmt.where(ClientModel.id != exclude_client_id)
+
+    existing_client_id = (await session.execute(client_stmt)).scalar_one_or_none()
+    if existing_client_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already exists for another client.",
+        )
+
+    return normalized_email
+
+
+async def _resolve_order_approver_id(session, tenant_id: UUID) -> Optional[UUID]:
+    """Find the best available approver from tenant users."""
+    for role in APPROVER_ROLES:
+        approver_id = (
+            await session.execute(
+                select(UserModel.id)
+                .where(
+                    UserModel.tenant_id == tenant_id,
+                    UserModel.role == role,
+                    UserModel.is_active.is_(True),
+                    UserModel.is_deleted.is_(False),
+                )
+                .order_by(UserModel.created_at.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if approver_id:
+            return approver_id
+    return None
+
+
+def _ensure_order_approver_role(role: str) -> None:
+    if (role or "").lower() not in APPROVER_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only manager/admin users can approve or reject sales orders",
+        )
 
 
 # ==================== CLIENT ENDPOINTS ====================
@@ -124,12 +216,13 @@ async def create_client(
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
         handler = CreateClientCommandHandler(client_repo, uow)
         try:
+            email = await _ensure_client_email_available(session, tenant_id, body.email)
             client_id = await handler.handle(
                 CreateClientCommand(
                     tenant_id=tenant_id,
                     code=body.code,
                     name=body.name,
-                    email=body.email,
+                    email=email,
                     phone=body.phone,
                     address=body.address,
                     gst_number=body.gst_number,
@@ -139,6 +232,8 @@ async def create_client(
             )
             client = await client_repo.get_by_id(UUID(str(client_id)), tenant_id)
             return client.to_dict() if client else None
+        except HTTPException:
+            raise
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
@@ -217,12 +312,13 @@ async def update_client(
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
         handler = UpdateClientCommandHandler(client_repo, uow)
         try:
+            email = await _ensure_client_email_available(session, tenant_id, body.email, client_id)
             await handler.handle(
                 UpdateClientCommand(
                     tenant_id=tenant_id,
                     client_id=client_id,
                     name=body.name,
-                    email=body.email,
+                    email=email,
                     phone=body.phone,
                     address=body.address,
                     gst_number=body.gst_number,
@@ -232,6 +328,8 @@ async def update_client(
             )
             client = await client_repo.get_by_id(client_id, tenant_id)
             return client.to_dict() if client else None
+        except HTTPException:
+            raise
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
@@ -309,6 +407,7 @@ async def create_order(
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
         handler = CreateSalesOrderCommandHandler(order_repo, uow)
         try:
+            approver_id = await _resolve_order_approver_id(session, tenant_id)
             order_id = await handler.handle(
                 CreateSalesOrderCommand(
                     tenant_id=tenant_id,
@@ -317,6 +416,7 @@ async def create_order(
                     delivery_date=body.delivery_date,
                     created_by=str(user_id),
                     notes=body.notes,
+                    approver_id=approver_id,
                 )
             )
             order = await order_repo.get_by_id(UUID(str(order_id)), tenant_id)
@@ -554,6 +654,136 @@ async def apply_discount(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Discount application failed")
 
 
+@router.post("/orders/{order_id}/submit-approval", response_model=SalesOrderResponse)
+async def submit_order_for_approval(
+    order_id: UUID,
+    body: ApprovalActionRequest,
+    request: Request,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """Submit a draft order to the manager/admin approval queue."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        order_repo = SalesOrderRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        handler = SubmitSalesOrderForApprovalCommandHandler(order_repo, uow)
+        try:
+            approver_id = await _resolve_order_approver_id(session, tenant_id)
+            await handler.handle(
+                SubmitSalesOrderForApprovalCommand(
+                    tenant_id=tenant_id,
+                    sales_order_id=order_id,
+                    submitted_by=str(user_id),
+                    approver_id=approver_id,
+                    notes=body.notes,
+                )
+            )
+            order = await order_repo.get_by_id(order_id, tenant_id)
+            return order.to_dict() if order else None
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        except Exception as e:
+            logger.exception(f"Error submitting order {order_id} for approval: {str(e)}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Approval submission failed")
+
+
+@router.post("/orders/{order_id}/approve", response_model=SalesOrderResponse)
+async def approve_order(
+    order_id: UUID,
+    body: ApprovalActionRequest,
+    request: Request,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    user_id: UUID = Depends(get_current_user_id),
+    role: str = Depends(get_current_role),
+):
+    """Approve an order and immediately start execution."""
+    _ensure_order_approver_role(role)
+    container = get_container(request)
+    async with container.session_factory() as session:
+        order_repo = SalesOrderRepository(session)
+        client_repo = ClientRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        approve_handler = ApproveSalesOrderCommandHandler(order_repo, uow)
+
+        from backend.app.domain.sales.services.credit_validation_service import CreditValidationService
+        from backend.app.domain.sales.services.inventory_reservation_service import InventoryReservationService
+        from backend.app.application.sales.manufacturing_integration import SalesManufacturingIntegrationService
+        from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
+        from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
+        from backend.app.application.manufacturing.services.inventory_service import InventoryService as StockInventoryService
+
+        credit_service = CreditValidationService(client_repo)
+        stock_inventory = StockInventoryService(session)
+        wo_handler = WorkOrderHandler(session).with_uow(uow)
+        inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
+        mfg_integ = SalesManufacturingIntegrationService(
+            wo_handler,
+            uow,
+            created_by=user_id,
+        ).with_event_dispatcher(container.event_dispatcher)
+        inv_service = InventoryReservationService(inv_integ, mfg_integ)
+        confirm_handler = ConfirmSalesOrderCommandHandler(order_repo, client_repo, credit_service, inv_service, uow)
+
+        try:
+            await approve_handler.handle(
+                ApproveSalesOrderCommand(
+                    tenant_id=tenant_id,
+                    sales_order_id=order_id,
+                    approver_id=user_id,
+                    notes=body.notes,
+                )
+            )
+            await confirm_handler.handle(
+                ConfirmSalesOrderCommand(
+                    tenant_id=tenant_id,
+                    sales_order_id=order_id,
+                    confirmed_by=str(user_id),
+                )
+            )
+            order = await order_repo.get_by_id(order_id, tenant_id)
+            return order.to_dict() if order else None
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        except Exception as e:
+            logger.exception(f"Error approving order {order_id}: {str(e)}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Approval failed")
+
+
+@router.post("/orders/{order_id}/reject", response_model=SalesOrderResponse)
+async def reject_order(
+    order_id: UUID,
+    body: ApprovalActionRequest,
+    request: Request,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    user_id: UUID = Depends(get_current_user_id),
+    role: str = Depends(get_current_role),
+):
+    """Reject a submitted order and stop execution."""
+    _ensure_order_approver_role(role)
+    container = get_container(request)
+    async with container.session_factory() as session:
+        order_repo = SalesOrderRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        handler = RejectSalesOrderCommandHandler(order_repo, uow)
+        try:
+            await handler.handle(
+                RejectSalesOrderCommand(
+                    tenant_id=tenant_id,
+                    sales_order_id=order_id,
+                    approver_id=user_id,
+                    notes=body.notes,
+                )
+            )
+            order = await order_repo.get_by_id(order_id, tenant_id)
+            return order.to_dict() if order else None
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        except Exception as e:
+            logger.exception(f"Error rejecting order {order_id}: {str(e)}")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Rejection failed")
+
+
 @router.post("/orders/{order_id}/confirm", response_model=SalesOrderResponse)
 async def confirm_order(
     order_id: UUID,
@@ -580,7 +810,11 @@ async def confirm_order(
         stock_inventory = StockInventoryService(session)
         wo_handler = WorkOrderHandler(session).with_uow(uow)
         inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
-        mfg_integ = SalesManufacturingIntegrationService(wo_handler, uow).with_event_dispatcher(container.event_dispatcher)
+        mfg_integ = SalesManufacturingIntegrationService(
+            wo_handler,
+            uow,
+            created_by=user_id,
+        ).with_event_dispatcher(container.event_dispatcher)
         inv_service = InventoryReservationService(inv_integ, mfg_integ)
 
         handler = ConfirmSalesOrderCommandHandler(order_repo, client_repo, credit_service, inv_service, uow)
@@ -624,7 +858,11 @@ async def ship_order(
         stock_inventory = StockInventoryService(session)
         wo_handler = WorkOrderHandler(session).with_uow(uow)
         inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
-        mfg_integ = SalesManufacturingIntegrationService(wo_handler, uow).with_event_dispatcher(container.event_dispatcher)
+        mfg_integ = SalesManufacturingIntegrationService(
+            wo_handler,
+            uow,
+            created_by=user_id,
+        ).with_event_dispatcher(container.event_dispatcher)
         inv_service = InventoryReservationService(inv_integ, mfg_integ)
         
         handler = ShipOrderCommandHandler(order_repo, inv_service, uow)
@@ -667,6 +905,14 @@ async def deliver_order(
                     delivered_by=str(user_id),
                 )
             )
+            from backend.app.application.finance.finance_service import FinanceService
+
+            await FinanceService(session).create_invoice_from_sales_order(
+                tenant_id=tenant_id,
+                sales_order_id=order_id,
+                created_by=user_id,
+                notes="Auto-generated on sales order delivery.",
+            )
             order = await order_repo.get_by_id(order_id, tenant_id)
             return order.to_dict() if order else None
         except ValueError as e:
@@ -702,7 +948,11 @@ async def cancel_order(
         stock_inventory = StockInventoryService(session)
         wo_handler = WorkOrderHandler(session).with_uow(uow)
         inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
-        mfg_integ = SalesManufacturingIntegrationService(wo_handler, uow).with_event_dispatcher(container.event_dispatcher)
+        mfg_integ = SalesManufacturingIntegrationService(
+            wo_handler,
+            uow,
+            created_by=user_id,
+        ).with_event_dispatcher(container.event_dispatcher)
         inv_service = InventoryReservationService(inv_integ, mfg_integ)
 
         handler = CancelSalesOrderCommandHandler(order_repo, credit_service, inv_service, uow)

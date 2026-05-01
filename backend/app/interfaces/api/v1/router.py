@@ -29,11 +29,13 @@ from backend.app.interfaces.api.v1.routes.inventory_extended import router as in
 from backend.app.interfaces.api.v1.routes.rbac_admin import router as rbac_admin_router
 from backend.app.interfaces.api.v1.routes.users import router as users_router
 from backend.app.interfaces.api.v1.routes.dashboards import router as dashboards_router
+from backend.app.interfaces.api.v1.routes.audit_logs import router as audit_logs_router
 
 api_v1_router = APIRouter()
 
 api_v1_router.include_router(rbac_admin_router)
 api_v1_router.include_router(users_router)
+api_v1_router.include_router(audit_logs_router)
 api_v1_router.include_router(auth_router)
 api_v1_router.include_router(password_reset_router)
 api_v1_router.include_router(tenants_router)
@@ -167,6 +169,16 @@ module_registry.register(
     roles=["ADMIN", "MANAGER", "ACCOUNTANT", "SALES", "QC", "OPERATOR"],
     status="active",
     icon="BarChart2"
+)
+
+module_registry.register(
+    id="audit-logs",
+    name="Activity Log",
+    route="/activity-log",
+    dependencies=[],
+    roles=["ADMIN", "TENANT_ADMIN"],
+    status="active",
+    icon="History"
 )
 
 module_registry.register(

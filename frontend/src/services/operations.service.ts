@@ -23,7 +23,7 @@ export interface Workstation {
 export interface CreateOperationInput {
   name: string;
   description?: string;
-  workstation_id?: string;
+  workstation_id: string;
   setup_time: number;
   run_time: number;
 }

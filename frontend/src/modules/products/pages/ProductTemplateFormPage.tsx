@@ -29,7 +29,7 @@ export default function ProductTemplateFormPage() {
   const [categoryId, setCategoryId] = useState("")
   const [baseUnitId, setBaseUnitId] = useState("")
   const [isActive, setIsActive] = useState(true)
-  const [attributes, setAttributes] = useState<{ key: string; label: string }[]>([])
+  const [attributes, setAttributes] = useState<{ key: string; label: string; values?: string[] }[]>([])
 
   // Load existing data if edit mode
   const { data: templateData } = useQuery({
@@ -68,20 +68,34 @@ export default function ProductTemplateFormPage() {
 
   const save = () => {
     if (!code.trim() || !name.trim()) return toast.error("Code and Name are required")
-    const payload: any = { code, name, description, attributes }
+    const payload: any = {
+      code,
+      name,
+      description,
+      attributes: attributes.map((attr) => ({
+        key: attr.key.trim(),
+        label: attr.label.trim(),
+        values: (attr.values ?? []).map((value) => value.trim()).filter(Boolean),
+      })),
+    }
     if (categoryId) payload.category_id = categoryId
     if (baseUnitId) payload.base_unit_id = baseUnitId
     if (!isNew) payload.is_active = isActive
     mutation.mutate(payload)
   }
 
-  const addAttr = () => setAttributes([...attributes, { key: "", label: "" }])
+  const addAttr = () => setAttributes([...attributes, { key: "", label: "", values: [] }])
   const updateAttr = (i: number, field: "key"|"label", val: string) => {
     const arr = [...attributes]
     arr[i][field] = val
     if (field === "label" && !arr[i].key) {
       arr[i].key = val.toLowerCase().replace(/[^a-z0-9]/g, "_")
     }
+    setAttributes(arr)
+  }
+  const updateAttrValues = (i: number, val: string) => {
+    const arr = [...attributes]
+    arr[i].values = val.split(",").map((value) => value.trim()).filter(Boolean)
     setAttributes(arr)
   }
   const removeAttr = (i: number) => setAttributes(attributes.filter((_, idx) => idx !== i))
@@ -155,15 +169,26 @@ export default function ProductTemplateFormPage() {
             <h2 className="text-base font-medium">Dynamic Attributes</h2>
             {canEdit && <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={addAttr}><Plus className="w-3.5 h-3.5 mr-1" /> Add</Button>}
           </div>
-          <p className="text-sm text-muted-foreground">Define the variant generation attributes (e.g. Size, Color, Power).</p>
+          <p className="text-sm text-muted-foreground">
+            Define variant attributes and allowed values, e.g. Size = S, M, L or Voltage = 110V, 220V.
+          </p>
           <div className="space-y-3 flex-1 overflow-y-auto">
             {attributes.map((attr, i) => (
-              <div key={i} className="flex gap-2 items-start">
+              <div key={i} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.4fr_auto] gap-2 items-start">
                 <div className="flex-1 space-y-1">
                   <Input value={attr.label} onChange={e => updateAttr(i, "label", e.target.value)} disabled={!canEdit} placeholder="Label (e.g. Storage Size)" className="h-8 text-sm" />
                 </div>
                 <div className="flex-1 space-y-1">
                   <Input value={attr.key} onChange={e => updateAttr(i, "key", e.target.value)} disabled={!canEdit} placeholder="key (e.g. storage_size)" className="h-8 text-sm font-mono text-xs" />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <Input
+                    value={(attr.values ?? []).join(", ")}
+                    onChange={e => updateAttrValues(i, e.target.value)}
+                    disabled={!canEdit}
+                    placeholder="Allowed values, comma separated"
+                    className="h-8 text-sm"
+                  />
                 </div>
                 {canEdit && (
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => removeAttr(i)}>

@@ -107,7 +107,7 @@ export interface ItemTemplate {
   description?: string;
   category_id?: string;
   base_unit_id?: string;
-  attributes: { key: string; label: string }[];
+  attributes: { key: string; label: string; values?: string[] }[];
   is_active: boolean;
 }
 

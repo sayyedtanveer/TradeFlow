@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
+import type { User } from "@/types/auth.types"
 import { Check, Copy, KeyRound, Pencil, Plus } from "lucide-react"
 
 type SupplierFormState = {
@@ -71,6 +72,7 @@ const portalUserName = (form: SupplierFormState) => {
 
 export default function SuppliersListPage() {
   const { toast } = useToast()
+  const supplierLoginUrl = `${window.location.origin}/login`
   const [items, setItems] = useState<Supplier[]>([])
   const [form, setForm] = useState<SupplierFormState>(emptySupplierForm)
   const [open, setOpen] = useState(false)
@@ -78,16 +80,22 @@ export default function SuppliersListPage() {
   const [portalCredentials, setPortalCredentials] = useState<PortalCredentials | null>(null)
   const [copiedCredentials, setCopiedCredentials] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [supplierUsers, setSupplierUsers] = useState<User[]>([])
+  const [portalSavingSupplierId, setPortalSavingSupplierId] = useState<string | null>(null)
 
   const [editOpen, setEditOpen] = useState(false)
   const [editing, setEditing] = useState<Supplier | null>(null)
   const [editForm, setEditForm] = useState<SupplierFormState>(emptySupplierForm)
   const [editActive, setEditActive] = useState(true)
 
-  const load = () => supplyChainApi.listSuppliers().then((r) => setItems(r.data))
+  const loadSuppliers = () => supplyChainApi.listSuppliers().then((r) => setItems(r.data))
+  const loadSupplierUsers = () => usersService.getUsers({ role: "supplier" }).then(setSupplierUsers)
+  const refresh = async () => {
+    await Promise.all([loadSuppliers(), loadSupplierUsers()])
+  }
 
   useEffect(() => {
-    load().catch(() => toast({ title: "Failed to load suppliers", variant: "destructive" }))
+    refresh().catch(() => toast({ title: "Failed to load suppliers", variant: "destructive" }))
   }, [toast])
 
   const updateCreateField = (field: keyof SupplierFormState, value: string) => {
@@ -118,7 +126,7 @@ export default function SuppliersListPage() {
     await navigator.clipboard.writeText(
       [
         "Supplier portal login",
-        "URL: /login",
+        `URL: ${supplierLoginUrl}`,
         `Email: ${portalCredentials.email}`,
         `Temporary password: ${portalCredentials.password}`,
       ].join("\n")
@@ -172,7 +180,7 @@ export default function SuppliersListPage() {
         handleCreateOpenChange(false)
       }
 
-      await load()
+      await refresh()
       toast({
         title: createPortalUser ? "Supplier and portal login created" : "Supplier created",
         description: createPortalUser
@@ -213,13 +221,83 @@ export default function SuppliersListPage() {
       })
       toast({ title: "Supplier updated" })
       setEditOpen(false)
-      await load()
+      await refresh()
     } catch (error: any) {
       toast({
         title: "Update failed",
         description: error?.response?.data?.detail || error?.message || "Unable to update supplier",
         variant: "destructive",
       })
+    }
+  }
+
+  const supplierUserBySupplierId = new Map(
+    supplierUsers
+      .filter((user) => user.supplier_id)
+      .map((user) => [user.supplier_id as string, user])
+  )
+
+  const createPortalLogin = async (supplier: Supplier) => {
+    if (!supplier.email) {
+      toast({ title: "Supplier email is required before creating portal login", variant: "destructive" })
+      return
+    }
+
+    const supplierForm = supplierToForm(supplier)
+    const names = portalUserName(supplierForm)
+    try {
+      setPortalSavingSupplierId(supplier.id)
+      const createdUser = await usersService.createUser({
+        email: supplier.email,
+        first_name: names.first_name,
+        last_name: names.last_name,
+        role: "supplier",
+        supplier_id: supplier.id,
+        is_active: true,
+      })
+
+      if (createdUser.temporary_password) {
+        setPortalCredentials({
+          email: createdUser.email,
+          password: createdUser.temporary_password,
+        })
+      }
+      await refresh()
+      toast({
+        title: "Supplier portal login created",
+        description: "Copy the temporary password and share it securely with the supplier.",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Portal login failed",
+        description: error?.response?.data?.detail || error?.message || "Unable to create supplier portal login",
+        variant: "destructive",
+      })
+    } finally {
+      setPortalSavingSupplierId(null)
+    }
+  }
+
+  const resetPortalPassword = async (supplier: Supplier, supplierUser: User) => {
+    try {
+      setPortalSavingSupplierId(supplier.id)
+      const response = await usersService.resetTemporaryPassword(supplierUser.id)
+      setPortalCredentials({
+        email: response.email,
+        password: response.temporary_password,
+      })
+      toast({
+        title: "Temporary password regenerated",
+        description: "Copy it now. The supplier's previous password will no longer work.",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Password reset failed",
+        description: error?.response?.data?.detail || error?.message || "Unable to reset supplier password",
+        variant: "destructive",
+      })
+    } finally {
+      setPortalSavingSupplierId(null)
     }
   }
 
@@ -353,7 +431,10 @@ export default function SuppliersListPage() {
                       <p>The password is shown only once. Copy and share it securely with the supplier.</p>
                       <div className="rounded-md border bg-white p-3 text-sm">
                         <div>
-                          <span className="font-medium">Login URL:</span> /login
+                          <span className="font-medium">Login URL:</span>{" "}
+                          <a className="text-blue-700 underline" href="/login">
+                            {supplierLoginUrl}
+                          </a>
                         </div>
                         <div>
                           <span className="font-medium">Email:</span> {portalCredentials.email}
@@ -394,6 +475,37 @@ export default function SuppliersListPage() {
         </AlertDescription>
       </Alert>
 
+      {portalCredentials && !open && (
+        <Alert className="border-green-200 bg-green-50 text-green-950">
+          <KeyRound className="h-4 w-4" />
+          <AlertTitle>Portal credentials ready</AlertTitle>
+          <AlertDescription>
+            <div className="mt-2 space-y-2">
+              <p>The password is shown only once. Copy and share it securely with the supplier.</p>
+              <div className="rounded-md border bg-white p-3 text-sm">
+                <div>
+                  <span className="font-medium">Login URL:</span>{" "}
+                  <a className="text-blue-700 underline" href="/login">
+                    {supplierLoginUrl}
+                  </a>
+                </div>
+                <div>
+                  <span className="font-medium">Email:</span> {portalCredentials.email}
+                </div>
+                <div>
+                  <span className="font-medium">Temporary password:</span>{" "}
+                  <code>{portalCredentials.password}</code>
+                </div>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={copyPortalCredentials}>
+                {copiedCredentials ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                {copiedCredentials ? "Copied" : "Copy credentials"}
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Table>
         <TableHeader>
           <TableRow>
@@ -403,27 +515,55 @@ export default function SuppliersListPage() {
             <TableHead>Email</TableHead>
             <TableHead>Phone</TableHead>
             <TableHead>Payment terms</TableHead>
+            <TableHead>Portal access</TableHead>
             <TableHead>Active</TableHead>
             <TableHead />
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((supplier) => (
-            <TableRow key={supplier.id}>
-              <TableCell className="font-medium">{supplier.code}</TableCell>
-              <TableCell>{supplier.name}</TableCell>
-              <TableCell>{supplier.contact_person || "-"}</TableCell>
-              <TableCell>{supplier.email || "-"}</TableCell>
-              <TableCell>{supplier.phone || "-"}</TableCell>
-              <TableCell>{supplier.payment_terms || "-"}</TableCell>
-              <TableCell>{supplier.is_active ? "Yes" : "No"}</TableCell>
-              <TableCell className="text-right">
-                <Button variant="ghost" size="icon" onClick={() => openEdit(supplier)}>
-                  <Pencil className="h-4 w-4" />
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
+          {items.map((supplier) => {
+            const supplierUser = supplierUserBySupplierId.get(supplier.id)
+            const portalActionLoading = portalSavingSupplierId === supplier.id
+            return (
+              <TableRow key={supplier.id}>
+                <TableCell className="font-medium">{supplier.code}</TableCell>
+                <TableCell>{supplier.name}</TableCell>
+                <TableCell>{supplier.contact_person || "-"}</TableCell>
+                <TableCell>{supplier.email || "-"}</TableCell>
+                <TableCell>{supplier.phone || "-"}</TableCell>
+                <TableCell>{supplier.payment_terms || "-"}</TableCell>
+                <TableCell>
+                  {supplierUser ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => resetPortalPassword(supplier, supplierUser)}
+                      disabled={portalActionLoading}
+                    >
+                      <KeyRound className="mr-2 h-4 w-4" />
+                      {portalActionLoading ? "Generating..." : "Reset password"}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => createPortalLogin(supplier)}
+                      disabled={portalActionLoading || !supplier.email}
+                    >
+                      <KeyRound className="mr-2 h-4 w-4" />
+                      {portalActionLoading ? "Creating..." : "Create login"}
+                    </Button>
+                  )}
+                </TableCell>
+                <TableCell>{supplier.is_active ? "Yes" : "No"}</TableCell>
+                <TableCell className="text-right">
+                  <Button variant="ghost" size="icon" onClick={() => openEdit(supplier)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
 
@@ -499,8 +639,8 @@ export default function SuppliersListPage() {
                 <Label htmlFor="active">Active</Label>
               </div>
               <p className="text-xs text-muted-foreground">
-                To give an existing supplier portal access, create a user with role `supplier` in User Management and
-                link it to this supplier.
+                Use the Portal access action in the supplier list to create or regenerate this supplier's one-time
+                temporary password.
               </p>
             </div>
           )}

@@ -188,6 +188,11 @@ class SalesOrderResponse(BaseModel):
     grand_total: Decimal
     notes: Optional[str] = None
     created_by: Optional[str] = None
+    approver_id: Optional[UUID] = None
+    submitted_at: Optional[datetime] = None
+    approved_at: Optional[datetime] = None
+    rejected_at: Optional[datetime] = None
+    approval_notes: Optional[str] = None
     lines: List[SalesOrderLineResponse] = []
     created_at: datetime
     updated_at: datetime
@@ -211,6 +216,11 @@ class SalesOrderDetailResponse(BaseModel):
     grand_total: Decimal
     notes: Optional[str] = None
     created_by: Optional[str] = None
+    approver_id: Optional[UUID] = None
+    submitted_at: Optional[datetime] = None
+    approved_at: Optional[datetime] = None
+    rejected_at: Optional[datetime] = None
+    approval_notes: Optional[str] = None
     lines: List[SalesOrderLineResponse] = []
     created_at: datetime
     updated_at: datetime
@@ -237,6 +247,11 @@ class ConfirmOrderRequest(BaseModel):
     confirmed_by: str = Field(..., min_length=1, max_length=100)
 
 
+class ApprovalActionRequest(BaseModel):
+    """Request body for submit/approve/reject workflow actions."""
+    notes: Optional[str] = Field(None, max_length=1000)
+
+
 class ShipOrderRequest(BaseModel):
     """Request to ship order."""
     line_shipments: dict[str, Decimal] = Field(..., description="Map of line_id to shipped quantity")
@@ -252,11 +267,16 @@ class CancelOrderRequest(BaseModel):
 class OrderStatusResponse(BaseModel):
     """Response for order status summary."""
     DRAFT: int = 0
+    PENDING_APPROVAL: int = 0
+    APPROVED: int = 0
+    REJECTED: int = 0
     CONFIRMED: int = 0
+    PROCESSING: int = 0
     PRODUCTION: int = 0
     READY: int = 0
     SHIPPED: int = 0
     DELIVERED: int = 0
+    COMPLETED: int = 0
     CANCELLED: int = 0
 
 

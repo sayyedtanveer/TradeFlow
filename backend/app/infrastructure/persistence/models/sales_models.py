@@ -168,6 +168,21 @@ class SalesOrderModel(Base):
     # Metadata
     notes: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    approver_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    approved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rejected_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    approval_notes: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
 
     # Status flags
     is_active: Mapped[bool] = mapped_column(

@@ -11,12 +11,17 @@ class OrderStatus(str, Enum):
     Any state can transition to CANCELLED.
     """
 
-    DRAFT = "DRAFT"  # Initial state, not yet confirmed
+    DRAFT = "DRAFT"  # Initial state, editable before submission
+    PENDING_APPROVAL = "PENDING_APPROVAL"  # Waiting for manager review
+    APPROVED = "APPROVED"  # Approved and ready for execution
+    REJECTED = "REJECTED"  # Manager rejected the order
     CONFIRMED = "CONFIRMED"  # Credit & inventory verified, allocated
+    PROCESSING = "PROCESSING"  # Execution in progress
     PRODUCTION = "PRODUCTION"  # Partially in production (backorder exists)
     READY = "READY"  # Fully allocated, ready to ship
     SHIPPED = "SHIPPED"  # Partial or full shipment sent
     DELIVERED = "DELIVERED"  # Received by client
+    COMPLETED = "COMPLETED"  # Commercially completed
     CANCELLED = "CANCELLED"  # Cancelled (reverses allocations)
 
     def can_transition_to(self, target: "OrderStatus") -> bool:
@@ -30,8 +35,29 @@ class OrderStatus(str, Enum):
             True if transition is allowed
         """
         allowed = {
-            OrderStatus.DRAFT: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
+            OrderStatus.DRAFT: [
+                OrderStatus.PENDING_APPROVAL,
+                OrderStatus.CONFIRMED,
+                OrderStatus.CANCELLED,
+            ],
+            OrderStatus.PENDING_APPROVAL: [
+                OrderStatus.APPROVED,
+                OrderStatus.REJECTED,
+                OrderStatus.CANCELLED,
+            ],
+            OrderStatus.APPROVED: [
+                OrderStatus.CONFIRMED,
+                OrderStatus.PROCESSING,
+                OrderStatus.CANCELLED,
+            ],
+            OrderStatus.REJECTED: [],
             OrderStatus.CONFIRMED: [
+                OrderStatus.PROCESSING,
+                OrderStatus.PRODUCTION,
+                OrderStatus.READY,
+                OrderStatus.CANCELLED,
+            ],
+            OrderStatus.PROCESSING: [
                 OrderStatus.PRODUCTION,
                 OrderStatus.READY,
                 OrderStatus.CANCELLED,
@@ -42,8 +68,13 @@ class OrderStatus(str, Enum):
                 OrderStatus.CANCELLED,
             ],
             OrderStatus.READY: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
-            OrderStatus.SHIPPED: [OrderStatus.DELIVERED, OrderStatus.CANCELLED],
-            OrderStatus.DELIVERED: [OrderStatus.CANCELLED],
+            OrderStatus.SHIPPED: [
+                OrderStatus.DELIVERED,
+                OrderStatus.COMPLETED,
+                OrderStatus.CANCELLED,
+            ],
+            OrderStatus.DELIVERED: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+            OrderStatus.COMPLETED: [],
             OrderStatus.CANCELLED: [],
         }
         return target in allowed.get(self, [])

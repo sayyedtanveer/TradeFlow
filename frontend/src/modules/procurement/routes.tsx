@@ -1,4 +1,5 @@
 import { RouteObject } from "react-router-dom"
+import { ProtectedRoute } from "@/app/routes/ProtectedRoute"
 import ProcurementHubPage from "./pages/ProcurementHubPage"
 import SuppliersListPage from "./pages/SuppliersListPage"
 import PurchaseOrdersPage from "./pages/PurchaseOrdersPage"
@@ -32,6 +33,20 @@ export const procurementRoutes: RouteObject[] = [
   // ── Supplier performance ──────────────────────────────────────────────
   { path: "procurement/supplier-performance", element: <SupplierPerformancePage /> },
   // ── Supplier portal ───────────────────────────────────────────────────
-  { path: "supplier-portal", element: <SupplierPortalPage /> },
-  { path: "supplier-portal/po/:poId", element: <SupplierPortalPoDetailPage /> },
+  {
+    path: "supplier-portal",
+    element: (
+      <ProtectedRoute allowedRoles={["SUPPLIER"]}>
+        <SupplierPortalPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "supplier-portal/po/:poId",
+    element: (
+      <ProtectedRoute allowedRoles={["SUPPLIER"]}>
+        <SupplierPortalPoDetailPage />
+      </ProtectedRoute>
+    ),
+  },
 ]

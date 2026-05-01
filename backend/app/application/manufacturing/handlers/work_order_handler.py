@@ -308,6 +308,13 @@ class WorkOrderHandler:
             work_order_id=wo.id,
             created_by=cmd.recorded_by,
         )
+        await self._reserve_produced_goods_for_sales(
+            tenant_id=cmd.tenant_id,
+            work_order=wo,
+            finished_material_id=fg_material.id,
+            produced_quantity=cmd.produced_quantity,
+            recorded_by=cmd.recorded_by,
+        )
 
     # ── Complete ─────────────────────────────────────────────────────────────────
 
@@ -327,6 +334,71 @@ class WorkOrderHandler:
             wo_number=wo.wo_number,
             produced_qty=float(wo.produced_quantity),
         ))
+
+    async def _reserve_produced_goods_for_sales(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        work_order: WorkOrderModel,
+        finished_material_id: uuid.UUID,
+        produced_quantity: Decimal,
+        recorded_by: uuid.UUID,
+    ) -> None:
+        """Allocate newly produced finished goods back to the linked sales line."""
+        if not work_order.sales_order_id:
+            return
+
+        from backend.app.infrastructure.persistence.models.sales_models import (
+            SalesOrderLineModel,
+            SalesOrderModel,
+        )
+
+        line_result = await self._session.execute(
+            select(SalesOrderLineModel).where(
+                SalesOrderLineModel.id == work_order.sales_order_id,
+            )
+        )
+        line = line_result.scalar_one_or_none()
+        if line is None:
+            return
+
+        backorder_qty = Decimal(str(line.backorder_quantity or 0))
+        reserve_qty = min(produced_quantity, backorder_qty)
+        if reserve_qty <= 0:
+            return
+
+        await self._inventory.reserve_sales_stock(
+            tenant_id=tenant_id,
+            material_id=finished_material_id,
+            quantity=reserve_qty,
+            sales_order_line_id=line.id,
+            unit_id=line.uom_id,
+            created_by=recorded_by,
+        )
+
+        line.allocated_quantity = float(Decimal(str(line.allocated_quantity or 0)) + reserve_qty)
+        line.backorder_quantity = float(max(Decimal("0"), backorder_qty - reserve_qty))
+        line.status = "allocated" if Decimal(str(line.backorder_quantity or 0)) <= 0 else "backorder"
+        line.updated_at = datetime.now(timezone.utc)
+
+        order = await self._session.get(SalesOrderModel, line.sales_order_id)
+        if order is None or order.tenant_id != tenant_id:
+            return
+
+        lines = (
+            await self._session.execute(
+                select(SalesOrderLineModel).where(SalesOrderLineModel.sales_order_id == order.id)
+            )
+        ).scalars().all()
+        all_allocated = bool(lines) and all(
+            Decimal(str(order_line.allocated_quantity or 0)) >= Decimal(str(order_line.quantity or 0))
+            for order_line in lines
+        )
+        if all_allocated:
+            order.status = "READY"
+        elif order.status in ("CONFIRMED", "PROCESSING"):
+            order.status = "PRODUCTION"
+        order.updated_at = datetime.now(timezone.utc)
 
     # ── Close ────────────────────────────────────────────────────────────────────
 

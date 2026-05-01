@@ -3,6 +3,7 @@ import ClientLayout from "./components/ClientLayout"
 import ClientProtectedRoute from "./components/ClientProtectedRoute"
 import ClientDashboard from "./pages/ClientDashboard"
 import ClientLogin from "./pages/ClientLogin"
+import ClientNewOrder from "./pages/ClientNewOrder"
 import CreditStatus from "./pages/CreditStatus"
 import InvoicesList from "./pages/InvoicesList"
 import OrderDetail from "./pages/OrderDetail"
@@ -25,6 +26,7 @@ export const clientRoutes: RouteObject[] = [
         children: [
           { index: true, element: <ClientDashboard /> },
           { path: "orders", element: <OrdersList /> },
+          { path: "orders/new", element: <ClientNewOrder /> },
           { path: "orders/:id", element: <OrderDetail /> },
           { path: "invoices", element: <InvoicesList /> },
           { path: "reorder", element: <Reorder /> },

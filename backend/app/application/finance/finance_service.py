@@ -106,8 +106,9 @@ class FinanceService:
                 InvoiceModel.is_deleted == False,
             )
         )
-        if existing.scalar_one_or_none():
-            raise ValueError("Invoice already exists for this sales order")
+        existing_invoice = existing.scalar_one_or_none()
+        if existing_invoice:
+            return existing_invoice
 
         # 3. Fetch client for snapshot
         client_q = await self.session.execute(

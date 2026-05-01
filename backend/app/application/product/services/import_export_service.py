@@ -36,21 +36,26 @@ class VariantImportParser:
         attribute_keys = [str(a["key"]).upper() for a in template_attributes]
 
         try:
-            reader = csv.DictReader(io.StringIO(csv_data))
-            if not reader:
+            reader = csv.DictReader(io.StringIO(csv_data.strip("\ufeff\r\n ")))
+            if not reader or not reader.fieldnames:
                 return [], ["Invalid CSV format"]
+            header_lookup = {
+                str(header).strip().upper(): header
+                for header in reader.fieldnames
+                if header is not None
+            }
 
             for row_num, row in enumerate(reader, start=2):  # start=2 to skip header
                 try:
                     # Build attribute_values from columns matching template attributes
                     attribute_values: Dict[str, Any] = {}
                     for key in attribute_keys:
-                        val = row.get(key)
+                        val = row.get(header_lookup.get(key, key))
                         if val:
                             attribute_values[key] = val.strip()
 
                     # Parse standard_cost (required)
-                    cost_str = row.get("standard_cost", "").strip()
+                    cost_str = (row.get(header_lookup.get("STANDARD_COST", "standard_cost"), "") or "").strip()
                     if not cost_str:
                         errors.append(f"Row {row_num}: standard_cost is required")
                         continue
@@ -63,7 +68,7 @@ class VariantImportParser:
 
                     # Parse selling_price (optional)
                     selling_price = None
-                    price_str = row.get("selling_price", "").strip()
+                    price_str = (row.get(header_lookup.get("SELLING_PRICE", "selling_price"), "") or "").strip()
                     if price_str:
                         try:
                             selling_price = Decimal(price_str)

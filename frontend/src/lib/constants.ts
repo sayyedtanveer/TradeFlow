@@ -12,6 +12,7 @@ import {
   Network,
   Truck,
   ShieldAlert,
+  History,
   LucideIcon,
 } from "lucide-react"
 import { UserRole, getRolesForModule } from "@/lib/roles.config"
@@ -101,6 +102,12 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/reports",
     icon: BarChart3,
     roles: getRolesForModule("reports"),
+  },
+  {
+    title: "Activity Log",
+    href: "/activity-log",
+    icon: History,
+    roles: getRolesForModule("auditLogs"),
   },
   {
     title: "Supplier portal",

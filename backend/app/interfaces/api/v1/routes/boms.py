@@ -18,7 +18,7 @@ from backend.app.application.bom.queries.bom_queries import GetBOMQuery, ListBOM
 from backend.app.application.bom.handlers.bom_handlers import BOMHandlers
 from backend.app.application.bom.handlers.routing_handlers import RoutingHandlers
 from backend.app.application.bom.handlers.bom_advanced_handlers import BOMAdvancedHandlers
-from backend.app.application.bom.commands.routing_commands import AttachOperationToBOMCommand
+from backend.app.application.bom.commands.routing_commands import AttachOperationToBOMCommand, RemoveOperationFromBOMCommand
 from backend.app.application.bom.queries.bom_advanced_queries import GetBOMTreeQuery, GetBOMCostQuery, ValidateBOMQuery
 from backend.app.interfaces.api.v1.schemas.routing_schemas import BOMOperationAttach
 
@@ -40,6 +40,7 @@ from backend.app.interfaces.api.v1.schemas.bom_schemas import (
     BOMListResponse,
     BOMCostResponse,
     BOMLineResponse,
+    BOMOperationResponse,
 )
 from backend.app.domain.bom.entities.bom import BillOfMaterial
 
@@ -74,7 +75,16 @@ def _bom_to_response(bom: BillOfMaterial) -> BOMResponse:
                 variant_id=line.variant_id,
             )
             for line in bom.lines
-        ]
+        ],
+        operations=[
+            BOMOperationResponse(
+                id=operation.id,
+                bom_id=operation.bom_id,
+                operation_id=operation.operation_id,
+                sequence=operation.sequence,
+            )
+            for operation in bom.operations
+        ],
     )
 
 
@@ -325,6 +335,39 @@ async def attach_operation(
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return op_id
+
+
+@router.delete(
+    "/boms/{bom_id}/operations/{bom_operation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove an Operation from a draft BOM",
+    dependencies=[Depends(require_permission("manufacturing:write"))],
+)
+async def remove_operation(
+    bom_id: uuid.UUID,
+    bom_operation_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        bom_repo = BOMRepository(session)
+        workstation_repo = WorkstationRepository(uow)
+        operation_repo = OperationRepository(uow)
+        handlers = RoutingHandlers(uow, bom_repo, workstation_repo, operation_repo)
+        try:
+            await handlers.handle_remove_operation_from_bom(
+                RemoveOperationFromBOMCommand(
+                    tenant_id=tenant_id,
+                    bom_id=bom_id,
+                    bom_operation_id=bom_operation_id,
+                )
+            )
+        except ValueError as e:
+            code = status.HTTP_404_NOT_FOUND if "not found" in str(e) else status.HTTP_409_CONFLICT
+            raise HTTPException(status_code=code, detail=str(e))
+
 
 @router.post("/boms/{bom_id}/validate", summary="Validate BOM constraints", dependencies=[Depends(require_permission("manufacturing:write"))])
 async def validate_bom(

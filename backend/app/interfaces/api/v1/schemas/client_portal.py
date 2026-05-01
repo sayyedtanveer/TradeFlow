@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Literal, Optional
 from uuid import UUID
@@ -106,6 +106,12 @@ class ReorderLineRequest(BaseModel):
 class ClientReorderRequest(BaseModel):
     order_id: UUID
     lines: Optional[List[ReorderLineRequest]] = None
+    notes: Optional[str] = None
+
+
+class ClientOrderCreateRequest(BaseModel):
+    lines: List[ReorderLineRequest] = Field(min_length=1)
+    delivery_date: Optional[date] = None
     notes: Optional[str] = None
 
 

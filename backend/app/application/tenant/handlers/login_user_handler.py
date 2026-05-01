@@ -46,7 +46,7 @@ class LoginUserHandler(ICommandHandler[LoginUserCommand, LoginResult]):
         access_token = self._jwt_handler.create_access_token(
             user_id=str(user.id),
             tenant_id=str(user.tenant_id),
-            role=user.role.value,
+            role=user.role,
             extra_claims=extra or None,
         )
 
@@ -56,6 +56,6 @@ class LoginUserHandler(ICommandHandler[LoginUserCommand, LoginResult]):
             user_id=str(user.id),
             tenant_id=str(user.tenant_id),
             email=str(user.email),
-            role=user.role.value,
+            role=user.role,
             full_name=user.full_name,
         )

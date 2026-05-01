@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Dict, List, Optional
 
@@ -74,9 +75,14 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
 )
 from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.interfaces.api.v1.schemas.product_schemas import (
+    BulkImportRequest,
+    BulkImportResponse,
+    BulkOperationResponse,
     CreateItemTemplateRequest,
     UpdateItemTemplateRequest,
     ChangeProductStatusRequest,
+    ExportVariantsRequest,
+    ExportVariantsResponse,
     ItemTemplateResponse,
     ItemTemplateListResponse,
     CreateItemVariantRequest,
@@ -90,6 +96,9 @@ from backend.app.interfaces.api.v1.schemas.product_schemas import (
     SetPrimaryImageRequest,
     ReorderImageRequest,
     UploadImageResponse,
+    VariantIdsRequest,
+    VariantTemplateCsvResponse,
+    ImportError as VariantImportError,
 )
 
 router = APIRouter(prefix="/products", tags=["Product Master"])
@@ -498,6 +507,197 @@ async def update_variant(
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return _variant_from_result(result)
+
+
+def _csv_error_to_response(message: str) -> VariantImportError:
+    match = re.match(r"Row\s+(\d+):\s*(.*)", message)
+    if match:
+        return VariantImportError(
+            row_number=int(match.group(1)),
+            field="csv",
+            message=match.group(2),
+        )
+    return VariantImportError(row_number=0, field="csv", message=message)
+
+
+@router.get(
+    "/templates/{template_id}/variants/import-template",
+    response_model=VariantTemplateCsvResponse,
+    summary="Download a CSV template for importing variants",
+    dependencies=[Depends(require_permission("sales:write"))],
+)
+async def get_variant_import_template(
+    template_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        repo = ItemTemplateRepository(session)
+        template = await repo.get_by_id(template_id, tenant_id)
+        if not template:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item template not found")
+
+    return VariantTemplateCsvResponse(
+        csv_content=VariantImportParser.generate_csv_template(template.attributes),
+        file_name=f"{template.code}_variant_import_template.csv",
+    )
+
+
+@router.post(
+    "/templates/{template_id}/variants/bulk-import",
+    response_model=BulkImportResponse,
+    summary="Bulk import product variants from CSV",
+    dependencies=[Depends(require_permission("sales:write"))],
+)
+async def bulk_import_variants(
+    template_id: uuid.UUID,
+    body: BulkImportRequest,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        t_repo = ItemTemplateRepository(session)
+        v_repo = ItemVariantRepository(session)
+        template = await t_repo.get_by_id(template_id, tenant_id)
+        if not template:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item template not found")
+
+        variants_data, parse_errors = VariantImportParser.parse_csv(body.csv_data, template.attributes)
+        parser_error_rows = [_csv_error_to_response(err) for err in parse_errors]
+
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        handler = BulkCreateVariantsHandler(template_repo=t_repo, variant_repo=v_repo, uow=uow)
+        result = await handler.handle(
+            BulkCreateVariantsCommand(
+                tenant_id=tenant_id,
+                template_id=template_id,
+                created_by=user_id,
+                variants_data=variants_data,
+            )
+        )
+
+    handler_errors = [
+        VariantImportError(
+            row_number=err.row_number,
+            field=err.field,
+            message=err.message,
+        )
+        for err in result.errors
+    ]
+    all_errors = parser_error_rows + handler_errors
+    return BulkImportResponse(
+        success_count=result.success_count,
+        error_count=len(all_errors),
+        errors=all_errors,
+        variant_ids=[uuid.UUID(v) for v in result.variant_ids],
+        message=f"Imported {result.success_count} variant(s); {len(all_errors)} row(s) need attention.",
+    )
+
+
+@router.post(
+    "/templates/{template_id}/variants/bulk-activate",
+    response_model=BulkOperationResponse,
+    summary="Activate multiple variants",
+    dependencies=[Depends(require_permission("sales:write"))],
+)
+async def bulk_activate_variants(
+    template_id: uuid.UUID,
+    body: VariantIdsRequest,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        t_repo = ItemTemplateRepository(session)
+        if not await t_repo.get_by_id(template_id, tenant_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item template not found")
+        v_repo = ItemVariantRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        handler = BulkActivateVariantsHandler(variant_repo=v_repo, uow=uow)
+        count = await handler.handle(BulkActivateVariantsCommand(tenant_id=tenant_id, variant_ids=body.variant_ids))
+    return BulkOperationResponse(success_count=count, message=f"Activated {count} variant(s).")
+
+
+@router.post(
+    "/templates/{template_id}/variants/bulk-deactivate",
+    response_model=BulkOperationResponse,
+    summary="Deactivate multiple variants",
+    dependencies=[Depends(require_permission("sales:write"))],
+)
+async def bulk_deactivate_variants(
+    template_id: uuid.UUID,
+    body: VariantIdsRequest,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        t_repo = ItemTemplateRepository(session)
+        if not await t_repo.get_by_id(template_id, tenant_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item template not found")
+        v_repo = ItemVariantRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        handler = BulkDeactivateVariantsHandler(variant_repo=v_repo, uow=uow)
+        count = await handler.handle(BulkDeactivateVariantsCommand(tenant_id=tenant_id, variant_ids=body.variant_ids))
+    return BulkOperationResponse(success_count=count, message=f"Deactivated {count} variant(s).")
+
+
+@router.post(
+    "/templates/{template_id}/variants/export",
+    response_model=ExportVariantsResponse,
+    summary="Export product variants as CSV",
+)
+async def export_variants(
+    template_id: uuid.UUID,
+    body: ExportVariantsRequest,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        t_repo = ItemTemplateRepository(session)
+        v_repo = ItemVariantRepository(session)
+        template = await t_repo.get_by_id(template_id, tenant_id)
+        if not template:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item template not found")
+        handler = ProductQueryHandler(template_repo=t_repo, variant_repo=v_repo)
+        if body.variant_ids:
+            rows = []
+            for variant_id in body.variant_ids:
+                item = await handler.get_variant(GetItemVariantQuery(id=variant_id, tenant_id=tenant_id))
+                if item and item.template_id == str(template_id):
+                    rows.append(item)
+        else:
+            rows = (await handler.list_variants(
+                ListItemVariantsQuery(
+                    template_id=template_id,
+                    tenant_id=tenant_id,
+                    page=1,
+                    page_size=1000,
+                )
+            )).items
+
+    csv_content = VariantExportService.export_variants_to_csv(
+        [
+            {
+                "code": row.code,
+                "attribute_values": row.attribute_values,
+                "standard_cost": row.standard_cost,
+                "selling_price": row.selling_price,
+                "is_active": row.is_active,
+            }
+            for row in rows
+        ],
+        template.attributes,
+    )
+    return ExportVariantsResponse(
+        csv_content=csv_content,
+        file_name=f"{template.code}_variants.csv",
+        record_count=len(rows),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

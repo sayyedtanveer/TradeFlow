@@ -20,6 +20,9 @@ from backend.app.application.sales.commands import (
     AddLineToSalesOrderCommand,
     RemoveLineFromSalesOrderCommand,
     ApplyDiscountToOrderCommand,
+    SubmitSalesOrderForApprovalCommand,
+    ApproveSalesOrderCommand,
+    RejectSalesOrderCommand,
     ConfirmSalesOrderCommand,
     CancelSalesOrderCommand,
     TransitionOrderToProductionCommand,
@@ -75,6 +78,7 @@ class CreateSalesOrderCommandHandler:
             client_id=command.client_id,
             order_date=command.order_date,
             delivery_date=command.delivery_date,
+            approver_id=command.approver_id,
         )
         order.created_by = command.created_by
         order.notes = command.notes
@@ -214,6 +218,83 @@ class ApplyDiscountToOrderCommandHandler:
         await self.uow.work()
 
 
+class SubmitSalesOrderForApprovalCommandHandler:
+    """Handler for submitting a draft order into approval workflow."""
+
+    def __init__(
+        self,
+        sales_order_repo: SalesOrderRepository,
+        uow,
+    ):
+        self.sales_order_repo = sales_order_repo
+        self.uow = uow
+
+    async def handle(self, command: SubmitSalesOrderForApprovalCommand) -> None:
+        order = await self.sales_order_repo.get_by_id(
+            id=command.sales_order_id,
+            tenant_id=command.tenant_id,
+        )
+        if not order:
+            raise ValueError(f"Order {command.sales_order_id} not found")
+
+        if command.notes:
+            order.approval_notes = command.notes
+        order.submit_for_approval(command.approver_id)
+
+        await self.sales_order_repo.save(order)
+        await self.uow.work()
+
+
+class ApproveSalesOrderCommandHandler:
+    """Handler for manager approval."""
+
+    def __init__(
+        self,
+        sales_order_repo: SalesOrderRepository,
+        uow,
+    ):
+        self.sales_order_repo = sales_order_repo
+        self.uow = uow
+
+    async def handle(self, command: ApproveSalesOrderCommand) -> None:
+        order = await self.sales_order_repo.get_by_id(
+            id=command.sales_order_id,
+            tenant_id=command.tenant_id,
+        )
+        if not order:
+            raise ValueError(f"Order {command.sales_order_id} not found")
+
+        order.approve(command.approver_id, command.notes)
+
+        await self.sales_order_repo.save(order)
+        await self.uow.work()
+
+
+class RejectSalesOrderCommandHandler:
+    """Handler for manager rejection."""
+
+    def __init__(
+        self,
+        sales_order_repo: SalesOrderRepository,
+        uow,
+    ):
+        self.sales_order_repo = sales_order_repo
+        self.uow = uow
+
+    async def handle(self, command: RejectSalesOrderCommand) -> None:
+        order = await self.sales_order_repo.get_by_id(
+            id=command.sales_order_id,
+            tenant_id=command.tenant_id,
+        )
+        if not order:
+            raise ValueError(f"Order {command.sales_order_id} not found")
+
+        order.reject(command.approver_id, command.notes)
+
+        await self.sales_order_repo.save(order)
+        await self.uow.work()
+
+
 class ConfirmSalesOrderCommandHandler:
     """Handler for confirming sales orders."""
 
@@ -254,8 +335,9 @@ class ConfirmSalesOrderCommandHandler:
         if not order:
             raise ValueError(f"Order {command.sales_order_id} not found")
         
-        # 1. Validate state
-        if order.status != OrderStatus.DRAFT:
+        # 1. Validate state. Legacy draft confirmation stays supported, while
+        # approved orders enter execution through this same reservation path.
+        if order.status not in (OrderStatus.DRAFT, OrderStatus.APPROVED):
             raise ValueError(f"Cannot confirm order in {order.status.value} state")
         
         # 2. Check credit

@@ -13,7 +13,7 @@ export interface CreateTemplateInput {
   description?: string;
   category_id?: string;
   base_unit_id?: string;
-  attributes: { key: string; label: string }[];
+  attributes: { key: string; label: string; values?: string[] }[];
 }
 
 export interface UpdateTemplateInput extends Partial<CreateTemplateInput> {
@@ -31,6 +31,40 @@ export interface UpdateVariantInput {
   standard_cost?: number;
   selling_price?: number;
   is_active?: boolean;
+}
+
+export interface VariantImportTemplate {
+  csv_content: string;
+  file_name: string;
+}
+
+export interface VariantImportError {
+  row_number: number;
+  field: string;
+  message: string;
+}
+
+export interface VariantImportResult {
+  success_count: number;
+  error_count: number;
+  errors: VariantImportError[];
+  variant_ids: string[];
+  message: string;
+}
+
+export interface BulkOperationResult {
+  success_count: number;
+  message: string;
+}
+
+export interface ProductImageListResponse {
+  items: {
+    id: string;
+    file_name: string;
+    file_path: string;
+    is_primary: boolean;
+  }[];
+  primary_image?: unknown;
 }
 
 export const productService = {
@@ -89,6 +123,38 @@ export const productService = {
 
   async updateVariant(id: string, payload: UpdateVariantInput): Promise<ItemVariant> {
     const { data } = await apiClient.put(`/products/variants/${id}`, payload);
+    return data;
+  },
+
+  async getTemplateImages(templateId: string): Promise<ProductImageListResponse> {
+    const { data } = await apiClient.get(`/products/templates/${templateId}/images`);
+    return data;
+  },
+
+  async getImportTemplate(templateId: string): Promise<VariantImportTemplate> {
+    const { data } = await apiClient.get(`/products/templates/${templateId}/variants/import-template`);
+    return data;
+  },
+
+  async bulkImportVariants(
+    templateId: string,
+    payload: { csv_data: string }
+  ): Promise<VariantImportResult> {
+    const { data } = await apiClient.post(`/products/templates/${templateId}/variants/bulk-import`, payload);
+    return data;
+  },
+
+  async bulkActivateVariants(templateId: string, variantIds: string[]): Promise<BulkOperationResult> {
+    const { data } = await apiClient.post(`/products/templates/${templateId}/variants/bulk-activate`, {
+      variant_ids: variantIds,
+    });
+    return data;
+  },
+
+  async bulkDeactivateVariants(templateId: string, variantIds: string[]): Promise<BulkOperationResult> {
+    const { data } = await apiClient.post(`/products/templates/${templateId}/variants/bulk-deactivate`, {
+      variant_ids: variantIds,
+    });
     return data;
   },
 

@@ -37,6 +37,15 @@ class BOMLineResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class BOMOperationResponse(BaseModel):
+    id: uuid.UUID
+    bom_id: uuid.UUID
+    operation_id: uuid.UUID
+    sequence: int
+
+    model_config = {"from_attributes": True}
+
+
 # ── BOM Schemas ───────────────────────────────────────────────────────────────
 
 class CreateBOMRequest(BaseModel):
@@ -82,6 +91,7 @@ class BOMResponse(BaseModel):
     updated_at: datetime
     operations_count: int = 0
     lines: List[BOMLineResponse] = []
+    operations: List[BOMOperationResponse] = []
 
     model_config = {"from_attributes": True}
 

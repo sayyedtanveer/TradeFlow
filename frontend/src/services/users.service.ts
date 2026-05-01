@@ -17,6 +17,10 @@ export type CreatedUser = User & {
   temporary_password?: string
 }
 
+export type TemporaryPasswordResponse = User & {
+  temporary_password: string
+}
+
 export const usersService = {
   async getUsers(filters?: { search?: string; role?: string; status?: string }): Promise<User[]> {
     const { data } = await apiClient.get<User[]>(`${BASE}/users`, { params: filters })
@@ -42,6 +46,11 @@ export const usersService = {
     client_id: string | null
   }>): Promise<User> {
     const { data } = await apiClient.put<User>(`${BASE}/users/${id}`, payload)
+    return data
+  },
+
+  async resetTemporaryPassword(id: string): Promise<TemporaryPasswordResponse> {
+    const { data } = await apiClient.post<TemporaryPasswordResponse>(`${BASE}/users/${id}/temporary-password`)
     return data
   }
 }

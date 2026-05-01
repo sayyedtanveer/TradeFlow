@@ -166,7 +166,7 @@ async def me(
             email=str(user.email),
             first_name=user.first_name,
             last_name=user.last_name,
-            role=user.role.value,
+            role=user.role,
             tenant_id=str(user.tenant_id),
             is_active=user.is_active,
             supplier_id=str(user.supplier_id) if user.supplier_id else None,

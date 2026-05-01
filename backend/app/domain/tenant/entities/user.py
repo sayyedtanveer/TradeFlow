@@ -25,7 +25,7 @@ class User(BaseEntity):
         hashed_password: str,
         first_name: str,
         last_name: str,
-        role: Role = Role.OPERATOR,
+        role: Role | str = Role.OPERATOR,
         supplier_id: Optional[uuid.UUID] = None,
         client_id: Optional[uuid.UUID] = None,
         is_active: bool = True,
@@ -47,7 +47,7 @@ class User(BaseEntity):
         self._hashed_password = hashed_password
         self._first_name = first_name
         self._last_name = last_name
-        self._role = role
+        self._role = self._normalize_role(role)
         self._supplier_id = supplier_id
         self._client_id = client_id
         self._is_active = is_active
@@ -76,7 +76,7 @@ class User(BaseEntity):
         return f"{self._first_name} {self._last_name}"
 
     @property
-    def role(self) -> Role:
+    def role(self) -> str:
         return self._role
 
     @property
@@ -99,8 +99,8 @@ class User(BaseEntity):
             raise BusinessRuleViolationException(rule="Password cannot be empty")
 
     # ── Behaviour ─────────────────────────────────────────────────────────
-    def change_role(self, new_role: Role) -> None:
-        self._role = new_role
+    def change_role(self, new_role: Role | str) -> None:
+        self._role = self._normalize_role(new_role)
         self._touch()
 
     def update_password(self, new_hashed_password: str) -> None:
@@ -116,3 +116,8 @@ class User(BaseEntity):
     def deactivate(self) -> None:
         self._is_active = False
         self._touch()
+
+    @staticmethod
+    def _normalize_role(role: Role | str) -> str:
+        value = role.value if isinstance(role, Role) else str(role)
+        return value.strip().lower()

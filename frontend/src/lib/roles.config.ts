@@ -34,6 +34,7 @@ export type AppModuleKey =
   | "sales"
   | "shopFloor"
   | "reports"
+  | "auditLogs"
   | "users"
   | "settings"
   | "supplierPortal"
@@ -52,6 +53,7 @@ export const ROLE_MODULE_ACCESS: Record<UserRole, AppModuleKey[]> = {
     "sales",
     "shopFloor",
     "reports",
+    "auditLogs",
     "users",
     "settings",
   ],
@@ -68,6 +70,7 @@ export const ROLE_MODULE_ACCESS: Record<UserRole, AppModuleKey[]> = {
     "sales",
     "shopFloor",
     "reports",
+    "auditLogs",
     "users",
     "settings",
   ],
@@ -304,9 +307,10 @@ export const MODULE_ROLES: Record<string, UserRole[]> = {
   ],
   shopFloor: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.WORKER, UserRole.OPERATOR],
   reports: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.PLANNER, UserRole.VIEWER],
+  auditLogs: [UserRole.ADMIN, UserRole.TENANT_ADMIN],
   users: [UserRole.ADMIN, UserRole.TENANT_ADMIN],
   settings: [UserRole.ADMIN, UserRole.TENANT_ADMIN],
-  supplierPortal: [UserRole.ADMIN, UserRole.SUPPLIER],
+  supplierPortal: [UserRole.SUPPLIER],
 }
 
 export function getRolesForModule(module: string): UserRole[] {

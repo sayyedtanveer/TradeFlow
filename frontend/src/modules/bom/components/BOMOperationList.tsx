@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Plus, Loader2, GripVertical, AlertCircle, ChevronUp, ChevronDown, Trash2 } from "lucide-react"
+import { Plus, Loader2, GripVertical, AlertCircle, Trash2 } from "lucide-react"
 import { bomService } from "@/services/bom.service"
 import { BOM } from "@/types/bom.types"
 import { Button } from "@/components/ui/button"
@@ -68,6 +68,17 @@ export function BOMOperationList({ bom, canEdit }: BOMOperationListProps) {
     },
   })
 
+  const removeMutation = useMutation({
+    mutationFn: (bomOperationId: string) => bomService.removeOperation(bom.id, bomOperationId),
+    onSuccess: () => {
+      toast.success("Operation removed")
+      qc.invalidateQueries({ queryKey: ["bom", bom.id] })
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || err?.message || "Failed to remove operation")
+    },
+  })
+
   const getWsName = (wsId: string) =>
     workstations?.find((w) => w.id === wsId)?.name ?? wsId.slice(0, 8) + "..."
 
@@ -80,6 +91,7 @@ export function BOMOperationList({ bom, canEdit }: BOMOperationListProps) {
   const attachedOps = (bom as any).operations as { id: string; operation_id: string; sequence: number }[] | undefined
 
   const usedSequences = new Set(attachedOps?.map((o) => o.sequence) ?? [])
+  const selectedOperation = operations?.find((op) => op.id === form.operation_id)
 
   const nextSequence = () => {
     if (!attachedOps || attachedOps.length === 0) return "10"
@@ -138,10 +150,8 @@ export function BOMOperationList({ bom, canEdit }: BOMOperationListProps) {
             <tbody className="divide-y">
               {[...attachedOps]
                 .sort((a, b) => a.sequence - b.sequence)
-                .map((ao, idx, sorted) => {
+                .map((ao) => {
                   const op = getOp(ao.operation_id)
-                  const isFirst = idx === 0
-                  const isLast = idx === sorted.length - 1
                   
                   return (
                     <tr key={ao.id} className="group hover:bg-muted/20 transition-colors">
@@ -184,49 +194,15 @@ export function BOMOperationList({ bom, canEdit }: BOMOperationListProps) {
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-1 opacity-100 group-hover:opacity-100 transition-opacity">
-                          {canEdit ? (
-                            <>
-                              {!isFirst && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 opacity-0 group-hover:opacity-100"
-                                  title="Move up"
-                                  onClick={() => {
-                                    // Implement reorder - swap with previous
-                                    const prevSeq = sorted[idx - 1].sequence
-                                    const currSeq = ao.sequence
-                                    console.log(`Reorder: Move sequence ${currSeq} before ${prevSeq}`)
-                                  }}
-                                >
-                                  <ChevronUp className="w-3.5 h-3.5" />
-                                </Button>
-                              )}
-                              {!isLast && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 opacity-0 group-hover:opacity-100"
-                                  title="Move down"
-                                  onClick={() => {
-                                    // Implement reorder - swap with next
-                                    const nextSeq = sorted[idx + 1].sequence
-                                    const currSeq = ao.sequence
-                                    console.log(`Reorder: Move sequence ${currSeq} after ${nextSeq}`)
-                                  }}
-                                >
-                                  <ChevronDown className="w-3.5 h-3.5" />
-                                </Button>
-                              )}
+                        {canEdit ? (
+                          <>
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 className="h-7 w-7 opacity-0 group-hover:opacity-100 text-destructive hover:bg-destructive/10"
                                 title="Delete operation"
-                                onClick={() => {
-                                  // TODO: Implement delete operation
-                                  console.log(`Delete operation: ${ao.id}`)
-                                }}
+                                onClick={() => removeMutation.mutate(ao.id)}
+                                disabled={removeMutation.isPending}
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </Button>
@@ -292,6 +268,9 @@ export function BOMOperationList({ bom, canEdit }: BOMOperationListProps) {
           ) : (
             <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
               <h4 className="text-sm font-medium">Attach New Operation</h4>
+              <p className="text-xs text-muted-foreground">
+                Operations define the routing steps for production. Use sequence numbers like 10, 20, 30 so another step can be inserted later.
+              </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Operation selector */}
@@ -349,6 +328,13 @@ export function BOMOperationList({ bom, canEdit }: BOMOperationListProps) {
                 </div>
               </div>
 
+              {selectedOperation && (
+                <div className="rounded-md border bg-card p-3 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">{selectedOperation.name}</span>
+                  {" "}runs at {getWsName(selectedOperation.workstation_id)} with {selectedOperation.setup_time || 0} min setup and {selectedOperation.run_time || 0} min per unit.
+                </div>
+              )}
+
               {attachError && (
                 <Alert variant="destructive">
                   <AlertCircle className="w-4 h-4" />
@@ -372,6 +358,7 @@ export function BOMOperationList({ bom, canEdit }: BOMOperationListProps) {
                     !form.operation_id ||
                     !form.sequence ||
                     isNaN(parseInt(form.sequence, 10)) ||
+                    usedSequences.has(parseInt(form.sequence, 10)) ||
                     attachMutation.isPending
                   }
                 >

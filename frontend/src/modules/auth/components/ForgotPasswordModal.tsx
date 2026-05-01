@@ -18,6 +18,16 @@ interface ForgotPasswordModalProps {
 
 type Step = "request" | "reset" | "success"
 
+const readErrorMessage = async (response: Response, fallback: string) => {
+  try {
+    const data = await response.json()
+    const message = data?.detail || data?.message
+    return typeof message === "string" ? message : message ? JSON.stringify(message) : fallback
+  } catch {
+    return fallback
+  }
+}
+
 export default function ForgotPasswordModal({ isOpen, onClose }: ForgotPasswordModalProps) {
   const [step, setStep] = useState<Step>("request")
   const [email, setEmail] = useState("")
@@ -36,18 +46,19 @@ export default function ForgotPasswordModal({ isOpen, onClose }: ForgotPasswordM
         body: JSON.stringify({ email }),
       })
       if (!response.ok) {
-        throw new Error("Failed to request password reset")
+        throw new Error(await readErrorMessage(response, "Failed to request password reset"))
       }
       return response.json()
     },
     onSuccess: (data) => {
-      setMessage("Check your email for password reset instructions")
       if (data.reset_token) {
         // Development mode - token is provided
+        setMessage("Development reset token generated and filled automatically")
         setResetToken(data.reset_token)
         setStep("reset")
       } else {
         // Production mode - token sent via email
+        setMessage(data.message || "Check your email for password reset instructions")
         setTimeout(() => {
           handleClose()
         }, 2000)
@@ -67,6 +78,9 @@ export default function ForgotPasswordModal({ isOpen, onClose }: ForgotPasswordM
       if (newPassword.length < 8) {
         throw new Error("Password must be at least 8 characters")
       }
+      if (!resetToken.trim()) {
+        throw new Error("Reset token is missing. Please request a new password reset link.")
+      }
 
       const response = await fetch("/api/v1/forgot-password/reset", {
         method: "POST",
@@ -77,7 +91,7 @@ export default function ForgotPasswordModal({ isOpen, onClose }: ForgotPasswordM
         }),
       })
       if (!response.ok) {
-        throw new Error("Failed to reset password")
+        throw new Error(await readErrorMessage(response, "Failed to reset password"))
       }
       return response.json()
     },
@@ -200,6 +214,8 @@ export default function ForgotPasswordModal({ isOpen, onClose }: ForgotPasswordM
               </div>
 
               {error && <div className="rounded bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+
+              {message && <div className="rounded bg-green-50 p-3 text-sm text-green-600">{message}</div>}
 
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={handleClose} className="flex-1">

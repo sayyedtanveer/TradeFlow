@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { useState } from "react"
+import { useState, type ChangeEvent } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { ChevronLeft, Download, Upload, Loader2 } from "lucide-react"
+import { ChevronLeft, Download, Upload, Loader2, Edit2 } from "lucide-react"
 import { productService } from "@/services/product.service"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -40,19 +40,19 @@ export default function ProductDetailPage() {
   // Load images
   const { data: images } = useQuery({
     queryKey: ["products", "template", id, "images"],
-    queryFn: () => (productService as any).getTemplateImages(id!),
+    queryFn: () => productService.getTemplateImages(id!),
     enabled: !!id,
   })
 
   // Get import template
   const getTemplateMutation = useMutation({
-    mutationFn: () => (productService as any).getImportTemplate(id!),
-    onSuccess: (data: any) => {
-      const blob = new Blob([(data as any).csv_content], { type: "text/csv" })
+    mutationFn: () => productService.getImportTemplate(id!),
+    onSuccess: (data) => {
+      const blob = new Blob([data.csv_content], { type: "text/csv" })
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = (data as any).file_name
+      a.download = data.file_name
       a.click()
       window.URL.revokeObjectURL(url)
     },
@@ -60,17 +60,17 @@ export default function ProductDetailPage() {
 
   // Import variants
   const importMutation = useMutation({
-    mutationFn: (csv: string) => (productService as any).bulkImportVariants(id!, { csv_data: csv }),
-    onSuccess: (result: any) => {
+    mutationFn: (csv: string) => productService.bulkImportVariants(id!, { csv_data: csv }),
+    onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ["products", "template", id, "variants"] })
       setShowImport(false)
       setCsvContent("")
-      if ((result as any).error_count > 0) {
-        setImportErrors((result as any).errors)
+      if (result.error_count > 0) {
+        setImportErrors(result.errors)
         setShowErrors(true)
-        toast.warning(`Imported ${(result as any).success_count} variants with ${(result as any).error_count} errors`)
+        toast.warning(`Imported ${result.success_count} variants with ${result.error_count} errors`)
       } else {
-        toast.success(`Successfully imported ${(result as any).success_count} variants`)
+        toast.success(`Successfully imported ${result.success_count} variants`)
       }
     },
     onError: (err: any) => toast.error(err?.response?.data?.detail || "Import failed"),
@@ -78,21 +78,27 @@ export default function ProductDetailPage() {
 
   // Bulk activate
   const activateMutation = useMutation({
-    mutationFn: (variantIds: string[]) => (productService as any).bulkActivateVariants(id!, variantIds),
-    onSuccess: (result: any) => {
+    mutationFn: (variantIds: string[]) => productService.bulkActivateVariants(id!, variantIds),
+    onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ["products", "template", id, "variants"] })
-      toast.success(`Activated ${(result as any).success_count} variants`)
+      toast.success(`Activated ${result.success_count} variants`)
     },
   })
 
   // Bulk deactivate
   const deactivateMutation = useMutation({
-    mutationFn: (variantIds: string[]) => (productService as any).bulkDeactivateVariants(id!, variantIds),
-    onSuccess: (result: any) => {
+    mutationFn: (variantIds: string[]) => productService.bulkDeactivateVariants(id!, variantIds),
+    onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ["products", "template", id, "variants"] })
-      toast.success(`Deactivated ${(result as any).success_count} variants`)
+      toast.success(`Deactivated ${result.success_count} variants`)
     },
   })
+
+  const handleCsvUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setCsvContent(await file.text())
+  }
 
   if (loadingTemplate) return <div className="p-8">Loading...</div>
   if (!product) return <div className="p-8">Product not found</div>
@@ -114,6 +120,10 @@ export default function ProductDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate(`/products/${id}/edit`)} size="sm">
+            <Edit2 className="w-4 h-4 mr-1" />
+            Manage Variants
+          </Button>
           <Button variant="outline" onClick={() => getTemplateMutation.mutate()} size="sm">
             <Download className="w-4 h-4 mr-1" />
             {getTemplateMutation.isPending ? "Downloading..." : "Download Template"}
@@ -198,7 +208,15 @@ export default function ProductDetailPage() {
                 </tr>
               ) : variants?.items.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-muted-foreground">No variants yet</td>
+                  <td colSpan={6} className="py-10 text-center text-muted-foreground">
+                    <div className="space-y-3">
+                      <p>No variants yet. Create one standard SKU or import variant rows before using this product in sales and production.</p>
+                      <Button variant="outline" size="sm" onClick={() => navigate(`/products/${id}/edit`)}>
+                        <Edit2 className="w-4 h-4 mr-1" />
+                        Add Variant
+                      </Button>
+                    </div>
+                  </td>
                 </tr>
               ) : (
                 variants?.items.map(v => (
@@ -212,8 +230,8 @@ export default function ProductDetailPage() {
                         </span>
                       ))}
                     </td>
-                    <td className="px-4 py-3 text-right">{formatCurrency(v.standard_cost)}</td>
-                    <td className="px-4 py-3 text-right">{v.selling_price ? formatCurrency(v.selling_price) : "—"}</td>
+                    <td className="px-4 py-3 text-right">{formatCurrency(Number(v.standard_cost))}</td>
+                    <td className="px-4 py-3 text-right">{v.selling_price ? formatCurrency(Number(v.selling_price)) : "-"}</td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-block px-2 py-1 rounded text-xs bg-opacity-20" 
                             style={{ backgroundColor: v.is_active ? "rgb(34 197 94 / 0.2)" : "rgb(239 68 68 / 0.2)" }}>
@@ -235,12 +253,28 @@ export default function ProductDetailPage() {
             <DialogTitle>Import Variants</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+              Download the template, fill one row per SKU/variant, then upload the CSV or paste it below.
+              Attribute columns must match this product template; standard cost is required and selling price is optional.
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleCsvUpload}
+                className="text-sm"
+              />
+              <Button variant="outline" size="sm" onClick={() => getTemplateMutation.mutate()}>
+                <Download className="w-4 h-4 mr-1" />
+                Download Template
+              </Button>
+            </div>
             <div>
               <label className="text-sm font-medium">CSV Content</label>
               <textarea
                 value={csvContent}
                 onChange={e => setCsvContent(e.target.value)}
-                placeholder="Paste CSV here or use download template..."
+                placeholder="Paste CSV here, e.g. SIZE,COLOR,standard_cost,selling_price"
                 className="w-full h-64 p-3 border rounded font-mono text-sm"
               />
             </div>

@@ -8,6 +8,7 @@ from backend.app.application.bom.commands.routing_commands import (
     AddWorkstationCommand,
     AddOperationCommand,
     AttachOperationToBOMCommand,
+    RemoveOperationFromBOMCommand,
     UpdateWorkstationCommand,
     DeleteWorkstationCommand,
     UpdateOperationCommand,
@@ -56,6 +57,8 @@ class RoutingHandlers:
         bom = await self._bom_repo.get_by_id(cmd.bom_id, cmd.tenant_id)
         if not bom:
             raise ValueError(f"BOM {cmd.bom_id} not found.")
+        if bom.is_active:
+            raise ValueError("Cannot attach operation to an active BOM. Create a new BOM version to change routing.")
 
         operation = await self._operation_repo.get_by_id(cmd.operation_id, cmd.tenant_id)
         if not operation:
@@ -73,10 +76,25 @@ class RoutingHandlers:
         )
         bom.add_operation(bom_op)
 
-        self._bom_repo.save(bom)
+        await self._bom_repo.save(bom)
         await self._uow.commit()
 
         return bom_op.id
+
+    async def handle_remove_operation_from_bom(self, cmd: RemoveOperationFromBOMCommand) -> None:
+        bom = await self._bom_repo.get_by_id(cmd.bom_id, cmd.tenant_id)
+        if not bom:
+            raise ValueError(f"BOM {cmd.bom_id} not found.")
+        if bom.is_active:
+            raise ValueError("Cannot remove operation from an active BOM. Create a new BOM version to change routing.")
+
+        before = len(bom.operations)
+        bom.operations = [op for op in bom.operations if op.id != cmd.bom_operation_id]
+        if len(bom.operations) == before:
+            raise ValueError(f"BOM operation {cmd.bom_operation_id} not found.")
+
+        await self._bom_repo.save(bom)
+        await self._uow.commit()
 
     async def handle_update_workstation(self, cmd: UpdateWorkstationCommand) -> Workstation:
         workstation = await self._workstation_repo.get_by_id(cmd.workstation_id, cmd.tenant_id)

@@ -63,7 +63,7 @@ export interface SalesOrderLine {
   subtotal: number;
   tax_amount: number;
   total: number;
-  line_status: 'PENDING' | 'ALLOCATED' | 'SHIPPED' | 'DELIVERED';
+  line_status: 'PENDING' | 'ALLOCATED' | 'BACKORDER' | 'SHIPPED' | 'DELIVERED';
 }
 
 export interface CreateOrderLineRequest {
@@ -79,11 +79,16 @@ export interface CreateOrderLineRequest {
  */
 export enum OrderStatus {
   DRAFT = 'DRAFT',
+  PENDING_APPROVAL = 'PENDING_APPROVAL',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
   CONFIRMED = 'CONFIRMED',
+  PROCESSING = 'PROCESSING',
   PRODUCTION = 'PRODUCTION',
   READY = 'READY',
   SHIPPED = 'SHIPPED',
   DELIVERED = 'DELIVERED',
+  COMPLETED = 'COMPLETED',
   CANCELLED = 'CANCELLED',
 }
 
@@ -112,6 +117,11 @@ export interface SalesOrder {
   grand_total: number;
   notes?: string;
   created_by?: string;
+  approver_id?: string | null;
+  submitted_at?: string | null;
+  approved_at?: string | null;
+  rejected_at?: string | null;
+  approval_notes?: string | null;
   is_active: boolean;
   lines: SalesOrderLine[];
   created_at: string;
@@ -184,11 +194,16 @@ export interface SalesListResponse<T> {
 
 export interface OrderStatistics {
   draft_count: number;
+  pending_approval_count: number;
+  approved_count: number;
+  rejected_count: number;
   confirmed_count: number;
+  processing_count: number;
   production_count: number;
   ready_count: number;
   shipped_count: number;
   delivered_count: number;
+  completed_count: number;
   cancelled_count: number;
 }
 

@@ -548,6 +548,22 @@ async def run() -> None:
             )
             assert _as_float(fg_stock_after_ship["available_stock"]) == 0
 
+            audit = await admin.call("GET", "/audit-logs?limit=200", expected={200})
+            audit_actions = {item["action"] for item in audit["items"]}
+            expected_audit_actions = {
+                "SUPPLIER_CREATED",
+                "SUPPLIER_USER_CREATED",
+                "MRP_RUN",
+                "RFQ_CREATED",
+                "RFQ_SENT",
+                "QUOTE_SUBMITTED",
+                "RFQ_AWARDED",
+                "GRN_CREATED",
+                "GRN_RECEIVED",
+            }
+            missing_audit_actions = expected_audit_actions - audit_actions
+            assert not missing_audit_actions, f"Missing audit actions: {missing_audit_actions}"
+
             print("FULL_FACTORY_ERP_FLOW_ASGI_E2E_PASSED")
             print(f"template_id={template_id}")
             print(f"variant_id={variant_id}")

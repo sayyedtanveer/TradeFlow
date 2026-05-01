@@ -26,6 +26,21 @@ export interface ClientAvailability {
   message: string
 }
 
+export interface ClientCatalogItem {
+  product_id: string
+  product_type: string
+  product_name: string
+  product_code?: string | null
+  uom_id?: string | null
+  uom_code?: string | null
+  uom_name?: string | null
+  unit_price: number
+  price_list_id: string
+  price_list_name: string
+  availability: ClientAvailability
+  is_orderable: boolean
+}
+
 export interface ClientOrderLine {
   id: string
   product_id: string
@@ -71,6 +86,19 @@ export interface ClientOrder {
   }
   availability: ClientAvailability[]
   credit_warning?: boolean
+}
+
+export type ClientOrderCreatePayload = {
+  delivery_date?: string
+  notes?: string
+  lines: Array<{
+    product_id: string
+    product_type: string
+    uom_id: string
+    quantity: number
+    unit_price?: number
+    tax_rate?: number
+  }>
 }
 
 export interface ClientInvoice {
@@ -209,12 +237,17 @@ export interface ClientFaqItem {
 
 export const clientOrderStatusClasses: Record<string, string> = {
   DRAFT: "bg-slate-100 text-slate-700",
+  PENDING_APPROVAL: "bg-amber-100 text-amber-700",
+  APPROVED: "bg-indigo-100 text-indigo-700",
+  REJECTED: "bg-rose-100 text-rose-700",
   CONFIRMED: "bg-blue-100 text-blue-700",
+  PROCESSING: "bg-sky-100 text-sky-700",
   PRODUCTION: "bg-amber-100 text-amber-700",
   QC: "bg-orange-100 text-orange-700",
   READY: "bg-violet-100 text-violet-700",
   SHIPPED: "bg-cyan-100 text-cyan-700",
   DELIVERED: "bg-emerald-100 text-emerald-700",
+  COMPLETED: "bg-teal-100 text-teal-700",
   CANCELLED: "bg-rose-100 text-rose-700",
 }
 
@@ -268,6 +301,11 @@ export const clientService = {
     return response.data
   },
 
+  async listCatalog(params?: { search?: string }): Promise<ClientCatalogItem[]> {
+    const response = await apiClient.get(`${BASE}/catalog`, { params })
+    return response.data
+  },
+
   async listOrders(params?: { page?: number; page_size?: number; status?: string; search?: string }): Promise<Paginated<ClientOrder>> {
     const response = await apiClient.get(`${BASE}/orders`, { params })
     return response.data
@@ -280,6 +318,11 @@ export const clientService = {
 
   async getOrderTracking(id: string): Promise<{ order_id: string; order_number: string; current_status: string; timeline: ClientTimelineStep[]; tracking: ClientOrder["tracking"] }> {
     const response = await apiClient.get(`${BASE}/orders/${id}/tracking`)
+    return response.data
+  },
+
+  async createOrder(payload: ClientOrderCreatePayload): Promise<ClientOrder> {
+    const response = await apiClient.post(`${BASE}/orders`, payload)
     return response.data
   },
 

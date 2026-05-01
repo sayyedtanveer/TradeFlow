@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { formatCurrency } from "@/utils/currency"
 
 interface VariantManagerProps {
   template: ItemTemplate
@@ -89,11 +91,26 @@ export function VariantManager({ template, canEdit }: VariantManagerProps) {
               {template.attributes.map(attr => (
                 <div key={attr.key} className="space-y-1.5">
                   <Label className="text-xs">{attr.label} ({attr.key})</Label>
-                  <Input 
-                    placeholder="e.g. XL, Blue" 
-                    value={newValues[attr.key] || ""} 
-                    onChange={e => setVal(attr.key, e.target.value)} 
-                  />
+                  {attr.values && attr.values.length > 0 ? (
+                    <Select value={newValues[attr.key] || ""} onValueChange={(value) => setVal(attr.key, value)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select value..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {attr.values.map((value) => (
+                          <SelectItem key={value} value={value}>
+                            {value}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      placeholder="e.g. XL, Blue"
+                      value={newValues[attr.key] || ""}
+                      onChange={e => setVal(attr.key, e.target.value)}
+                    />
+                  )}
                 </div>
               ))}
             </div>
@@ -145,8 +162,8 @@ export function VariantManager({ template, canEdit }: VariantManagerProps) {
                 )}
               </div>
               <div className="flex flex-wrap sm:flex-col gap-x-4 gap-y-1 sm:text-right shrink-0 items-start sm:items-end text-sm">
-                <span className="text-green-700 font-medium">Cost: ${v.standard_cost.toFixed(2)}</span>
-                {v.selling_price && <span className="text-muted-foreground">Price: ${v.selling_price.toFixed(2)}</span>}
+                <span className="text-green-700 font-medium">Cost: {formatCurrency(Number(v.standard_cost))}</span>
+                {v.selling_price && <span className="text-muted-foreground">Price: {formatCurrency(Number(v.selling_price))}</span>}
                 <Badge variant={v.is_active ? "outline" : "secondary"} className="mt-1">{v.is_active ? "Active" : "Inactive"}</Badge>
               </div>
             </div>

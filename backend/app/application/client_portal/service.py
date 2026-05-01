@@ -13,14 +13,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.application.finance.notification_service import NotificationService
 from backend.app.infrastructure.persistence.models.finance_models import InvoiceModel, NotificationModel
+from backend.app.infrastructure.persistence.models.item_template_model import ItemTemplateModel
 from backend.app.infrastructure.persistence.models.item_variant_model import ItemVariantModel
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.infrastructure.persistence.models.sales_models import (
     ClientAddressModel,
     ClientModel,
+    PriceListLineModel,
+    PriceListModel,
     SalesOrderLineModel,
     SalesOrderModel,
 )
+from backend.app.infrastructure.persistence.models.unit_of_measure_model import UnitOfMeasureModel
 from backend.app.infrastructure.persistence.models.user_model import (
     ClientNotificationSettingsModel,
     PasswordResetTokenModel,
@@ -28,14 +32,29 @@ from backend.app.infrastructure.persistence.models.user_model import (
 )
 
 
-ORDER_TIMELINE = ["DRAFT", "CONFIRMED", "PRODUCTION", "QC", "READY", "SHIPPED", "DELIVERED"]
+ORDER_TIMELINE = [
+    "DRAFT",
+    "PENDING_APPROVAL",
+    "APPROVED",
+    "PROCESSING",
+    "PRODUCTION",
+    "QC",
+    "READY",
+    "SHIPPED",
+    "DELIVERED",
+    "COMPLETED",
+]
 STATUS_SEQUENCE = {
     "DRAFT": 0,
-    "CONFIRMED": 1,
-    "PRODUCTION": 2,
-    "READY": 4,
-    "SHIPPED": 5,
-    "DELIVERED": 6,
+    "PENDING_APPROVAL": 1,
+    "APPROVED": 2,
+    "CONFIRMED": 3,
+    "PROCESSING": 3,
+    "PRODUCTION": 4,
+    "READY": 6,
+    "SHIPPED": 7,
+    "DELIVERED": 8,
+    "COMPLETED": 9,
 }
 
 
@@ -287,6 +306,183 @@ class ClientPortalService:
             },
         }
 
+    async def create_order(
+        self,
+        tenant_id: uuid.UUID,
+        client_id: uuid.UUID,
+        user_id: uuid.UUID,
+        lines_input: list[dict[str, Any]],
+        delivery_date: Optional[date] = None,
+        notes: Optional[str] = None,
+    ) -> dict[str, Any]:
+        if not lines_input:
+            raise ValueError("Order must contain at least one line")
+
+        order_date = date.today()
+        approver_id = await self._resolve_order_approver_id(tenant_id)
+        order = SalesOrderModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            client_id=client_id,
+            order_number=await self._next_order_number(tenant_id),
+            order_date=order_date.isoformat(),
+            delivery_date=(delivery_date or (order_date + timedelta(days=7))).isoformat(),
+            status="PENDING_APPROVAL",
+            payment_status="PENDING",
+            subtotal=0,
+            discount_amount=0,
+            tax_amount=0,
+            grand_total=0,
+            notes=notes,
+            created_by=str(user_id),
+            approver_id=approver_id,
+            submitted_at=_utc_now(),
+            is_active=True,
+            is_deleted=False,
+        )
+        self.session.add(order)
+        await self.session.flush()
+
+        subtotal = Decimal("0")
+        tax_total = Decimal("0")
+        availability: list[dict[str, Any]] = []
+        for raw_line in lines_input:
+            quantity = Decimal(str(raw_line["quantity"]))
+            unit_price = Decimal(
+                str(
+                    await self._resolve_unit_price(
+                        tenant_id=tenant_id,
+                        client_id=client_id,
+                        product_id=raw_line["product_id"],
+                        product_type=raw_line["product_type"],
+                        price_date=order_date,
+                    )
+                )
+            )
+            tax_rate = Decimal(str(raw_line.get("tax_rate") or 0))
+            tax_amount = (quantity * unit_price * tax_rate / Decimal("100")).quantize(Decimal("0.01"))
+            line_total = (quantity * unit_price + tax_amount).quantize(Decimal("0.01"))
+            subtotal += (quantity * unit_price).quantize(Decimal("0.01"))
+            tax_total += tax_amount
+
+            line = SalesOrderLineModel(
+                id=uuid.uuid4(),
+                sales_order_id=order.id,
+                product_id=raw_line["product_id"],
+                product_type=raw_line["product_type"],
+                uom_id=raw_line["uom_id"],
+                quantity=quantity,
+                unit_price=unit_price,
+                tax_rate=tax_rate,
+                tax_amount=tax_amount,
+                line_total=line_total,
+                allocated_quantity=0,
+                shipped_quantity=0,
+                backorder_quantity=0,
+                status="PENDING",
+            )
+            self.session.add(line)
+            availability.append(await self._estimate_availability(tenant_id, line.product_id, quantity))
+
+        order.subtotal = subtotal
+        order.tax_amount = tax_total
+        order.grand_total = subtotal + tax_total
+
+        client = await self._get_client(tenant_id, client_id)
+        credit = self._serialize_credit(client)
+        projected_usage = credit["credit_used"] + _money(order.grand_total)
+        credit_warning = credit["credit_limit"] is not None and projected_usage > float(credit["credit_limit"])
+        await self.session.commit()
+
+        notification_service = NotificationService(self.session)
+        for role in ("manager", "admin", "tenant_admin"):
+            await notification_service.broadcast_to_role(
+                tenant_id=tenant_id,
+                role=role,
+                notification_type="CLIENT_ORDER_PENDING_APPROVAL",
+                title=f"Order {order.order_number} needs approval",
+                message=f"{client.name} submitted a client portal order for approval.",
+                reference_type="sales_order",
+                reference_id=order.id,
+            )
+
+        created_order = await self._get_client_order(tenant_id, client_id, order.id)
+        result = await self._serialize_order(created_order, include_lines=True)
+        result["credit_warning"] = credit_warning
+        result["availability"] = availability
+        return result
+
+    async def list_catalog(
+        self,
+        tenant_id: uuid.UUID,
+        client_id: uuid.UUID,
+        search: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        del client_id  # Reserved for future client-specific price list rules.
+        price_date = date.today()
+        rows = (
+            await self.session.execute(
+                select(PriceListLineModel, PriceListModel)
+                .join(PriceListModel, PriceListModel.id == PriceListLineModel.price_list_id)
+                .where(
+                    PriceListModel.tenant_id == tenant_id,
+                    PriceListModel.is_active.is_(True),
+                    PriceListModel.is_deleted.is_(False),
+                    PriceListModel.valid_from <= price_date,
+                    or_(PriceListModel.valid_to.is_(None), PriceListModel.valid_to >= price_date),
+                )
+                .order_by(
+                    PriceListModel.is_default.desc(),
+                    PriceListModel.valid_from.desc(),
+                    PriceListLineModel.created_at.desc(),
+                )
+            )
+        ).all()
+
+        query = (search or "").strip().lower()
+        catalog: list[dict[str, Any]] = []
+        seen: set[tuple[uuid.UUID, str]] = set()
+
+        for price_line, price_list in rows:
+            product_type = str(price_line.product_type)
+            key = (price_line.product_id, product_type)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            product = await self._resolve_catalog_product(
+                tenant_id=tenant_id,
+                product_id=price_line.product_id,
+                product_type=product_type,
+            )
+            if product is None:
+                continue
+
+            searchable = " ".join(
+                str(value or "")
+                for value in (
+                    product["product_name"],
+                    product["product_code"],
+                    product["uom_code"],
+                    product["product_type"],
+                )
+            ).lower()
+            if query and query not in searchable:
+                continue
+
+            catalog.append(
+                {
+                    **product,
+                    "unit_price": _money(price_line.unit_price),
+                    "price_list_id": str(price_list.id),
+                    "price_list_name": price_list.name,
+                    "availability": await self._estimate_availability(tenant_id, price_line.product_id, Decimal("1")),
+                    "is_orderable": product["uom_id"] is not None,
+                }
+            )
+
+        return catalog
+
     async def create_reorder(
         self,
         tenant_id: uuid.UUID,
@@ -308,6 +504,10 @@ class ClientPortalService:
             }
             for line in source_lines
         ]
+        source_prices = {
+            (str(line.product_id), str(line.product_type), str(line.uom_id)): Decimal(str(line.unit_price or 0))
+            for line in source_lines
+        }
         if not requested_lines:
             raise ValueError("Cannot reorder an order with no lines")
 
@@ -337,7 +537,23 @@ class ClientPortalService:
         availability: list[dict[str, Any]] = []
         for raw_line in requested_lines:
             quantity = Decimal(str(raw_line["quantity"]))
-            unit_price = Decimal(str(raw_line.get("unit_price") or 0))
+            try:
+                unit_price = Decimal(
+                    str(
+                        await self._resolve_unit_price(
+                            tenant_id=tenant_id,
+                            client_id=client_id,
+                            product_id=raw_line["product_id"],
+                            product_type=raw_line["product_type"],
+                            price_date=order_date,
+                        )
+                    )
+                )
+            except ValueError:
+                line_key = (str(raw_line["product_id"]), str(raw_line["product_type"]), str(raw_line["uom_id"]))
+                unit_price = source_prices.get(line_key)
+                if unit_price is None or unit_price <= 0:
+                    raise
             tax_rate = Decimal(str(raw_line.get("tax_rate") or 0))
             tax_amount = (quantity * unit_price * tax_rate / Decimal("100")).quantize(Decimal("0.01"))
             line_total = (quantity * unit_price + tax_amount).quantize(Decimal("0.01"))
@@ -745,6 +961,11 @@ class ClientPortalService:
             "tax_amount": _money(order.tax_amount),
             "grand_total": _money(order.grand_total),
             "notes": order.notes,
+            "approver_id": str(order.approver_id) if order.approver_id else None,
+            "submitted_at": order.submitted_at.isoformat() if order.submitted_at else None,
+            "approved_at": order.approved_at.isoformat() if order.approved_at else None,
+            "rejected_at": order.rejected_at.isoformat() if order.rejected_at else None,
+            "approval_notes": order.approval_notes,
             "created_at": order.created_at.isoformat(),
             "updated_at": order.updated_at.isoformat(),
             "timeline": self._build_timeline(order.status),
@@ -885,25 +1106,76 @@ class ClientPortalService:
             "marketing": settings.marketing,
         }
 
+    async def _resolve_order_approver_id(self, tenant_id: uuid.UUID) -> Optional[uuid.UUID]:
+        for role in ("manager", "admin", "tenant_admin"):
+            approver_id = await self.session.scalar(
+                select(UserModel.id)
+                .where(
+                    UserModel.tenant_id == tenant_id,
+                    UserModel.role == role,
+                    UserModel.is_active.is_(True),
+                    UserModel.is_deleted.is_(False),
+                )
+                .order_by(UserModel.created_at.asc())
+                .limit(1)
+            )
+            if approver_id:
+                return approver_id
+        return None
+
+    async def _resolve_unit_price(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        client_id: uuid.UUID,
+        product_id: uuid.UUID,
+        product_type: str,
+        price_date: date,
+    ) -> Decimal:
+        del client_id  # Reserved for future client-specific price list rules.
+        unit_price = await self.session.scalar(
+            select(PriceListLineModel.unit_price)
+            .join(PriceListModel, PriceListModel.id == PriceListLineModel.price_list_id)
+            .where(
+                PriceListModel.tenant_id == tenant_id,
+                PriceListModel.is_active.is_(True),
+                PriceListModel.is_deleted.is_(False),
+                PriceListModel.valid_from <= price_date,
+                or_(PriceListModel.valid_to.is_(None), PriceListModel.valid_to >= price_date),
+                PriceListLineModel.product_id == product_id,
+                PriceListLineModel.product_type == product_type,
+            )
+            .order_by(PriceListModel.is_default.desc(), PriceListModel.valid_from.desc())
+            .limit(1)
+        )
+        if unit_price is None:
+            raise ValueError(f"No active price found for product {product_id}")
+        return Decimal(str(unit_price))
+
     def _build_timeline(self, current_status: str) -> list[dict[str, str]]:
         status = str(current_status or "").upper()
         if status == "CANCELLED":
             return [
-                {"label": step.title(), "status": "completed" if idx <= 1 else "cancelled"}
+                {"label": step.replace("_", " ").title(), "status": "completed" if idx <= 1 else "cancelled"}
                 for idx, step in enumerate(ORDER_TIMELINE)
+            ]
+        if status == "REJECTED":
+            return [
+                {"label": step.replace("_", " ").title(), "status": "completed" if step in {"DRAFT", "PENDING_APPROVAL"} else "cancelled"}
+                for step in ORDER_TIMELINE
             ]
 
         rank = _status_rank(status)
         timeline = []
         for index, step in enumerate(ORDER_TIMELINE):
-            step_rank = 3 if step == "QC" else index
+            step_rank = 5 if step == "QC" else STATUS_SEQUENCE.get(step, index)
             if rank > step_rank:
                 state = "completed"
             elif rank == step_rank:
                 state = "current"
             else:
                 state = "upcoming"
-            timeline.append({"label": step.title(), "status": state})
+            timeline.append({"label": step.replace("_", " ").title(), "status": state})
         return timeline
 
     async def _estimate_availability(
@@ -940,6 +1212,90 @@ class ClientPortalService:
                 else "Stock appears available."
             ),
         }
+
+    async def _resolve_catalog_product(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        product_id: uuid.UUID,
+        product_type: str,
+    ) -> Optional[dict[str, Any]]:
+        product_type = str(product_type or "").lower()
+        pricing_product_type = product_type if product_type in {"variant", "finished_product"} else "variant"
+
+        async def variant_payload() -> Optional[dict[str, Any]]:
+            variant = await self.session.scalar(
+                select(ItemVariantModel).where(
+                    ItemVariantModel.id == product_id,
+                    ItemVariantModel.tenant_id == tenant_id,
+                    ItemVariantModel.is_active.is_(True),
+                    ItemVariantModel.is_deleted.is_(False),
+                )
+            )
+            if variant is None:
+                return None
+
+            uom_id = variant.base_unit_id
+            if uom_id is None:
+                uom_id = await self.session.scalar(
+                    select(ItemTemplateModel.base_unit_id).where(
+                        ItemTemplateModel.id == variant.template_id,
+                        ItemTemplateModel.tenant_id == tenant_id,
+                        ItemTemplateModel.is_deleted.is_(False),
+                    )
+                )
+            uom = await self._resolve_uom(tenant_id, uom_id)
+            return {
+                "product_id": str(variant.id),
+                "product_type": pricing_product_type,
+                "product_name": variant.name,
+                "product_code": variant.code,
+                "uom_id": str(uom_id) if uom_id else None,
+                "uom_code": uom["code"] if uom else None,
+                "uom_name": uom["name"] if uom else None,
+            }
+
+        async def material_payload() -> Optional[dict[str, Any]]:
+            material = await self.session.scalar(
+                select(MaterialModel).where(
+                    MaterialModel.id == product_id,
+                    MaterialModel.tenant_id == tenant_id,
+                    MaterialModel.is_active.is_(True),
+                    MaterialModel.is_deleted.is_(False),
+                )
+            )
+            if material is None:
+                return None
+
+            uom = await self._resolve_uom(tenant_id, material.base_unit_id)
+            return {
+                "product_id": str(material.id),
+                "product_type": pricing_product_type,
+                "product_name": material.name,
+                "product_code": material.code,
+                "uom_id": str(material.base_unit_id) if material.base_unit_id else None,
+                "uom_code": uom["code"] if uom else None,
+                "uom_name": uom["name"] if uom else None,
+            }
+
+        if product_type == "finished_product":
+            return await material_payload() or await variant_payload()
+        return await variant_payload() or await material_payload()
+
+    async def _resolve_uom(self, tenant_id: uuid.UUID, uom_id: Optional[uuid.UUID]) -> Optional[dict[str, str]]:
+        if uom_id is None:
+            return None
+        uom = await self.session.scalar(
+            select(UnitOfMeasureModel).where(
+                UnitOfMeasureModel.id == uom_id,
+                UnitOfMeasureModel.tenant_id == tenant_id,
+                UnitOfMeasureModel.is_active.is_(True),
+                UnitOfMeasureModel.is_deleted.is_(False),
+            )
+        )
+        if uom is None:
+            return None
+        return {"code": uom.code, "name": uom.name}
 
     async def _resolve_product_name(self, tenant_id: uuid.UUID, product_id: uuid.UUID) -> tuple[str, Optional[str]]:
         variant = await self.session.scalar(

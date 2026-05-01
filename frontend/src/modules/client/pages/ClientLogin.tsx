@@ -10,9 +10,13 @@ import { clientService } from "../services/client.service"
 
 type Mode = "login" | "forgot" | "reset"
 
+const getErrorMessage = (error: any, fallback: string) =>
+  error?.response?.data?.detail || error?.message || fallback
+
 export default function ClientLogin() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+  const erpLoginUrl = `${window.location.origin}/login`
   const { setAuth, setUser, setSupplierAndClient } = useAuthStore()
   const [loginForm, setLoginForm] = useState({ email: "", password: "", tenant_id: "" })
   const [forgotForm, setForgotForm] = useState({ email: "", tenant_id: "" })
@@ -56,17 +60,29 @@ export default function ClientLogin() {
       }
       navigate("/client", { replace: true })
     },
-    onError: (error: any) => setMessage(error.message ?? "Unable to sign in."),
+    onError: (error: any) => {
+      const message = getErrorMessage(error, "Unable to sign in.")
+      setMessage(
+        `${message}. This page accepts client users only. Supplier and admin users must sign in at ${erpLoginUrl}.`
+      )
+    },
   })
 
   const forgotMutation = useMutation({
     mutationFn: clientService.forgotPassword,
     onSuccess: (data) => {
-      setMessage(data.reset_token ? `Reset token: ${data.reset_token}` : data.message)
-      setResetForm((current) => ({ ...current, token: data.reset_token ?? current.token }))
-      setSearchParams({ mode: "reset", token: data.reset_token ?? "" })
+      const token = data.reset_token?.trim()
+      if (token) {
+        setMessage("Development reset token generated and filled below.")
+        setResetForm((current) => ({ ...current, token }))
+        setSearchParams({ mode: "reset", token })
+        return
+      }
+
+      setMessage(`${data.message} Supplier and internal users should use the main ERP login page.`)
+      setSearchParams({ mode: "forgot" })
     },
-    onError: (error: any) => setMessage(error.message ?? "Unable to start password reset."),
+    onError: (error: any) => setMessage(getErrorMessage(error, "Unable to start password reset.")),
   })
 
   const resetMutation = useMutation({
@@ -76,12 +92,22 @@ export default function ClientLogin() {
       setSearchParams({ mode: "login" })
       setResetForm({ token: "", new_password: "" })
     },
-    onError: (error: any) => setMessage(error.message ?? "Unable to reset password."),
+    onError: (error: any) => setMessage(getErrorMessage(error, "Unable to reset password.")),
   })
 
   const setMode = (nextMode: Mode) => {
     setMessage(null)
-    setSearchParams(nextMode === "login" ? {} : { mode: nextMode })
+    if (nextMode === "login") {
+      setSearchParams({})
+      return
+    }
+
+    if (nextMode === "reset" && resetForm.token.trim()) {
+      setSearchParams({ mode: nextMode, token: resetForm.token.trim() })
+      return
+    }
+
+    setSearchParams({ mode: nextMode })
   }
 
   return (
@@ -106,7 +132,13 @@ export default function ClientLogin() {
           <Card className="rounded-[32px] border-slate-200/70 shadow-2xl">
             <CardHeader>
               <CardTitle>Client Access</CardTitle>
-              <CardDescription>Sign in with your client role account. Password recovery stays inside this portal.</CardDescription>
+              <CardDescription>
+                Sign in with a client role account only. Supplier and admin users must use{" "}
+                <a className="text-blue-700 underline" href="/login">
+                  {erpLoginUrl}
+                </a>
+                .
+              </CardDescription>
               <div className="mt-4 flex gap-2">
                 <Button variant={mode === "login" ? "default" : "outline"} className="rounded-full" onClick={() => setMode("login")}>Login</Button>
                 <Button variant={mode === "forgot" ? "default" : "outline"} className="rounded-full" onClick={() => setMode("forgot")}>Forgot Password</Button>
@@ -169,12 +201,31 @@ export default function ClientLogin() {
                   className="space-y-4"
                   onSubmit={(event) => {
                     event.preventDefault()
-                    resetMutation.mutate(resetForm)
+                    const token = resetForm.token.trim()
+                    const newPassword = resetForm.new_password.trim()
+
+                    if (!token) {
+                      setMessage("Paste the reset token from the reset instructions before setting a new password.")
+                      return
+                    }
+
+                    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(token)) {
+                      setMessage("That looks like an email address. The reset token is the long secure token from the reset instructions.")
+                      return
+                    }
+
+                    if (newPassword.length < 8) {
+                      setMessage("New password must be at least 8 characters.")
+                      return
+                    }
+
+                    resetMutation.mutate({ token, new_password: newPassword })
                   }}
                 >
                   <div className="space-y-2">
                     <Label>Reset Token</Label>
                     <Input value={resetForm.token} onChange={(event) => setResetForm({ ...resetForm, token: event.target.value })} />
+                    <p className="text-xs text-slate-500">Use the reset token, not the email address. Suppliers use /login, not the client portal.</p>
                   </div>
                   <div className="space-y-2">
                     <Label>New Password</Label>

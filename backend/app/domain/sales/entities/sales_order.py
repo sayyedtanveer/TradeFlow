@@ -1,6 +1,6 @@
 """Sales Order Aggregate Root."""
 
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -42,6 +42,11 @@ class SalesOrder(AggregateRoot):
         grand_total: Decimal | int | float | str = Decimal("0"),
         notes: str | None = None,
         created_by: str | None = None,
+        approver_id: UUID | None = None,
+        submitted_at: datetime | None = None,
+        approved_at: datetime | None = None,
+        rejected_at: datetime | None = None,
+        approval_notes: str | None = None,
         lines: list | None = None,
         is_active: bool = True,
         is_deleted: bool = False,
@@ -88,6 +93,11 @@ class SalesOrder(AggregateRoot):
         self.lines: list = lines or []  # List[SalesOrderLine]
         self.notes = notes
         self.created_by = created_by
+        self.approver_id = approver_id
+        self.submitted_at = submitted_at
+        self.approved_at = approved_at
+        self.rejected_at = rejected_at
+        self.approval_notes = approval_notes
         self.is_active = is_active
         
         self._validate()
@@ -191,15 +201,74 @@ class SalesOrder(AggregateRoot):
         - CANCELLED → (final state)
         """
         valid_transitions = {
-            OrderStatus.DRAFT: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
-            OrderStatus.CONFIRMED: [OrderStatus.PRODUCTION, OrderStatus.READY, OrderStatus.CANCELLED],
+            OrderStatus.DRAFT: [
+                OrderStatus.PENDING_APPROVAL,
+                OrderStatus.CONFIRMED,
+                OrderStatus.CANCELLED,
+            ],
+            OrderStatus.PENDING_APPROVAL: [
+                OrderStatus.APPROVED,
+                OrderStatus.REJECTED,
+                OrderStatus.CANCELLED,
+            ],
+            OrderStatus.APPROVED: [
+                OrderStatus.CONFIRMED,
+                OrderStatus.PROCESSING,
+                OrderStatus.CANCELLED,
+            ],
+            OrderStatus.REJECTED: [],
+            OrderStatus.CONFIRMED: [
+                OrderStatus.PROCESSING,
+                OrderStatus.PRODUCTION,
+                OrderStatus.READY,
+                OrderStatus.CANCELLED,
+            ],
+            OrderStatus.PROCESSING: [OrderStatus.PRODUCTION, OrderStatus.READY, OrderStatus.CANCELLED],
             OrderStatus.PRODUCTION: [OrderStatus.READY, OrderStatus.CANCELLED],
             OrderStatus.READY: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
-            OrderStatus.SHIPPED: [OrderStatus.DELIVERED, OrderStatus.CANCELLED],
-            OrderStatus.DELIVERED: [],
+            OrderStatus.SHIPPED: [OrderStatus.DELIVERED, OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+            OrderStatus.DELIVERED: [OrderStatus.COMPLETED],
+            OrderStatus.COMPLETED: [],
             OrderStatus.CANCELLED: [],
         }
         return new_status in valid_transitions.get(self.status, [])
+
+    def submit_for_approval(self, approver_id: UUID | None = None) -> None:
+        """Move a draft order into the manager approval queue."""
+        if not self.can_transition_to(OrderStatus.PENDING_APPROVAL):
+            raise ValueError(
+                f"Cannot submit order in {self.status.value} status for approval"
+            )
+        if not self.lines:
+            raise ValueError("Cannot submit order with no lines")
+
+        self.status = OrderStatus.PENDING_APPROVAL
+        self.approver_id = approver_id
+        self.submitted_at = datetime.now(timezone.utc)
+        self._touch()
+
+    def approve(self, approver_id: UUID, notes: str | None = None) -> None:
+        """Approve a submitted order before execution."""
+        if not self.can_transition_to(OrderStatus.APPROVED):
+            raise ValueError(f"Cannot approve order in {self.status.value} status")
+
+        self.status = OrderStatus.APPROVED
+        self.approver_id = approver_id
+        self.approved_at = datetime.now(timezone.utc)
+        self.rejected_at = None
+        self.approval_notes = notes
+        self._touch()
+
+    def reject(self, approver_id: UUID, notes: str | None = None) -> None:
+        """Reject a submitted order and stop execution."""
+        if not self.can_transition_to(OrderStatus.REJECTED):
+            raise ValueError(f"Cannot reject order in {self.status.value} status")
+
+        self.status = OrderStatus.REJECTED
+        self.approver_id = approver_id
+        self.rejected_at = datetime.now(timezone.utc)
+        self.approval_notes = notes
+        self._touch()
 
     def confirm(self) -> None:
         """
@@ -280,6 +349,11 @@ class SalesOrder(AggregateRoot):
             "lines": [line.to_dict() for line in self.lines],
             "notes": self.notes,
             "created_by": self.created_by,
+            "approver_id": str(self.approver_id) if self.approver_id else None,
+            "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
+            "approved_at": self.approved_at.isoformat() if self.approved_at else None,
+            "rejected_at": self.rejected_at.isoformat() if self.rejected_at else None,
+            "approval_notes": self.approval_notes,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }

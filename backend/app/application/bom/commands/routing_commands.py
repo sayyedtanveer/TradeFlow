@@ -23,6 +23,11 @@ class AttachOperationToBOMCommand(BaseModel):
     operation_id: uuid.UUID
     sequence: int
 
+class RemoveOperationFromBOMCommand(BaseModel):
+    tenant_id: uuid.UUID
+    bom_id: uuid.UUID
+    bom_operation_id: uuid.UUID
+
 class UpdateWorkstationCommand(BaseModel):
     workstation_id: uuid.UUID
     tenant_id: uuid.UUID

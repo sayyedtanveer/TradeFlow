@@ -80,11 +80,16 @@ const normalizePriceList = (priceList: any): PriceList => ({
 
 const normalizeStatistics = (stats: any): OrderStatistics => ({
   draft_count: toNumber(stats.draft_count ?? stats.DRAFT),
+  pending_approval_count: toNumber(stats.pending_approval_count ?? stats.PENDING_APPROVAL),
+  approved_count: toNumber(stats.approved_count ?? stats.APPROVED),
+  rejected_count: toNumber(stats.rejected_count ?? stats.REJECTED),
   confirmed_count: toNumber(stats.confirmed_count ?? stats.CONFIRMED),
+  processing_count: toNumber(stats.processing_count ?? stats.PROCESSING),
   production_count: toNumber(stats.production_count ?? stats.PRODUCTION),
   ready_count: toNumber(stats.ready_count ?? stats.READY),
   shipped_count: toNumber(stats.shipped_count ?? stats.SHIPPED),
   delivered_count: toNumber(stats.delivered_count ?? stats.DELIVERED),
+  completed_count: toNumber(stats.completed_count ?? stats.COMPLETED),
   cancelled_count: toNumber(stats.cancelled_count ?? stats.CANCELLED),
 });
 
@@ -271,6 +276,27 @@ export const ordersApi = {
     return normalizeOrder(await unwrap(apiClient.post(`${BASE_URL}/orders/${orderId}/confirm`, {
       confirmed_by: 'admin',
     })));
+  },
+
+  /**
+   * Submit order for manager approval
+   */
+  submitForApproval: async (orderId: string, notes?: string): Promise<SalesOrder> => {
+    return normalizeOrder(await unwrap(apiClient.post(`${BASE_URL}/orders/${orderId}/submit-approval`, { notes })));
+  },
+
+  /**
+   * Approve order and start execution
+   */
+  approve: async (orderId: string, notes?: string): Promise<SalesOrder> => {
+    return normalizeOrder(await unwrap(apiClient.post(`${BASE_URL}/orders/${orderId}/approve`, { notes })));
+  },
+
+  /**
+   * Reject order
+   */
+  reject: async (orderId: string, notes?: string): Promise<SalesOrder> => {
+    return normalizeOrder(await unwrap(apiClient.post(`${BASE_URL}/orders/${orderId}/reject`, { notes })));
   },
 
   /**

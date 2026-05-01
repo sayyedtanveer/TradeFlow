@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from backend.app.infrastructure.persistence.models.user_model import UserModel
 from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel
+from backend.app.infrastructure.persistence.models.sales_models import ClientModel
 from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_tenant_id,
     get_container,
@@ -33,6 +34,7 @@ class UserCreateRequest(BaseModel):
     role: str
     is_active: bool = True
     supplier_id: Optional[str] = None  # Link to supplier if creating supplier portal user
+    client_id: Optional[str] = None  # Link to client if creating client portal user
 
 
 class UserUpdateRequest(BaseModel):
@@ -41,6 +43,7 @@ class UserUpdateRequest(BaseModel):
     role: Optional[str] = None
     is_active: Optional[bool] = None
     supplier_id: Optional[str] = None
+    client_id: Optional[str] = None
 
 
 class UserCreateResponse(BaseModel):
@@ -56,6 +59,20 @@ class UserCreateResponse(BaseModel):
     client_id: Optional[str] = None
     temporary_password: str = Field(
         description="Temporary password for first login. User must change this after login."
+    )
+
+
+class UserTemporaryPasswordResponse(BaseModel):
+    """Response when an admin regenerates a temporary password."""
+    id: str
+    email: str
+    role: str
+    tenant_id: str
+    is_active: bool
+    supplier_id: Optional[str] = None
+    client_id: Optional[str] = None
+    temporary_password: str = Field(
+        description="New temporary password. It is shown once and cannot be retrieved later."
     )
 
 
@@ -191,6 +208,19 @@ async def create_user(
                 raise HTTPException(status_code=404, detail="Supplier not found")
             supplier_id_value = supplier_uuid
 
+        # CRITICAL: If client_id provided, validate it belongs to current tenant
+        client_id_value = None
+        if body.client_id:
+            try:
+                client_uuid = uuid.UUID(body.client_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid client_id format")
+
+            client = await session.get(ClientModel, client_uuid)
+            if not client or client.tenant_id != tenant_id or client.is_deleted:
+                raise HTTPException(status_code=404, detail="Client not found")
+            client_id_value = client_uuid
+
         # Generate secure temporary password
         temporary_password = _generate_temporary_password()
         
@@ -205,10 +235,53 @@ async def create_user(
             is_active=body.is_active,
             hashed_password=container.password_hasher.hash(temporary_password),
             supplier_id=supplier_id_value,  # Set supplier_id if provided
+            client_id=client_id_value,  # Set client_id if provided
         )
         session.add(user)
         await session.commit()
         await session.refresh(user)
+
+    if supplier_id_value:
+        await container.audit_service.log_action(
+            action="SUPPLIER_USER_CREATED",
+            entity_type="user",
+            entity_id=user.id,
+            after_value={
+                "email": user.email,
+                "role": user.role,
+                "supplier_id": str(supplier_id_value),
+                "is_active": user.is_active,
+            },
+            extra={
+                "source": "business_event",
+                "module": "administration",
+                "business_step": "Supplier portal access",
+                "summary": f"Supplier portal login created for {user.email}",
+                "document_no": user.email,
+                "supplier_id": str(supplier_id_value),
+            },
+        )
+
+    if client_id_value:
+        await container.audit_service.log_action(
+            action="CLIENT_USER_CREATED",
+            entity_type="user",
+            entity_id=user.id,
+            after_value={
+                "email": user.email,
+                "role": user.role,
+                "client_id": str(client_id_value),
+                "is_active": user.is_active,
+            },
+            extra={
+                "source": "business_event",
+                "module": "sales",
+                "business_step": "Client portal access",
+                "summary": f"Client portal login created for {user.email}",
+                "document_no": user.email,
+                "client_id": str(client_id_value),
+            },
+        )
 
     # Return response with temporary password (only shown at creation time)
     return UserCreateResponse(
@@ -266,11 +339,25 @@ async def update_user(
             user.supplier_id = supplier_uuid
         elif "supplier_id" in body.model_fields_set:
             user.supplier_id = None
+
+        # CRITICAL: If client_id provided, validate it belongs to current tenant
+        if body.client_id is not None:
+            try:
+                client_uuid = uuid.UUID(body.client_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid client_id format")
+
+            client = await session.get(ClientModel, client_uuid)
+            if not client or client.tenant_id != tenant_id or client.is_deleted:
+                raise HTTPException(status_code=404, detail="Client not found")
+            user.client_id = client_uuid
+        elif "client_id" in body.model_fields_set:
+            user.client_id = None
         
         # Update other fields (normalize role to lowercase)
         data = body.model_dump(exclude_unset=True)
         for key, value in data.items():
-            if key == "supplier_id":
+            if key in {"supplier_id", "client_id"}:
                 continue  # Already handled above
             if key == "role" and isinstance(value, str):
                 value = value.lower()
@@ -280,3 +367,67 @@ async def update_user(
         await session.refresh(user)
 
     return UserInMeResponse.model_validate(user)
+
+
+@router.post(
+    "/{user_id}/temporary-password",
+    response_model=UserTemporaryPasswordResponse,
+    dependencies=[Depends(require_role(Role.ADMIN))],
+    summary="Regenerate a user's temporary password",
+)
+async def regenerate_temporary_password(
+    user_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Generate a new temporary password for an existing user in the current tenant."""
+    container = get_container(request)
+    temporary_password = _generate_temporary_password()
+
+    async with container.session_factory() as session:
+        result = await session.execute(
+            select(UserModel).where(
+                UserModel.id == user_id,
+                UserModel.tenant_id == tenant_id,
+                UserModel.is_deleted.is_(False),
+            )
+        )
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user.hashed_password = container.password_hasher.hash(temporary_password)
+        await session.commit()
+        await session.refresh(user)
+
+    await container.audit_service.log_action(
+        action="USER_TEMP_PASSWORD_REGENERATED",
+        entity_type="user",
+        entity_id=user.id,
+        after_value={
+            "email": user.email,
+            "role": user.role,
+            "supplier_id": str(user.supplier_id) if user.supplier_id else None,
+            "client_id": str(user.client_id) if user.client_id else None,
+            "is_active": user.is_active,
+        },
+        extra={
+            "source": "admin_action",
+            "module": "administration",
+            "business_step": "User password recovery",
+            "summary": f"Temporary password regenerated for {user.email}",
+            "document_no": user.email,
+        },
+    )
+
+    return UserTemporaryPasswordResponse(
+        id=str(user.id),
+        email=user.email,
+        role=user.role,
+        tenant_id=str(user.tenant_id),
+        is_active=user.is_active,
+        supplier_id=str(user.supplier_id) if user.supplier_id else None,
+        client_id=str(user.client_id) if user.client_id else None,
+        temporary_password=temporary_password,
+    )

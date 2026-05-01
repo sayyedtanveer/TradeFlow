@@ -12,6 +12,7 @@ from backend.app.application.bom.commands.bom_commands import (
 from backend.app.application.bom.queries.bom_queries import GetBOMQuery, ListBOMsQuery
 from backend.app.domain.bom.entities.bom import BillOfMaterial
 from backend.app.domain.bom.entities.bom_line import BOMLine
+from backend.app.domain.bom.entities.bom_operation import BOMOperation
 from backend.app.domain.bom.services.bom_validation_service import BOMValidationService
 from backend.app.infrastructure.persistence.repositories.bom_repository import BOMRepository
 from backend.app.infrastructure.services.bom_providers import InfrastructureBOMProvider
@@ -25,9 +26,25 @@ class BOMHandlers:
         self._repo = bom_repo
         self._uow = uow
 
+    def _ensure_unique_components(self, lines) -> None:
+        seen: set[tuple[str, uuid.UUID]] = set()
+        for line_input in lines:
+            if line_input.material_id:
+                key = ("material", line_input.material_id)
+            elif line_input.template_id:
+                key = ("template", line_input.template_id)
+            else:
+                key = ("variant", line_input.variant_id)
+            if key in seen:
+                raise ValueError(
+                    f"Duplicate {key[0]} component in BOM. Edit the existing line quantity instead of adding it again."
+                )
+            seen.add(key)
+
     # ── Commands ─────────────────────────────────────────────────────────────
 
     async def handle_create(self, cmd: CreateBOMCommand) -> BillOfMaterial:
+        self._ensure_unique_components(cmd.lines)
         # Build domain entity – constructor enforces that exactly one of template/variant is provided
         bom = BillOfMaterial(
             tenant_id=cmd.tenant_id,
@@ -76,6 +93,7 @@ class BOMHandlers:
         if cmd.approved_by is not None:
             bom.approved_by = cmd.approved_by
         if cmd.lines is not None:
+            self._ensure_unique_components(cmd.lines)
             bom.lines.clear()
             for line_input in cmd.lines:
                 bom.add_line(
@@ -150,6 +168,15 @@ class BOMHandlers:
                     quantity=line.quantity,
                     scrap_percentage=line.scrap_percentage,
                     unit_id=line.unit_id,
+                )
+            )
+        for operation in source.operations:
+            new_bom.add_operation(
+                BOMOperation(
+                    tenant_id=source.tenant_id,
+                    bom_id=new_bom.id,
+                    operation_id=operation.operation_id,
+                    sequence=operation.sequence,
                 )
             )
         await self._repo.save(new_bom)

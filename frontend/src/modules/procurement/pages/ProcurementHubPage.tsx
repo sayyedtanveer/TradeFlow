@@ -9,7 +9,6 @@ const links = [
   { to: "/procurement/quality", title: "Quality & quarantine", desc: "Inspections, NCR, quarantine stock", icon: ShieldAlert },
   { to: "/procurement/mrp", title: "MRP requests", desc: "Reorder signals & run MRP", icon: ListOrdered },
   { to: "/procurement/subcontract", title: "Subcontracting", desc: "Issue & receive", icon: Factory },
-  { to: "/supplier-portal", title: "Supplier portal", desc: "PO view & quotations", icon: Building2 },
 ]
 
 export default function ProcurementHubPage() {

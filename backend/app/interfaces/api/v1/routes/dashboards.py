@@ -82,7 +82,8 @@ async def admin_dashboard(
         # Inventory metrics (low stock alerts)
         low_stock_stmt = select(func.count(MaterialModel.id)).where(
             MaterialModel.tenant_id == tenant_id,
-            MaterialModel.current_stock <= MaterialModel.minimum_stock,
+            MaterialModel.reorder_level.isnot(None),
+            MaterialModel.current_stock <= MaterialModel.reorder_level,
             MaterialModel.is_deleted.is_(False),
         )
         low_stock_count = (await session.execute(low_stock_stmt)).scalar() or 0
@@ -121,7 +122,7 @@ async def admin_dashboard(
         
         # Total inventory value (estimated)
         inv_value_stmt = select(
-            func.sum(InventoryModel.quantity * MaterialModel.cost_price)
+            func.sum(InventoryModel.quantity * MaterialModel.current_cost)
         ).join(
             MaterialModel, InventoryModel.material_id == MaterialModel.id
         ).where(
@@ -244,6 +245,63 @@ async def supplier_dashboard(
 
 
 @router.get(
+    "/manager",
+    dependencies=[Depends(require_permission("sales:read"))],
+)
+async def manager_dashboard(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    role: str = Depends(get_current_role),
+):
+    """Manager approval dashboard for pending client/admin sales orders."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        pending_query = select(SalesOrderModel).where(
+            SalesOrderModel.tenant_id == tenant_id,
+            SalesOrderModel.status == "PENDING_APPROVAL",
+            SalesOrderModel.is_deleted.is_(False),
+        )
+        if role == "manager":
+            pending_query = pending_query.where(
+                (SalesOrderModel.approver_id == user_id) | (SalesOrderModel.approver_id.is_(None))
+            )
+
+        pending_orders = (
+            await session.execute(
+                pending_query.order_by(SalesOrderModel.submitted_at.asc()).limit(25)
+            )
+        ).scalars().all()
+
+        approved_count = await session.scalar(
+            select(func.count(SalesOrderModel.id)).where(
+                SalesOrderModel.tenant_id == tenant_id,
+                SalesOrderModel.status.in_(["CONFIRMED", "PRODUCTION", "READY", "SHIPPED", "DELIVERED", "COMPLETED"]),
+                SalesOrderModel.is_deleted.is_(False),
+            )
+        )
+
+    return {
+        "dashboard_type": "manager",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "pending_approvals": {
+            "count": len(pending_orders),
+            "items": [
+                {
+                    "id": str(order.id),
+                    "order_number": order.order_number,
+                    "client_id": str(order.client_id),
+                    "submitted_at": order.submitted_at.isoformat() if order.submitted_at else None,
+                    "grand_total": float(order.grand_total or 0),
+                }
+                for order in pending_orders
+            ],
+        },
+        "orders_in_execution": int(approved_count or 0),
+    }
+
+
+@router.get(
     "/storekeeper",
     dependencies=[Depends(require_permission("storekeeper:read"))],
 )
@@ -276,10 +334,11 @@ async def storekeeper_dashboard(
             MaterialModel.code,
             MaterialModel.name,
             MaterialModel.current_stock,
-            MaterialModel.minimum_stock,
+            MaterialModel.reorder_level,
         ).where(
             MaterialModel.tenant_id == tenant_id,
-            MaterialModel.current_stock <= MaterialModel.minimum_stock,
+            MaterialModel.reorder_level.isnot(None),
+            MaterialModel.current_stock <= MaterialModel.reorder_level,
             MaterialModel.is_deleted.is_(False),
         ).limit(10)
         
@@ -290,14 +349,14 @@ async def storekeeper_dashboard(
                 "code": row[1],
                 "name": row[2],
                 "current_stock": float(row[3]),
-                "minimum_stock": float(row[4]),
+                "minimum_stock": float(row[4] or 0),
             }
             for row in low_stock_result
         ]
         
         # Total inventory value
         inv_value_stmt = select(
-            func.sum(InventoryModel.quantity * MaterialModel.cost_price)
+            func.sum(InventoryModel.quantity * MaterialModel.current_cost)
         ).join(
             MaterialModel, InventoryModel.material_id == MaterialModel.id
         ).where(

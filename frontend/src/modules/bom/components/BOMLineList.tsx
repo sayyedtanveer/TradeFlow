@@ -1,10 +1,12 @@
 import { useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query"
 import { Trash2, Plus, Edit2, Check, X, Package2, Box, Layers, Lock } from "lucide-react"
 import { bomService } from "@/services/bom.service"
 import { BOM, BOMLine, BOMLineInput } from "@/types/bom.types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { materialService } from "@/services/material.service"
+import { productService } from "@/services/product.service"
 
 import { BOMLineForm } from "./BOMLineForm"
 import { toast } from "sonner"
@@ -16,12 +18,37 @@ interface BOMLineListProps {
   canEdit: boolean
 }
 
+const getComponentKey = (line: BOMLineInput | BOMLine) => {
+  if (line.material_id) return `material:${line.material_id}`
+  if (line.template_id) return `template:${line.template_id}`
+  return `variant:${line.variant_id}`
+}
+
 export function BOMLineList({ bom, canEdit }: BOMLineListProps) {
   const qc = useQueryClient()
   const [isAdding, setIsAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editQty, setEditQty] = useState("")
   const [editScrap, setEditScrap] = useState("")
+
+  const componentQueries = useQueries({
+    queries: bom.lines.map((line) => ({
+      queryKey: ["bom-component-detail", getComponentKey(line)],
+      queryFn: async () => {
+        if (line.material_id) {
+          const material = await materialService.getMaterial(line.material_id)
+          return { code: material.code, name: material.name, type: "material" as const }
+        }
+        if (line.template_id) {
+          const template = await productService.getTemplate(line.template_id)
+          return { code: template.code, name: template.name, type: "template" as const }
+        }
+        const variant = await productService.getVariant(line.variant_id!)
+        return { code: variant.code, name: variant.name, type: "variant" as const }
+      },
+      staleTime: 60_000,
+    })),
+  })
 
   const updateMutation = useMutation({
     mutationFn: (newLines: BOMLineInput[]) =>
@@ -49,6 +76,10 @@ export function BOMLineList({ bom, canEdit }: BOMLineListProps) {
   }
 
   const handleAddLine = async (line: BOMLineInput) => {
+    if (getLinesInput().some((existing) => getComponentKey(existing) === getComponentKey(line))) {
+      toast.error("This component is already on the BOM. Edit the existing line quantity instead.")
+      return
+    }
     const newLines = [...getLinesInput(), line]
     await updateMutation.mutateAsync(newLines)
     setIsAdding(false)
@@ -145,6 +176,7 @@ export function BOMLineList({ bom, canEdit }: BOMLineListProps) {
               {bom.lines.map((line, idx) => {
                 const isEditing = editingId === line.id
                 const targetId = line.material_id || line.variant_id || line.template_id
+                const detail = componentQueries[idx]?.data
                 let type: "material" | "template" | "variant" = "material"
                 if (line.template_id) type = "template"
                 else if (line.variant_id) type = "variant"
@@ -162,7 +194,10 @@ export function BOMLineList({ bom, canEdit }: BOMLineListProps) {
                     </td>
                     <td className="p-3">
                       <div className="flex flex-col gap-0.5">
-                        <span className="font-medium text-xs truncate">{targetId?.split("-")[0]}...</span>
+                        <span className="font-medium text-xs truncate">{detail?.name ?? `${targetId?.split("-")[0]}...`}</span>
+                        {detail?.code && (
+                          <span className="text-xs text-muted-foreground font-mono truncate">{detail.code}</span>
+                        )}
                         <span className="text-xs text-muted-foreground capitalize">{type}</span>
                       </div>
                     </td>

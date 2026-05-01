@@ -1,5 +1,7 @@
 """Integration bridge connecting Sales to Manufacturing for automatic Work Order creation."""
 import logging
+import uuid
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -8,6 +10,7 @@ from backend.app.application.manufacturing.commands.work_order_commands import C
 from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
 from backend.app.domain.shared.domain_event import DomainEvent
 from dataclasses import dataclass
+from sqlalchemy import func, select
 
 
 @dataclass(frozen=True)
@@ -25,10 +28,11 @@ class SalesManufacturingIntegrationService:
     Bridges the Sales domain and Manufacturing domain.
     """
 
-    def __init__(self, wo_handler: WorkOrderHandler, uow=None):
+    def __init__(self, wo_handler: WorkOrderHandler, uow=None, created_by: Optional[UUID] = None):
         self.wo_handler = wo_handler
         self.event_dispatcher = None
         self._uow = uow
+        self.created_by = created_by
         if uow:
             self.wo_handler.with_uow(uow)
 
@@ -58,7 +62,6 @@ class SalesManufacturingIntegrationService:
             session = self.wo_handler._session
             # We must import BOM models here to avoid circular imports at top level
             from backend.app.infrastructure.persistence.models.bom_model import BOMModel
-            from sqlalchemy import select
 
             stmt = select(BOMModel).where(
                 BOMModel.tenant_id == tenant_id,
@@ -74,8 +77,8 @@ class SalesManufacturingIntegrationService:
                 return None
 
             # Calculate start date as due_date - 7 days (simple heuristic for now)
-            from datetime import timedelta
             start_date = due_date - timedelta(days=7)
+            actor_id = await self._resolve_actor_id(tenant_id)
 
             cmd = CreateWorkOrderCommand(
                 tenant_id=tenant_id,
@@ -85,8 +88,8 @@ class SalesManufacturingIntegrationService:
                 start_date=start_date,
                 due_date=due_date,
                 priority="HIGH",  # Shortages are high priority
-                sales_order_id=sales_order_line_id, # Linking SO Line
-                created_by=UUID(int=0), # System user
+                sales_order_id=sales_order_line_id, # Links to SO line in the current schema
+                created_by=actor_id,
                 notes=f"Auto-generated for Sales shortage."
             )
             wo_id = await self.wo_handler.handle_create(cmd)
@@ -97,6 +100,13 @@ class SalesManufacturingIntegrationService:
             except Exception:
                 # Non-fatal: if release fails, still return the created WO id
                 logger.exception("Failed to auto-release WO %s", wo_id)
+
+            await self._create_shortage_requests_and_purchase_orders(
+                tenant_id=tenant_id,
+                work_order_id=wo_id,
+                required_by=due_date,
+                created_by=actor_id,
+            )
 
             # Build and publish a lightweight domain event if dispatcher is available
             if self.event_dispatcher is not None:
@@ -128,3 +138,187 @@ class SalesManufacturingIntegrationService:
         except Exception as e:
             logger.error(f"Auto Work Order creation failed for product {product_id}: {str(e)}")
             return None
+
+    async def _resolve_actor_id(self, tenant_id: UUID) -> UUID:
+        if self.created_by:
+            return self.created_by
+
+        from backend.app.infrastructure.persistence.models.user_model import UserModel
+
+        session = self.wo_handler._session
+        actor_id = (
+            await session.execute(
+                select(UserModel.id)
+                .where(
+                    UserModel.tenant_id == tenant_id,
+                    UserModel.is_active.is_(True),
+                    UserModel.is_deleted.is_(False),
+                )
+                .order_by(UserModel.created_at.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return actor_id or UUID(int=0)
+
+    async def _create_shortage_requests_and_purchase_orders(
+        self,
+        *,
+        tenant_id: UUID,
+        work_order_id: UUID,
+        required_by: date,
+        created_by: UUID,
+    ) -> None:
+        """Create material requests and supplier POs for WO raw-material shortages."""
+        from backend.app.application.supply_chain.po_number_service import PONumberService
+        from backend.app.infrastructure.persistence.models.material_model import MaterialModel
+        from backend.app.infrastructure.persistence.models.material_request_model import MaterialRequestModel
+        from backend.app.infrastructure.persistence.models.purchase_order_model import (
+            PurchaseOrderLineModel,
+            PurchaseOrderModel,
+        )
+        from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel
+        from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderMaterialModel
+
+        session = self.wo_handler._session
+        material_rows = (
+            await session.execute(
+                select(WorkOrderMaterialModel, MaterialModel)
+                .join(MaterialModel, MaterialModel.id == WorkOrderMaterialModel.material_id)
+                .where(
+                    WorkOrderMaterialModel.work_order_id == work_order_id,
+                    MaterialModel.tenant_id == tenant_id,
+                    MaterialModel.is_deleted.is_(False),
+                )
+            )
+        ).all()
+
+        if not material_rows:
+            return
+
+        po_number_service = PONumberService(session)
+        supplier = await self._choose_supplier(tenant_id)
+
+        for requirement, material in material_rows:
+            required_qty = Decimal(str(requirement.required_quantity))
+            available_qty = max(
+                Decimal("0"),
+                Decimal(str(material.current_stock or 0)) - Decimal(str(material.reserved_stock or 0)),
+            )
+            incoming_qty = await self._open_po_quantity(tenant_id, material.id)
+            shortage_qty = required_qty - available_qty - incoming_qty
+
+            if shortage_qty <= 0:
+                continue
+
+            existing_request = (
+                await session.execute(
+                    select(MaterialRequestModel).where(
+                        MaterialRequestModel.tenant_id == tenant_id,
+                        MaterialRequestModel.item_id == material.id,
+                        MaterialRequestModel.item_type == "material",
+                        MaterialRequestModel.source_ref_type == "work_order",
+                        MaterialRequestModel.source_ref_id == work_order_id,
+                        MaterialRequestModel.status == "open",
+                        MaterialRequestModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+
+            if existing_request:
+                existing_required = Decimal(str(existing_request.required_quantity))
+                if shortage_qty > existing_required:
+                    existing_request.required_quantity = float(shortage_qty)
+                    existing_request.required_by = required_by
+                continue
+
+            material_request = MaterialRequestModel(
+                id=uuid.uuid4(),
+                tenant_id=tenant_id,
+                item_id=material.id,
+                item_type="material",
+                required_quantity=float(shortage_qty),
+                fulfilled_quantity=0,
+                required_by=required_by,
+                status="open",
+                source_ref_type="work_order",
+                source_ref_id=work_order_id,
+            )
+            session.add(material_request)
+
+            if supplier is None:
+                logger.warning(
+                    "WO %s has raw-material shortage for %s but no active supplier exists.",
+                    work_order_id,
+                    material.id,
+                )
+                continue
+
+            unit_price = Decimal(str(material.current_cost or 0))
+            line_total = shortage_qty * unit_price
+            po_number = await po_number_service.generate(tenant_id)
+            po = PurchaseOrderModel(
+                id=uuid.uuid4(),
+                tenant_id=tenant_id,
+                po_number=po_number,
+                supplier_id=supplier.id,
+                order_date=date.today(),
+                expected_delivery=required_by,
+                status="sent",
+                total_amount=float(line_total),
+                notes=f"Auto-created for WO {work_order_id} raw-material shortage.",
+                created_by=created_by,
+            )
+            session.add(po)
+            await session.flush()
+            session.add(
+                PurchaseOrderLineModel(
+                    id=uuid.uuid4(),
+                    tenant_id=tenant_id,
+                    purchase_order_id=po.id,
+                    material_id=material.id,
+                    quantity=float(shortage_qty),
+                    received_quantity=0,
+                    unit_price=float(unit_price),
+                    line_total=float(line_total),
+                )
+            )
+
+    async def _open_po_quantity(self, tenant_id: UUID, material_id: UUID) -> Decimal:
+        from backend.app.infrastructure.persistence.models.purchase_order_model import (
+            PurchaseOrderLineModel,
+            PurchaseOrderModel,
+        )
+
+        result = await self.wo_handler._session.execute(
+            select(
+                func.coalesce(
+                    func.sum(PurchaseOrderLineModel.quantity - PurchaseOrderLineModel.received_quantity),
+                    0,
+                )
+            )
+            .join(PurchaseOrderModel, PurchaseOrderModel.id == PurchaseOrderLineModel.purchase_order_id)
+            .where(
+                PurchaseOrderModel.tenant_id == tenant_id,
+                PurchaseOrderModel.status.in_(["draft", "sent", "acknowledged", "partial"]),
+                PurchaseOrderModel.is_deleted.is_(False),
+                PurchaseOrderLineModel.material_id == material_id,
+                PurchaseOrderLineModel.is_deleted.is_(False),
+            )
+        )
+        return Decimal(str(result.scalar_one() or 0))
+
+    async def _choose_supplier(self, tenant_id: UUID):
+        from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel
+
+        return (
+            await self.wo_handler._session.execute(
+                select(SupplierModel)
+                .where(
+                    SupplierModel.tenant_id == tenant_id,
+                    SupplierModel.is_active.is_(True),
+                    SupplierModel.is_deleted.is_(False),
+                )
+                .order_by(SupplierModel.created_at.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()

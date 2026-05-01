@@ -6,7 +6,9 @@ from sqlalchemy.orm import selectinload
 
 from backend.app.domain.bom.entities.bom import BillOfMaterial
 from backend.app.domain.bom.entities.bom_line import BOMLine
+from backend.app.domain.bom.entities.bom_operation import BOMOperation
 from backend.app.infrastructure.persistence.models.bom_model import BOMModel, BOMLineModel
+from backend.app.infrastructure.persistence.models.bom_operation_model import BOMOperationModel
 from backend.app.infrastructure.persistence.repositories.base_repository import BaseRepository
 
 
@@ -33,6 +35,7 @@ class BOMRepository(BaseRepository[BillOfMaterial, BOMModel]):
             updated_at=model.updated_at,
             operations_count=model.operations_count,
             lines=[],
+            operations=[],
         )
         if hasattr(model, "lines") and model.lines is not None:
             for line_model in model.lines:
@@ -47,6 +50,19 @@ class BOMRepository(BaseRepository[BillOfMaterial, BOMModel]):
                         quantity=line_model.quantity, # type: ignore
                         scrap_percentage=line_model.scrap_percentage, # type: ignore
                         unit_id=line_model.unit_id,
+                    )
+                )
+        if hasattr(model, "operations") and model.operations is not None:
+            for operation_model in model.operations:
+                if operation_model.is_deleted:
+                    continue
+                bom.add_operation(
+                    BOMOperation(
+                        id=operation_model.id,
+                        tenant_id=operation_model.tenant_id,
+                        bom_id=operation_model.bom_id,
+                        operation_id=operation_model.operation_id,
+                        sequence=operation_model.sequence,
                     )
                 )
         return bom
@@ -82,13 +98,24 @@ class BOMRepository(BaseRepository[BillOfMaterial, BOMModel]):
             )
             for line in entity.lines
         ]
+        model.operations = [
+            BOMOperationModel(
+                id=operation.id,
+                tenant_id=operation.tenant_id,
+                bom_id=entity.id,
+                operation_id=operation.operation_id,
+                sequence=operation.sequence,
+                is_deleted=operation.is_deleted,
+            )
+            for operation in entity.operations
+        ]
         return model
 
     # ── Override base get_by_id to eager load lines ───────────────────────────
     async def get_by_id(self, id: uuid.UUID, tenant_id: uuid.UUID) -> Optional[BillOfMaterial]:
         stmt = (
             select(BOMModel)
-            .options(selectinload(BOMModel.lines))
+            .options(selectinload(BOMModel.lines), selectinload(BOMModel.operations))
             .where(
                 BOMModel.id == id,
                 BOMModel.tenant_id == tenant_id,
@@ -104,7 +131,7 @@ class BOMRepository(BaseRepository[BillOfMaterial, BOMModel]):
         self, tenant_id: uuid.UUID, template_id: Optional[uuid.UUID] = None, variant_id: Optional[uuid.UUID] = None
     ) -> Optional[BillOfMaterial]:
         """Gets the currently active BOM for a given product."""
-        stmt = select(BOMModel).options(selectinload(BOMModel.lines)).where(
+        stmt = select(BOMModel).options(selectinload(BOMModel.lines), selectinload(BOMModel.operations)).where(
             BOMModel.tenant_id == tenant_id,
             BOMModel.is_active.is_(True),
             BOMModel.is_deleted.is_(False),
@@ -122,7 +149,7 @@ class BOMRepository(BaseRepository[BillOfMaterial, BOMModel]):
         self, tenant_id: uuid.UUID, version: str, template_id: Optional[uuid.UUID] = None, variant_id: Optional[uuid.UUID] = None
     ) -> Optional[BillOfMaterial]:
         """Gets a specific semantic version of a BOM for a given product."""
-        stmt = select(BOMModel).options(selectinload(BOMModel.lines)).where(
+        stmt = select(BOMModel).options(selectinload(BOMModel.lines), selectinload(BOMModel.operations)).where(
             BOMModel.tenant_id == tenant_id,
             BOMModel.version == version,
             BOMModel.is_deleted.is_(False),
@@ -178,6 +205,7 @@ class BOMRepository(BaseRepository[BillOfMaterial, BOMModel]):
         paged = (
             base_stmt
             .options(selectinload(BOMModel.lines))
+            .options(selectinload(BOMModel.operations))
             .order_by(BOMModel.created_at.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)

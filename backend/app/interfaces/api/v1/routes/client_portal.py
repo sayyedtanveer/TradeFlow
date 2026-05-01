@@ -19,6 +19,7 @@ from backend.app.interfaces.api.v1.schemas.client_portal import (
     ClientForgotPasswordRequest,
     ClientLoginRequest,
     ClientLoginResponse,
+    ClientOrderCreateRequest,
     ClientProfileUpdateRequest,
     ClientRefreshResponse,
     ClientReorderRequest,
@@ -114,6 +115,17 @@ async def client_dashboard(
     return await _service(request, session).get_dashboard(tenant_id, client_id, user_id)
 
 
+@router.get("/catalog")
+async def client_catalog(
+    request: Request,
+    search: str | None = Query(None),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    client_id: uuid.UUID = Depends(require_client_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    return await _service(request, session).list_catalog(tenant_id, client_id, search)
+
+
 @router.get("/orders")
 async def client_orders(
     request: Request,
@@ -126,6 +138,29 @@ async def client_orders(
     session: AsyncSession = Depends(_get_db_session),
 ):
     return await _service(request, session).list_orders(tenant_id, client_id, page, page_size, status_filter, search)
+
+
+@router.post("/orders", status_code=status.HTTP_201_CREATED)
+async def client_order_create(
+    body: ClientOrderCreateRequest,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    client_id: uuid.UUID = Depends(require_client_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    try:
+        lines = [line.model_dump() for line in body.lines]
+        return await _service(request, session).create_order(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            user_id=user_id,
+            lines_input=lines,
+            delivery_date=body.delivery_date,
+            notes=body.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/orders/{order_id}")

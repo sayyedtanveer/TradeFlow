@@ -82,6 +82,10 @@ export const bomService = {
     return data;
   },
 
+  async removeOperation(bomId: string, bomOperationId: string): Promise<void> {
+    await apiClient.delete(`/boms/${bomId}/operations/${bomOperationId}`);
+  },
+
   // ── Products ───────────────────────────────────────────────────────────────
 
   async getTemplates(params: {

@@ -22,6 +22,7 @@ const LoginPage = lazy(() => import("@/modules/auth/pages/LoginPage"))
 const RegisterTenantPage = lazy(() => import("@/modules/auth/pages/RegisterTenantPage"))
 const DashboardPage = lazy(() => import("@/modules/dashboard/pages/DashboardPage"))
 const SystemMapPage = lazy(() => import("@/modules/dashboard/pages/SystemMapPage"))
+const ActivityLogPage = lazy(() => import("@/modules/audit/pages/ActivityLogPage"))
 
 // Error fallback component
 const RouteErrorFallback = () => (
@@ -72,6 +73,16 @@ export const router = createBrowserRouter([
           { path: "dashboard/qc", element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
           { path: "dashboard/client", element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
           { path: "system-map", element: <Suspense fallback={<PageLoading />}><SystemMapPage /></Suspense> },
+          {
+            path: "activity-log",
+            element: (
+              <ProtectedRoute allowedRoles={["ADMIN", "TENANT_ADMIN"]}>
+                <Suspense fallback={<PageLoading />}>
+                  <ActivityLogPage />
+                </Suspense>
+              </ProtectedRoute>
+            ),
+          },
           ...inventoryRoutes,
           ...usersRoutes,
           ...bomRoutes,

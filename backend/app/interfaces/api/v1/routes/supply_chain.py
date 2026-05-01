@@ -167,6 +167,39 @@ def _optional_uuid(value: str | uuid.UUID | None, field_name: str) -> Optional[u
         raise HTTPException(status_code=400, detail=f"Invalid {field_name} format") from e
 
 
+async def _log_business_event(
+    request: Request,
+    *,
+    action: str,
+    entity_type: str,
+    entity_id: uuid.UUID | None = None,
+    summary: str,
+    business_step: str,
+    document_no: str | None = None,
+    before_value: dict | None = None,
+    after_value: dict | None = None,
+    extra: dict | None = None,
+) -> None:
+    payload = {
+        "source": "business_event",
+        "module": "procurement",
+        "summary": summary,
+        "business_step": business_step,
+        "document_no": document_no,
+    }
+    if extra:
+        payload.update(extra)
+
+    await get_container(request).audit_service.log_action(
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        before_value=before_value,
+        after_value=after_value,
+        extra=payload,
+    )
+
+
 async def _first_quarantine_location(session, tenant_id: uuid.UUID) -> Optional[uuid.UUID]:
     stmt = (
         select(LocationModel.id)
@@ -298,6 +331,24 @@ async def create_supplier(
         session.add(s)
         await session.commit()
         await session.refresh(s)
+    await _log_business_event(
+        request,
+        action="SUPPLIER_CREATED",
+        entity_type="supplier",
+        entity_id=s.id,
+        summary=f"Supplier {s.code} created",
+        business_step="Supplier master",
+        document_no=s.code,
+        after_value={
+            "code": s.code,
+            "name": s.name,
+            "contact_person": s.contact_person,
+            "email": s.email,
+            "phone": s.phone,
+            "gst": s.gst,
+            "payment_terms": s.payment_terms,
+        },
+    )
     return SupplierResponse.model_validate(s)
 
 
@@ -318,6 +369,16 @@ async def update_supplier(
         s = await session.get(SupplierModel, supplier_id)
         if not s or s.tenant_id != tenant_id or s.is_deleted:
             raise HTTPException(status_code=404, detail="Supplier not found")
+        before_value = {
+            "name": s.name,
+            "contact_person": s.contact_person,
+            "email": s.email,
+            "phone": s.phone,
+            "address": s.address,
+            "gst": s.gst,
+            "payment_terms": s.payment_terms,
+            "is_active": s.is_active,
+        }
         data = body.model_dump(exclude_unset=True)
         for k, v in data.items():
             setattr(s, k, v)
@@ -325,6 +386,26 @@ async def update_supplier(
         s.updated_at = datetime.now(timezone.utc)
         await session.commit()
         await session.refresh(s)
+    await _log_business_event(
+        request,
+        action="SUPPLIER_UPDATED",
+        entity_type="supplier",
+        entity_id=s.id,
+        summary=f"Supplier {s.code} updated",
+        business_step="Supplier master",
+        document_no=s.code,
+        before_value=before_value,
+        after_value={
+            "name": s.name,
+            "contact_person": s.contact_person,
+            "email": s.email,
+            "phone": s.phone,
+            "address": s.address,
+            "gst": s.gst,
+            "payment_terms": s.payment_terms,
+            "is_active": s.is_active,
+        },
+    )
     return SupplierResponse.model_validate(s)
 
 
@@ -548,6 +629,22 @@ async def create_purchase_order(
             session.add(pl)
         po.total_amount = float(total)
         await session.commit()
+    await _log_business_event(
+        request,
+        action="PO_CREATED",
+        entity_type="purchase_order",
+        entity_id=po.id,
+        summary=f"Purchase order {po.po_number} created",
+        business_step="Purchase order",
+        document_no=po.po_number,
+        after_value={
+            "po_number": po.po_number,
+            "supplier_id": str(po.supplier_id),
+            "status": po.status,
+            "total_amount": float(po.total_amount),
+            "line_count": len(body.lines),
+        },
+    )
     return {"id": str(po.id), "po_number": po.po_number}
 
 
@@ -667,13 +764,26 @@ async def send_purchase_order(
 ):
     container = get_container(request)
     async with container.session_factory() as session:
+        po = await session.get(PurchaseOrderModel, po_id)
+        po_number = po.po_number if po else str(po_id)
         handler = PurchaseOrderHandler(session)
         try:
             result = await handler.send_po(po_id, tenant_id)
             await session.commit()
-            return result
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+    await _log_business_event(
+        request,
+        action="PO_SENT",
+        entity_type="purchase_order",
+        entity_id=po_id,
+        summary=f"Purchase order {po_number} sent to supplier",
+        business_step="Supplier collaboration",
+        document_no=po_number,
+        before_value={"status": "draft"},
+        after_value={"status": "sent"},
+    )
+    return result
 
 
 @router.put(
@@ -687,13 +797,26 @@ async def acknowledge_purchase_order(
 ):
     container = get_container(request)
     async with container.session_factory() as session:
+        po = await session.get(PurchaseOrderModel, po_id)
+        po_number = po.po_number if po else str(po_id)
         handler = PurchaseOrderHandler(session)
         try:
             result = await handler.acknowledge_po(po_id, tenant_id)
             await session.commit()
-            return result
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+    await _log_business_event(
+        request,
+        action="PO_ACKNOWLEDGED",
+        entity_type="purchase_order",
+        entity_id=po_id,
+        summary=f"Purchase order {po_number} acknowledged",
+        business_step="Supplier collaboration",
+        document_no=po_number,
+        before_value={"status": "sent"},
+        after_value={"status": "acknowledged"},
+    )
+    return result
 
 
 # ── GRN (Goods Receipt Note) ─────────────────────────────────────────────────
@@ -802,6 +925,22 @@ async def create_grn(
         )
         r = await session.execute(stmt)
         grn = r.scalar_one()
+    await _log_business_event(
+        request,
+        action="GRN_CREATED",
+        entity_type="goods_receipt_note",
+        entity_id=grn.id,
+        summary=f"GRN {grn.grn_number} created for PO",
+        business_step="Goods receipt",
+        document_no=grn.grn_number,
+        after_value={
+            "grn_number": grn.grn_number,
+            "purchase_order_id": str(grn.purchase_order_id),
+            "supplier_id": str(grn.supplier_id),
+            "status": grn.status,
+            "line_count": len(grn.lines),
+        },
+    )
     
     return GRNResponse.model_validate(grn)
 
@@ -960,7 +1099,21 @@ async def receive_grn_into_inventory(
         po.updated_at = datetime.now(timezone.utc)
         
         await session.commit()
+        grn_number = grn.grn_number
+        po_number = po.po_number
     
+    await _log_business_event(
+        request,
+        action="GRN_RECEIVED",
+        entity_type="goods_receipt_note",
+        entity_id=grn_id,
+        summary=f"GRN {grn_number} received into inventory",
+        business_step="Inventory receipt",
+        document_no=grn_number,
+        before_value={"status": "pending_receipt"},
+        after_value={"status": "received", "purchase_order_status": po.status},
+        extra={"purchase_order_id": str(po.id), "purchase_order_no": po_number},
+    )
     return {"grn_id": str(grn.id), "status": grn.status, "po_id": str(po.id)}
 
 
@@ -1055,6 +1208,21 @@ async def receive_goods(
             po.status = "partial"
         po.updated_at = datetime.now(timezone.utc)
         await session.commit()
+        po_number = po.po_number
+        po_status = po.status
+    await _log_business_event(
+        request,
+        action="PO_RECEIVED",
+        entity_type="purchase_order",
+        entity_id=po_id,
+        summary=f"Goods received against PO {po_number}",
+        business_step="Inventory receipt",
+        document_no=po_number,
+        after_value={
+            "status": po_status,
+            "line_count": len(body.lines),
+        },
+    )
     return {"status": "ok"}
 
 
@@ -1881,6 +2049,14 @@ async def run_mrp(
                 session.add(mr)
                 created += 1
         await session.commit()
+    await _log_business_event(
+        request,
+        action="MRP_RUN",
+        entity_type="material_request",
+        summary=f"MRP run completed with {created} material request(s)",
+        business_step="Material planning",
+        after_value={"created": created},
+    )
     return {"created": created}
 
 
@@ -1981,9 +2157,21 @@ async def supplier_ack_po(
         try:
             result = await handler.acknowledge_po(po_id, tenant_id)
             await session.commit()
-            return result
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+    await _log_business_event(
+        request,
+        action="PO_ACKNOWLEDGED",
+        entity_type="purchase_order",
+        entity_id=po_id,
+        summary=f"Supplier acknowledged PO {po_check.po_number}",
+        business_step="Supplier collaboration",
+        document_no=po_check.po_number,
+        before_value={"status": "sent"},
+        after_value={"status": "acknowledged"},
+        extra={"supplier_id": str(supplier_id)},
+    )
+    return result
 
 
 @router.post("/supplier/quotations", status_code=status.HTTP_201_CREATED)
@@ -2027,6 +2215,23 @@ async def supplier_submit_quotation(
         )
         session.add(q)
         await session.commit()
+    await _log_business_event(
+        request,
+        action="QUOTE_CREATED",
+        entity_type="supplier_quotation",
+        entity_id=q.id,
+        summary="Supplier quotation draft created",
+        business_step="Supplier quotation",
+        document_no=str(q.id),
+        after_value={
+            "supplier_id": str(supplier_id),
+            "material_id": str(body.material_id),
+            "purchase_order_id": str(po_uuid) if po_uuid else None,
+            "quantity": float(body.quantity),
+            "unit_price": float(body.unit_price),
+            "status": "draft",
+        },
+    )
     return {"id": str(q.id), "status": "draft"}
 
 
@@ -2052,9 +2257,21 @@ async def supplier_submit_quotation_transition(
         try:
             result = await handler.submit_quotation(quotation_id, tenant_id)
             await session.commit()
-            return result
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+    await _log_business_event(
+        request,
+        action="QUOTE_SUBMITTED",
+        entity_type="supplier_quotation",
+        entity_id=quotation_id,
+        summary="Supplier quotation submitted",
+        business_step="Supplier quotation",
+        document_no=str(quotation_id),
+        before_value={"status": "draft"},
+        after_value={"status": "submitted"},
+        extra={"supplier_id": str(supplier_id)},
+    )
+    return result
 
 
 @router.put(
@@ -2073,9 +2290,20 @@ async def approve_quotation(
         try:
             result = await handler.approve_quotation(quotation_id, tenant_id)
             await session.commit()
-            return result
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+    await _log_business_event(
+        request,
+        action="QUOTE_APPROVED",
+        entity_type="supplier_quotation",
+        entity_id=quotation_id,
+        summary="Supplier quotation approved",
+        business_step="Supplier quotation",
+        document_no=str(quotation_id),
+        before_value={"status": "submitted"},
+        after_value={"status": "approved"},
+    )
+    return result
 
 
 @router.put(
@@ -2094,9 +2322,19 @@ async def reject_quotation(
         try:
             result = await handler.reject_quotation(quotation_id, tenant_id)
             await session.commit()
-            return result
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+    await _log_business_event(
+        request,
+        action="QUOTE_REJECTED",
+        entity_type="supplier_quotation",
+        entity_id=quotation_id,
+        summary="Supplier quotation rejected",
+        business_step="Supplier quotation",
+        document_no=str(quotation_id),
+        after_value={"status": "rejected"},
+    )
+    return result
 
 
 # ── Inspection results query ─────────────────────────────────────────────────
@@ -2243,6 +2481,23 @@ async def create_rfq(
             )
 
         await session.commit()
+    await _log_business_event(
+        request,
+        action="RFQ_CREATED",
+        entity_type="rfq",
+        entity_id=rfq.id,
+        summary=f"RFQ {rfq_number} created",
+        business_step="Supplier quotation",
+        document_no=rfq_number,
+        after_value={
+            "rfq_number": rfq_number,
+            "title": body.title,
+            "status": "draft",
+            "line_count": len(body.lines),
+            "supplier_count": len(body.supplier_ids),
+            "material_request_id": str(body.material_request_id) if body.material_request_id else None,
+        },
+    )
     return {"id": str(rfq.id), "rfq_number": rfq_number}
 
 
@@ -2335,6 +2590,18 @@ async def send_rfq(
         rfq.status = "sent"
         rfq.updated_at = datetime.now(timezone.utc)
         await session.commit()
+        rfq_number = rfq.rfq_number
+    await _log_business_event(
+        request,
+        action="RFQ_SENT",
+        entity_type="rfq",
+        entity_id=rfq_id,
+        summary=f"RFQ {rfq_number} sent to invited suppliers",
+        business_step="Supplier quotation",
+        document_no=rfq_number,
+        before_value={"status": "draft"},
+        after_value={"status": "sent"},
+    )
     return {"status": "sent"}
 
 
@@ -2431,6 +2698,23 @@ async def award_rfq(
         rfq.updated_at = datetime.now(timezone.utc)
 
         await session.commit()
+    await _log_business_event(
+        request,
+        action="RFQ_AWARDED",
+        entity_type="rfq",
+        entity_id=rfq_id,
+        summary=f"RFQ {rfq.rfq_number} awarded and PO {po_number} created",
+        business_step="Purchase order",
+        document_no=rfq.rfq_number,
+        before_value={"status": "sent"},
+        after_value={
+            "status": "awarded",
+            "awarded_supplier_id": str(body.supplier_id),
+            "awarded_po_id": str(po.id),
+            "po_number": po_number,
+        },
+        extra={"purchase_order_id": str(po.id), "purchase_order_no": po_number},
+    )
     return {"po_id": str(po.id), "po_number": po_number}
 
 
@@ -2605,6 +2889,23 @@ async def supplier_submit_rfq_quote(
         invite.updated_at = datetime.now(timezone.utc)
 
         await session.commit()
+    await _log_business_event(
+        request,
+        action="QUOTE_SUBMITTED",
+        entity_type="supplier_quotation",
+        entity_id=q.id,
+        summary=f"Supplier submitted quote for RFQ {rfq_id}",
+        business_step="Supplier quotation",
+        document_no=str(q.id),
+        after_value={
+            "rfq_id": str(rfq_id),
+            "supplier_id": str(supplier_id),
+            "material_id": str(body.material_id),
+            "quantity": float(body.quantity),
+            "unit_price": float(body.unit_price),
+            "status": "submitted",
+        },
+    )
     return {"id": str(q.id)}
 
 

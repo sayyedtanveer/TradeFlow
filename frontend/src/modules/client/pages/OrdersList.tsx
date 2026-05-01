@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { Search } from "lucide-react"
+import { Plus, Search } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { clientOrderStatusClasses, clientService } from "../services/client.service"
 import { formatCurrency, formatDate, formatStatusLabel } from "../utils/formatters"
 
-const orderStatuses = ["ALL", "DRAFT", "CONFIRMED", "PRODUCTION", "QC", "READY", "SHIPPED", "DELIVERED", "CANCELLED"]
+const orderStatuses = ["ALL", "DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "CONFIRMED", "PROCESSING", "PRODUCTION", "QC", "READY", "SHIPPED", "DELIVERED", "COMPLETED", "CANCELLED"]
 const pageSize = 10
 
 export default function OrdersList() {
@@ -68,6 +68,12 @@ export default function OrdersList() {
             <p className="mt-2 text-2xl font-semibold">{ordersQuery.data?.total ?? 0}</p>
             <p className="text-sm text-slate-300">orders visible in this portal</p>
           </div>
+          <Button asChild className="rounded-full">
+            <Link to="/client/orders/new">
+              <Plus className="mr-2 h-4 w-4" />
+              New Order
+            </Link>
+          </Button>
         </div>
       </section>
 

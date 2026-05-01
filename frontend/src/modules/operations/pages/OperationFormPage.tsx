@@ -56,11 +56,12 @@ export default function OperationFormPage() {
   const mutation = useMutation({
     mutationFn: async () => {
       if (!name.trim()) throw new Error("Name is required")
+      if (!workstationId) throw new Error("Workstation is required")
       if (setupTime < 0 || runTime < 0) throw new Error("Times must be non-negative")
       const payload: CreateOperationInput = {
         name: name.trim(),
         description: description.trim() || undefined,
-        workstation_id: workstationId || undefined,
+        workstation_id: workstationId,
         setup_time: setupTime,
         run_time: runTime,
       }
@@ -98,6 +99,12 @@ export default function OperationFormPage() {
       </div>
 
       <div className="rounded-xl border bg-card p-6 space-y-5">
+        <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
+          Real routing operations are reusable production steps, for example Cutting, Mixing,
+          Assembly, QC Inspection, Sterilization, or Packing. Each operation must run at a
+          workstation/resource so capacity and cost can be calculated.
+        </div>
+
         <div className="space-y-2">
           <Label htmlFor="name">Operation Name *</Label>
           <Input
@@ -122,17 +129,16 @@ export default function OperationFormPage() {
         </div>
 
         <div className="space-y-2">
-          <Label>Workstation</Label>
+          <Label>Workstation *</Label>
           <Select
             value={workstationId}
             onValueChange={setWorkstationId}
             disabled={!canEdit}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Select a workstation (optional)" />
+              <SelectValue placeholder="Select a workstation" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">None</SelectItem>
               {workstations.map((ws) => (
                 <SelectItem key={ws.id} value={ws.id}>
                   {ws.name} ({ws.code})
@@ -140,6 +146,9 @@ export default function OperationFormPage() {
               ))}
             </SelectContent>
           </Select>
+          {workstations.length === 0 && (
+            <p className="text-xs text-destructive">Create a workstation before creating operations.</p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">

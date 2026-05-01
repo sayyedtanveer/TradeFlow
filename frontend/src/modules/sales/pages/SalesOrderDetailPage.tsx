@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { CardSkeleton } from '@/components/shared/LoadingSkeleton';
 import { ordersApi } from '@/services/sales.service';
 import { SalesOrder, OrderStatus } from '@/types/sales.types';
-import { ArrowLeft, Edit2, CheckCircle, Truck, Package, Trash2, Plus } from 'lucide-react';
+import { ArrowLeft, Edit2, CheckCircle, Truck, Package, Trash2, Plus, XCircle, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/utils/currency';
 
@@ -49,18 +49,29 @@ export default function SalesOrderDetailPage() {
     loadOrder();
   }, [id]);
 
-  const handleStatusChange = async (action: 'confirm' | 'ship' | 'deliver' | 'cancel') => {
+  const handleStatusChange = async (action: 'submit' | 'approve' | 'reject' | 'confirm' | 'ship' | 'deliver' | 'cancel') => {
     if (!order) return;
 
     setActionLoading(true);
     try {
       let updated: SalesOrder;
       switch (action) {
+        case 'submit':
+          updated = await ordersApi.submitForApproval(order.id);
+          break;
+        case 'approve':
+          updated = await ordersApi.approve(order.id);
+          break;
+        case 'reject':
+          updated = await ordersApi.reject(order.id);
+          break;
         case 'confirm':
           updated = await ordersApi.confirm(order.id);
           break;
         case 'ship':
-          updated = await ordersApi.ship(order.id);
+          updated = await ordersApi.ship(order.id, {
+            line_shipments: Object.fromEntries(order.lines.map((line) => [line.id, line.allocated_qty])),
+          });
           break;
         case 'deliver':
           updated = await ordersApi.deliver(order.id);
@@ -104,11 +115,16 @@ export default function SalesOrderDetailPage() {
   const getStatusColor = (status: OrderStatus) => {
     const colors: Record<OrderStatus, string> = {
       [OrderStatus.DRAFT]: 'bg-gray-100 text-gray-800',
+      [OrderStatus.PENDING_APPROVAL]: 'bg-amber-100 text-amber-800',
+      [OrderStatus.APPROVED]: 'bg-indigo-100 text-indigo-800',
+      [OrderStatus.REJECTED]: 'bg-red-100 text-red-800',
       [OrderStatus.CONFIRMED]: 'bg-blue-100 text-blue-800',
+      [OrderStatus.PROCESSING]: 'bg-sky-100 text-sky-800',
       [OrderStatus.PRODUCTION]: 'bg-yellow-100 text-yellow-800',
       [OrderStatus.READY]: 'bg-purple-100 text-purple-800',
       [OrderStatus.SHIPPED]: 'bg-green-100 text-green-800',
       [OrderStatus.DELIVERED]: 'bg-emerald-100 text-emerald-800',
+      [OrderStatus.COMPLETED]: 'bg-teal-100 text-teal-800',
       [OrderStatus.CANCELLED]: 'bg-red-100 text-red-800',
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
@@ -361,12 +377,12 @@ export default function SalesOrderDetailPage() {
           {order.status === OrderStatus.DRAFT && (
             <>
               <Button
-                onClick={() => handleStatusChange('confirm')}
+                onClick={() => handleStatusChange('submit')}
                 disabled={actionLoading}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Confirm Order
+                <Clock className="mr-2 h-4 w-4" />
+                Submit For Approval
               </Button>
               <Button
                 variant="destructive"
@@ -378,7 +394,27 @@ export default function SalesOrderDetailPage() {
               </Button>
             </>
           )}
-          {order.status === OrderStatus.CONFIRMED && (
+          {order.status === OrderStatus.PENDING_APPROVAL && (
+            <>
+              <Button
+                onClick={() => handleStatusChange('approve')}
+                disabled={actionLoading}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Approve & Execute
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => handleStatusChange('reject')}
+                disabled={actionLoading}
+              >
+                <XCircle className="mr-2 h-4 w-4" />
+                Reject
+              </Button>
+            </>
+          )}
+          {(order.status === OrderStatus.CONFIRMED || order.status === OrderStatus.READY) && (
             <Button
               onClick={() => handleStatusChange('ship')}
               disabled={actionLoading}
@@ -398,7 +434,7 @@ export default function SalesOrderDetailPage() {
               Mark As Delivered
             </Button>
           )}
-          {order.status !== OrderStatus.DELIVERED && order.status !== OrderStatus.CANCELLED && (
+          {order.status !== OrderStatus.DELIVERED && order.status !== OrderStatus.COMPLETED && order.status !== OrderStatus.CANCELLED && order.status !== OrderStatus.REJECTED && (
             <Button
               variant="outline"
               onClick={() => handleStatusChange('cancel')}
