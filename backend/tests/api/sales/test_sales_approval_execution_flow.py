@@ -5,8 +5,10 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 
 from backend.app.config import settings
+from backend.app.infrastructure.persistence.models.finance_models import NotificationModel
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.infrastructure.persistence.models.sales_models import ClientModel, PriceListLineModel, PriceListModel, SalesOrderModel
 from backend.app.infrastructure.persistence.models.unit_of_measure_model import UnitOfMeasureModel
@@ -333,3 +335,37 @@ async def test_client_order_creation_is_tenant_client_scoped(
     assert list_resp.status_code == 200, list_resp.text
     visible_client_ids = {item["client_id"] for item in list_resp.json()["items"]}
     assert visible_client_ids == {str(client_id)}
+
+    admin_headers = _headers(test_user_id, test_tenant_id, "admin")
+    sales_list_resp = await async_client.get(
+        f"/api/v1/sales/orders?client_id={client_id}",
+        headers=admin_headers,
+    )
+    assert sales_list_resp.status_code == 200, sales_list_resp.text
+    listed_order = sales_list_resp.json()["items"][0]
+    assert listed_order["client_name"] == "Portal Client"
+    assert listed_order["item_summary"].startswith("Finished approval test item x1")
+
+    detail_resp = await async_client.get(
+        f"/api/v1/sales/orders/{created['id']}",
+        headers=admin_headers,
+    )
+    assert detail_resp.status_code == 200, detail_resp.text
+    detail = detail_resp.json()
+    assert detail["client_name"] == "Portal Client"
+    assert detail["lines"][0]["product_name"] == "Finished approval test item"
+    assert detail["lines"][0]["uom_code"] == f"EA{run_id[:6]}"
+
+    notifications = (
+        await db_session.execute(
+            select(NotificationModel).where(
+                NotificationModel.tenant_id == test_tenant_id,
+                NotificationModel.reference_type == "sales_order",
+                NotificationModel.reference_id == uuid.UUID(created["id"]),
+                NotificationModel.type == "CLIENT_ORDER_PENDING_APPROVAL",
+            )
+        )
+    ).scalars().all()
+    assert notifications
+    assert any("Portal Client" in notification.message for notification in notifications)
+    assert any("Finished approval test item x1" in notification.message for notification in notifications)

@@ -4,7 +4,7 @@ import uuid
 from decimal import Decimal
 from typing import List, Optional, Type
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.domain.inventory.entities.material import Material, MaterialType
@@ -36,6 +36,10 @@ def _normalize_material_type(value: MaterialType | str | None) -> MaterialType:
         return MaterialType.FINISHED
 
     return MaterialType.RAW
+
+
+def _normalize_material_name(value: str) -> str:
+    return " ".join(str(value or "").split()).strip().lower()
 
 
 class MaterialRepository(BaseRepository[Material, MaterialModel]):
@@ -114,11 +118,35 @@ class MaterialRepository(BaseRepository[Material, MaterialModel]):
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
+    async def name_exists(
+        self,
+        name: str,
+        tenant_id: uuid.UUID,
+        material_type: MaterialType | str | None = None,
+        exclude_id: Optional[uuid.UUID] = None,
+    ) -> bool:
+        normalized_name = _normalize_material_name(name)
+        stmt = select(MaterialModel.id).where(
+            func.lower(func.trim(MaterialModel.name)) == normalized_name,
+            MaterialModel.tenant_id == tenant_id,
+            MaterialModel.is_deleted.is_(False),
+        )
+        if material_type is not None:
+            stmt = stmt.where(
+                func.lower(func.trim(MaterialModel.material_type))
+                == _normalize_material_type(material_type).value
+            )
+        if exclude_id:
+            stmt = stmt.where(MaterialModel.id != exclude_id)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
     async def search(
         self,
         tenant_id: uuid.UUID,
         query: Optional[str] = None,
         category: Optional[str] = None,
+        material_type: Optional[str] = None,
         is_active: Optional[bool] = None,
         page: int = 1,
         page_size: int = 20,
@@ -137,6 +165,11 @@ class MaterialRepository(BaseRepository[Material, MaterialModel]):
             )
         if category:
             pass # TODO: category filter needs to map to material_categories name now, skipping for now
+        if material_type:
+            stmt = stmt.where(
+                func.lower(func.trim(MaterialModel.material_type))
+                == _normalize_material_type(material_type).value
+            )
         if is_active is not None:
             stmt = stmt.where(MaterialModel.is_active == is_active)
 
@@ -149,9 +182,9 @@ class MaterialRepository(BaseRepository[Material, MaterialModel]):
         tenant_id: uuid.UUID,
         query: Optional[str] = None,
         category: Optional[str] = None,
+        material_type: Optional[str] = None,
         is_active: Optional[bool] = None,
     ) -> int:
-        from sqlalchemy import func
         stmt = select(func.count()).select_from(MaterialModel).where(
             MaterialModel.tenant_id == tenant_id,
             MaterialModel.is_deleted.is_(False),
@@ -165,6 +198,11 @@ class MaterialRepository(BaseRepository[Material, MaterialModel]):
             )
         if category:
             pass # TODO: handle category filter via join
+        if material_type:
+            stmt = stmt.where(
+                func.lower(func.trim(MaterialModel.material_type))
+                == _normalize_material_type(material_type).value
+            )
         if is_active is not None:
             stmt = stmt.where(MaterialModel.is_active == is_active)
         result = await self._session.execute(stmt)

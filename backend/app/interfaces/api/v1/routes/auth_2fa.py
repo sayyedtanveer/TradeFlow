@@ -86,6 +86,12 @@ async def enable_2fa(
         # Generate backup codes
         backup_codes = TOTPService.generate_backup_codes(count=10)
 
+        user.totp_secret = secret
+        user.backup_codes = backup_codes
+        user.updated_at = datetime.now(timezone.utc)
+        session.add(user)
+        await session.flush()
+
         return Enable2FAResponse(
             totp_secret=secret,
             qr_code_base64=qr_code_base64,
@@ -142,8 +148,9 @@ async def verify_2fa_setup(
         if not TOTPService.verify_totp(user.totp_secret, body.code):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
 
-        # Generate backup codes and enable 2FA
-        backup_codes = TOTPService.generate_backup_codes(count=10)
+        # Keep the codes returned during /enable so users do not receive one set
+        # on-screen and a different set after verification.
+        backup_codes = user.backup_codes or TOTPService.generate_backup_codes(count=10)
         user.totp_enabled = True
         user.backup_codes = backup_codes
         user.updated_at = datetime.now(timezone.utc)

@@ -49,8 +49,10 @@ export default function ProductTemplateListPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Product Templates</h1>
-          <p className="text-muted-foreground">Manage multi-variant product definitions.</p>
+          <h1 className="text-2xl font-bold tracking-tight">Finished Goods</h1>
+          <p className="text-muted-foreground">
+            Manage sellable product templates here. Raw materials stay under inventory for BOM and procurement planning.
+          </p>
         </div>
         {canEdit && (
           <Button onClick={() => navigate("/products/new")}>
@@ -58,6 +60,13 @@ export default function ProductTemplateListPage() {
             New Template
           </Button>
         )}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm">Finished Goods</Button>
+        <Button variant="outline" size="sm" onClick={() => navigate("/inventory/materials")}>
+          Raw Materials
+        </Button>
       </div>
 
       <div className="flex items-center gap-2">

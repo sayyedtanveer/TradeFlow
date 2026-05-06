@@ -406,6 +406,7 @@ class ClientPortalService:
 
         order_id = order.id
         order_number = order.order_number
+        item_summary = await self._summarize_notification_lines(tenant_id, lines_input)
         try:
             notification_service = self._notification_service()
             await notification_service.broadcast_to_permission(
@@ -413,7 +414,10 @@ class ClientPortalService:
                 permission="sales:approve_order",
                 notification_type="CLIENT_ORDER_PENDING_APPROVAL",
                 title=f"Order {order_number} needs approval",
-                message=f"{client.name} submitted a client portal order for approval.",
+                message=(
+                    f"{client.name} submitted {item_summary} for approval. "
+                    f"Open sales order {order_number} to review the request."
+                ),
                 reference_type="sales_order",
                 reference_id=order_id,
             )
@@ -1329,6 +1333,23 @@ class ClientPortalService:
         if material is not None:
             return material.name, material.code
         return f"Product {str(product_id)[:8]}", None
+
+    async def _summarize_notification_lines(
+        self,
+        tenant_id: uuid.UUID,
+        lines_input: list[dict[str, Any]],
+    ) -> str:
+        summary_parts: list[str] = []
+        for index, raw_line in enumerate(lines_input):
+            product_name, _ = await self._resolve_product_name(tenant_id, raw_line["product_id"])
+            quantity = Decimal(str(raw_line.get("quantity") or 0))
+            if index < 2:
+                summary_parts.append(f"{product_name} x{quantity.normalize()}")
+
+        if len(lines_input) > 2:
+            summary_parts.append(f"+{len(lines_input) - 2} more")
+
+        return ", ".join(summary_parts) if summary_parts else "No line items"
 
     async def _get_client_user_by_email(self, email: str, tenant_id: uuid.UUID) -> Optional[UserModel]:
         user = await self.session.scalar(

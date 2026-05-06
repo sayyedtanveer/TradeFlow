@@ -68,6 +68,7 @@ class InventoryQueryHandler:
             tenant_id=query.tenant_id,
             query=query.query,
             category=query.category,
+            material_type=query.material_type,
             is_active=query.is_active,
             page=query.page,
             page_size=query.page_size,
@@ -76,6 +77,7 @@ class InventoryQueryHandler:
             tenant_id=query.tenant_id,
             query=query.query,
             category=query.category,
+            material_type=query.material_type,
             is_active=query.is_active,
         )
         return PaginatedMaterials(

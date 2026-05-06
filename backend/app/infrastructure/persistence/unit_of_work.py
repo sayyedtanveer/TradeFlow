@@ -45,6 +45,10 @@ class SQLAlchemyUnitOfWork(IUnitOfWork):
             await self.rollback()
         await self._session.close()
 
+    @property
+    def session(self) -> AsyncSession:
+        return self._session
+
     def register_events(self, events: List[DomainEvent]) -> None:
         """Called by handlers to queue domain events before commit."""
         self._pending_events.extend(events)

@@ -101,13 +101,6 @@ class SalesManufacturingIntegrationService:
                 # Non-fatal: if release fails, still return the created WO id
                 logger.exception("Failed to auto-release WO %s", wo_id)
 
-            await self._create_shortage_requests_and_purchase_orders(
-                tenant_id=tenant_id,
-                work_order_id=wo_id,
-                required_by=due_date,
-                created_by=actor_id,
-            )
-
             # Build and publish a lightweight domain event if dispatcher is available
             if self.event_dispatcher is not None:
                 try:

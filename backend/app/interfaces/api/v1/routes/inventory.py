@@ -58,6 +58,15 @@ def _get_repos(request: Request):
     return container
 
 
+def _material_error_status(message: str) -> int:
+    normalized = message.lower()
+    if "not found" in normalized:
+        return status.HTTP_404_NOT_FOUND
+    if "already exists" in normalized:
+        return status.HTTP_409_CONFLICT
+    return status.HTTP_400_BAD_REQUEST
+
+
 # ── Materials CRUD ─────────────────────────────────────────────────────────────
 
 @router.post(
@@ -96,7 +105,7 @@ async def create_material(
                 )
             )
         except ValueError as e:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+            raise HTTPException(status_code=_material_error_status(str(e)), detail=str(e))
 
     return MaterialResponse.model_validate(result)
 
@@ -111,6 +120,7 @@ async def list_materials(
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     query: Optional[str] = Query(None, description="Search by name or code"),
     category: Optional[str] = Query(None),
+    material_type: Optional[str] = Query(None, description="Filter by raw or finished"),
     is_active: Optional[bool] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=500),
@@ -125,6 +135,7 @@ async def list_materials(
                 tenant_id=tenant_id,
                 query=query,
                 category=category,
+                material_type=material_type,
                 is_active=is_active,
                 page=page,
                 page_size=page_size,
@@ -204,7 +215,7 @@ async def update_material(
                 )
             )
         except ValueError as e:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+            raise HTTPException(status_code=_material_error_status(str(e)), detail=str(e))
 
     return MaterialResponse.model_validate(result)
 

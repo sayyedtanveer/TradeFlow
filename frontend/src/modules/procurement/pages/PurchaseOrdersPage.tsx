@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { supplyChainApi, type PurchaseOrder, type Supplier } from "@/services/supply-chain.service"
 import { materialService } from "@/services/material.service"
 import type { Material } from "@/types/material.types"
@@ -26,9 +26,16 @@ import { useToast } from "@/hooks/use-toast"
 import { Plus, Trash2 } from "lucide-react"
 
 type LineDraft = { material_id: string; quantity: string; unit_price: string }
+type ShortagePrefill = {
+  lines: { material_id: string; quantity: number; unit_price?: number }[]
+  notes?: string
+  expectedDelivery?: string
+}
 
 export default function PurchaseOrdersPage() {
   const { toast } = useToast()
+  const location = useLocation()
+  const navigate = useNavigate()
   const [pos, setPos] = useState<PurchaseOrder[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [materials, setMaterials] = useState<Material[]>([])
@@ -53,6 +60,27 @@ export default function PurchaseOrdersPage() {
   useEffect(() => {
     load().catch(() => toast({ title: "Failed to load", variant: "destructive" }))
   }, [toast])
+
+  useEffect(() => {
+    const prefill = (location.state as { shortagePrefill?: ShortagePrefill } | null)?.shortagePrefill
+    if (!prefill) {
+      return
+    }
+
+    setOpen(true)
+    setNotes(prefill.notes ?? "")
+    setExpectedDelivery(prefill.expectedDelivery ?? "")
+    setLines(
+      prefill.lines.length
+        ? prefill.lines.map((line) => ({
+            material_id: line.material_id,
+            quantity: String(line.quantity),
+            unit_price: String(line.unit_price ?? 0),
+          }))
+        : [{ material_id: "", quantity: "1", unit_price: "0" }],
+    )
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.pathname, location.state, navigate])
 
   const addLine = () => setLines((l) => [...l, { material_id: "", quantity: "1", unit_price: "0" }])
   const removeLine = (i: number) => setLines((l) => l.filter((_, j) => j !== i))
@@ -116,6 +144,9 @@ export default function PurchaseOrdersPage() {
               <DialogTitle>Create purchase order</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-2">
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Use this form to cover raw-material shortages before production release.
+              </div>
               <div className="space-y-2">
                 <Label>Supplier</Label>
                 <Select value={supplierId} onValueChange={setSupplierId}>

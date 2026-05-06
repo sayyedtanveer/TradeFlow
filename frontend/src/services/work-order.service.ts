@@ -41,6 +41,29 @@ export interface WorkOrderDetail extends WorkOrderSummary {
   job_cards: JobCard[];
 }
 
+export interface MaterialAvailabilityLine {
+  material_id: string;
+  material_code: string;
+  material_name: string;
+  unit_id: string | null;
+  unit_code: string | null;
+  unit_name: string | null;
+  required_quantity: number;
+  available_quantity: number;
+  shortage_quantity: number;
+  status: 'ok' | 'low' | 'shortage';
+}
+
+export interface MaterialAvailabilityPreview {
+  product_id: string;
+  bom_id: string;
+  planned_quantity: number;
+  has_shortage: boolean;
+  shortage_count: number;
+  message: string | null;
+  lines: MaterialAvailabilityLine[];
+}
+
 export interface CreateWorkOrderPayload {
   product_id: string;
   bom_id: string;
@@ -63,6 +86,27 @@ export interface RecordProductionPayload {
   scrap_quantity?: number;
   notes?: string;
 }
+
+const toNumber = (value: unknown): number => {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const normalizeAvailabilityLine = (line: MaterialAvailabilityLine): MaterialAvailabilityLine => ({
+  ...line,
+  required_quantity: toNumber(line.required_quantity),
+  available_quantity: toNumber(line.available_quantity),
+  shortage_quantity: toNumber(line.shortage_quantity),
+});
+
+const normalizeAvailabilityPreview = (
+  preview: MaterialAvailabilityPreview,
+): MaterialAvailabilityPreview => ({
+  ...preview,
+  planned_quantity: toNumber(preview.planned_quantity),
+  shortage_count: toNumber(preview.shortage_count),
+  lines: Array.isArray(preview.lines) ? preview.lines.map(normalizeAvailabilityLine) : [],
+});
 
 const BASE = '/work-orders';
 
@@ -108,6 +152,20 @@ const workOrderService = {
       `${BASE}/${woId}/job-cards/${jcId}/complete`,
       { remarks: remarks ?? null }
     ),
+
+  checkMaterialAvailability: async (params: {
+    product_id: string;
+    bom_id?: string;
+    quantity: number;
+  }) => {
+    const response = await apiClient.get<MaterialAvailabilityPreview>(`${BASE}/material-availability`, {
+      params,
+    });
+    return {
+      ...response,
+      data: normalizeAvailabilityPreview(response.data),
+    };
+  },
 };
 
 export default workOrderService;

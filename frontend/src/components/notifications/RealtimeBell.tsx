@@ -1,30 +1,20 @@
-import React, { useState, useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Bell, X } from 'lucide-react'
 import { useWebSocketNotifications, WebSocketNotification } from '@/hooks/useWebSocketNotifications'
 import { cn } from '@/lib/utils'
 
-/**
- * RealtimeBell component displays real-time notifications.
- *
- * Features:
- * - Shows notification count on bell icon
- * - Dropdown menu with recent notifications
- * - Visual indicators for different notification types
- * - Click outside to close dropdown
- * - Clear notifications button
- */
 export const RealtimeBell: React.FC = () => {
+  const navigate = useNavigate()
   const [isOpen, setIsOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [hasShaken, setHasShaken] = useState(false)
   const { notifications, isConnected } = useWebSocketNotifications()
 
-  // Update unread count
   useEffect(() => {
     setUnreadCount(notifications.length)
   }, [notifications])
 
-  // Trigger shake animation on new notification
   useEffect(() => {
     if (notifications.length > 0) {
       setHasShaken(true)
@@ -32,10 +22,9 @@ export const RealtimeBell: React.FC = () => {
     }
   }, [notifications.length])
 
-  // Close dropdown on escape key
   useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
         setIsOpen(false)
       }
     }
@@ -45,10 +34,9 @@ export const RealtimeBell: React.FC = () => {
     }
   }, [isOpen])
 
-  // Close dropdown on click outside
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
       if (!target.closest('[data-notification-bell]')) {
         setIsOpen(false)
       }
@@ -62,13 +50,19 @@ export const RealtimeBell: React.FC = () => {
   const getNotificationColor = (type: string) => {
     switch (type) {
       case 'ORDER_STATUS_CHANGED':
+      case 'SALES_ORDER_PENDING_APPROVAL':
+      case 'CLIENT_ORDER_PENDING_APPROVAL':
         return 'border-l-blue-500 bg-blue-50'
       case 'LOW_STOCK':
         return 'border-l-orange-500 bg-orange-50'
       case 'WORK_ORDER_RELEASED':
       case 'WORK_ORDER_STARTED':
       case 'WORK_ORDER_COMPLETED':
+      case 'WORK_ORDER_ACTION_REQUIRED':
+      case 'PRODUCTION_ACTION_REQUIRED':
         return 'border-l-purple-500 bg-purple-50'
+      case 'SUPPLIER_PO_ACTION_REQUIRED':
+        return 'border-l-cyan-500 bg-cyan-50'
       case 'INVOICE_OVERDUE':
         return 'border-l-red-500 bg-red-50'
       case 'QUALITY_INSPECTION_FAILED':
@@ -81,19 +75,25 @@ export const RealtimeBell: React.FC = () => {
   const getNotificationIcon = (type: string) => {
     switch (type) {
       case 'ORDER_STATUS_CHANGED':
-        return '📦'
+      case 'SALES_ORDER_PENDING_APPROVAL':
+      case 'CLIENT_ORDER_PENDING_APPROVAL':
+        return 'O'
       case 'LOW_STOCK':
-        return '⚠️'
+        return '!'
       case 'WORK_ORDER_RELEASED':
       case 'WORK_ORDER_STARTED':
       case 'WORK_ORDER_COMPLETED':
-        return '🏭'
+      case 'WORK_ORDER_ACTION_REQUIRED':
+      case 'PRODUCTION_ACTION_REQUIRED':
+        return 'W'
+      case 'SUPPLIER_PO_ACTION_REQUIRED':
+        return 'P'
       case 'INVOICE_OVERDUE':
-        return '💰'
+        return '$'
       case 'QUALITY_INSPECTION_FAILED':
-        return '❌'
+        return 'X'
       default:
-        return '🔔'
+        return 'N'
     }
   }
 
@@ -113,9 +113,30 @@ export const RealtimeBell: React.FC = () => {
     return date.toLocaleDateString()
   }
 
+  const openNotification = (notification: WebSocketNotification) => {
+    const referenceType = notification.reference_type || notification.data?.reference_type
+    const referenceId = notification.reference_id || notification.data?.reference_id
+
+    if (referenceType === 'sales_order' && referenceId) {
+      navigate(`/sales/orders/${referenceId}`)
+      setIsOpen(false)
+      return
+    }
+
+    if (referenceType === 'work_order' && referenceId) {
+      navigate(`/work-orders/${referenceId}`)
+      setIsOpen(false)
+      return
+    }
+
+    if (referenceType === 'purchase_order' && referenceId) {
+      navigate(`/procurement/purchase-orders/${referenceId}`)
+      setIsOpen(false)
+    }
+  }
+
   return (
     <div className="relative" data-notification-bell>
-      {/* Bell Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
@@ -127,49 +148,42 @@ export const RealtimeBell: React.FC = () => {
         title={isConnected ? 'Connected' : 'Disconnected'}
       >
         <Bell className="h-5 w-5" />
-
-        {/* Status Dot */}
         <div
           className={cn(
             'absolute top-1 right-1 h-2 w-2 rounded-full animate-pulse',
             isConnected ? 'bg-green-500' : 'bg-gray-400'
           )}
         />
-
-        {/* Unread Count Badge */}
         {unreadCount > 0 && (
-          <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-600 rounded-full min-w-[20px]">
+          <span className="absolute top-0 right-0 inline-flex min-w-[20px] -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full bg-red-600 px-2 py-1 text-xs font-bold leading-none text-white">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
-      {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 z-50 w-96 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 max-h-96 overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-2 duration-200">
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+        <div className="absolute right-0 z-50 mt-2 flex max-h-96 w-96 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3">
             <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
             <div className="flex items-center gap-2">
               {unreadCount > 0 && (
-                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700">
                   {unreadCount} new
                 </span>
               )}
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-1 hover:bg-gray-200 rounded hover:text-gray-600 transition-colors"
+                className="rounded p-1 transition-colors hover:bg-gray-200 hover:text-gray-600"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
           </div>
 
-          {/* Notifications List */}
-          <div className="overflow-y-auto flex-1">
+          <div className="flex-1 overflow-y-auto">
             {notifications.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Bell className="h-8 w-8 text-gray-300 mb-2" />
+                <Bell className="mb-2 h-8 w-8 text-gray-300" />
                 <p className="text-sm text-gray-500">No notifications yet</p>
               </div>
             ) : (
@@ -178,22 +192,23 @@ export const RealtimeBell: React.FC = () => {
                   <div
                     key={notification.id}
                     className={cn(
-                      'px-4 py-3 hover:bg-gray-50 transition-colors border-l-4 cursor-pointer',
+                      'cursor-pointer border-l-4 px-4 py-3 transition-colors hover:bg-gray-50',
                       getNotificationColor(notification.type)
                     )}
+                    onClick={() => openNotification(notification)}
                   >
                     <div className="flex items-start gap-3">
-                      <span className="text-lg flex-shrink-0 mt-1">
+                      <span className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-gray-700">
                         {getNotificationIcon(notification.type)}
                       </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 line-clamp-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="line-clamp-2 text-sm font-semibold text-gray-900">
                           {notification.title}
                         </p>
-                        <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                        <p className="mt-1 line-clamp-2 text-xs text-gray-600">
                           {notification.message}
                         </p>
-                        <p className="text-xs text-gray-500 mt-2">
+                        <p className="mt-2 text-xs text-gray-500">
                           {formatTime(notification.timestamp)}
                         </p>
                       </div>
@@ -204,17 +219,13 @@ export const RealtimeBell: React.FC = () => {
             )}
           </div>
 
-          {/* Footer */}
           {notifications.length > 0 && (
-            <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
+            <div className="border-t border-gray-200 bg-gray-50 px-4 py-3">
               <button
-                onClick={() => {
-                  // In a real app, this would clear notifications
-                  setIsOpen(false)
-                }}
-                className="text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+                onClick={() => setIsOpen(false)}
+                className="text-xs font-medium text-blue-600 transition-colors hover:text-blue-700"
               >
-                View all notifications →
+                Close notifications
               </button>
             </div>
           )}

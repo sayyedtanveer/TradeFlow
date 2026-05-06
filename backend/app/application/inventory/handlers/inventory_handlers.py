@@ -80,14 +80,23 @@ class CreateMaterialHandler:
         self._uow = uow
 
     async def handle(self, cmd: CreateMaterialCommand) -> MaterialResult:
-        if await self._repo.code_exists(cmd.code, cmd.tenant_id):
-            raise ValueError(f"Material with code '{cmd.code}' already exists in this tenant.")
+        normalized_code = Material.normalize_code(cmd.code)
+        normalized_name = Material.normalize_name(cmd.name)
+        normalized_type = Material.coerce_material_type(cmd.material_type)
+        Material.validate_name_for_type(normalized_name, normalized_type)
+
+        if await self._repo.code_exists(normalized_code, cmd.tenant_id):
+            raise ValueError(f"Material with code '{normalized_code}' already exists in this tenant.")
+        if await self._repo.name_exists(normalized_name, cmd.tenant_id, material_type=normalized_type):
+            raise ValueError(
+                f"{normalized_type.value.title()} material name '{normalized_name}' already exists in this tenant."
+            )
 
         material = Material(
             tenant_id=cmd.tenant_id,
-            code=cmd.code,
-            name=cmd.name,
-            material_type=cmd.material_type,
+            code=normalized_code,
+            name=normalized_name,
+            material_type=normalized_type,
             description=cmd.description,
             category_id=cmd.category_id,
             base_unit_id=cmd.base_unit_id,
@@ -112,12 +121,33 @@ class UpdateMaterialHandler:
         if not material:
             raise ValueError(f"Material {cmd.id} not found.")
 
+        next_name = Material.normalize_name(cmd.name) if cmd.name is not None else material.name
+        next_type = (
+            Material.coerce_material_type(cmd.material_type)
+            if cmd.material_type is not None
+            else material.material_type
+        )
+        Material.validate_name_for_type(next_name, next_type)
+
+        if (
+            cmd.name is not None
+            or cmd.material_type is not None
+        ) and await self._repo.name_exists(
+            next_name,
+            cmd.tenant_id,
+            material_type=next_type,
+            exclude_id=material.id,
+        ):
+            raise ValueError(
+                f"{next_type.value.title()} material name '{next_name}' already exists in this tenant."
+            )
+
         material.update(
-            name=cmd.name,
+            name=next_name if cmd.name is not None else None,
             description=cmd.description,
             category_id=cmd.category_id,
             base_unit_id=cmd.base_unit_id,
-            material_type=cmd.material_type,
+            material_type=next_type if cmd.material_type is not None else None,
             reorder_level=cmd.reorder_level,
             location_id=cmd.location_id,
             is_batch_tracked=cmd.is_batch_tracked,

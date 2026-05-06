@@ -20,6 +20,7 @@ from backend.app.interfaces.api.v1.routes.work_orders import router as work_orde
 from backend.app.interfaces.api.v1.routes.supply_chain import router as supply_chain_router
 from backend.app.interfaces.api.v1.routes.inspection_templates import router as inspection_templates_router
 from backend.app.interfaces.api.v1.routes.finance import router as finance_router
+from backend.app.interfaces.api.v1.routes.deliveries import router as deliveries_router
 from backend.app.interfaces.api.v1.routes.reports import router as reports_router
 from backend.app.interfaces.api.v1.routes.notifications import router as notifications_router
 from backend.app.interfaces.api.v1.routes.client_portal import router as client_portal_router
@@ -54,6 +55,7 @@ api_v1_router.include_router(supply_chain_router)
 api_v1_router.include_router(dashboards_router)
 api_v1_router.include_router(inspection_templates_router)
 api_v1_router.include_router(finance_router)
+api_v1_router.include_router(deliveries_router)
 api_v1_router.include_router(reports_router)
 api_v1_router.include_router(notifications_router)
 api_v1_router.include_router(client_portal_router)
@@ -159,6 +161,16 @@ module_registry.register(
     roles=["ADMIN", "ACCOUNTANT", "MANAGER"],
     status="active",
     icon="DollarSign"
+)
+
+module_registry.register(
+    id="deliveries",
+    name="Deliveries",
+    route="/deliveries",
+    dependencies=["sales", "inventory"],
+    roles=["ADMIN", "MANAGER", "SALES", "STOREKEEPER"],
+    status="active",
+    icon="Truck"
 )
 
 module_registry.register(

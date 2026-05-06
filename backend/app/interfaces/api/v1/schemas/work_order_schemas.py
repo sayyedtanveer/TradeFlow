@@ -37,6 +37,29 @@ class RecordProductionRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class MaterialAvailabilityLineResponse(BaseModel):
+    material_id: uuid.UUID
+    material_code: str
+    material_name: str
+    unit_id: Optional[uuid.UUID] = None
+    unit_code: Optional[str] = None
+    unit_name: Optional[str] = None
+    required_quantity: Decimal
+    available_quantity: Decimal
+    shortage_quantity: Decimal
+    status: str
+
+
+class MaterialAvailabilityResponse(BaseModel):
+    product_id: uuid.UUID
+    bom_id: uuid.UUID
+    planned_quantity: Decimal
+    has_shortage: bool
+    shortage_count: int
+    message: Optional[str] = None
+    lines: List[MaterialAvailabilityLineResponse]
+
+
 class StartJobCardRequest(BaseModel):
     assigned_to: Optional[uuid.UUID] = None
 

@@ -47,6 +47,10 @@ const normalizeOrderLine = (line: any) => {
 
   return {
     ...line,
+    product_name: line.product_name ?? null,
+    product_code: line.product_code ?? null,
+    uom_code: line.uom_code ?? null,
+    uom_name: line.uom_name ?? null,
     quantity,
     unit_price: unitPrice,
     tax_rate: toNumber(line.tax_rate),
@@ -62,12 +66,16 @@ const normalizeOrderLine = (line: any) => {
 
 const normalizeOrder = (order: any): SalesOrder => ({
   ...order,
+  client_name: order.client_name ?? null,
+  client_code: order.client_code ?? null,
   status: (order.status ?? OrderStatus.DRAFT).toString().toUpperCase() as OrderStatus,
   payment_status: (order.payment_status ?? PaymentStatus.PENDING).toString().toUpperCase() as PaymentStatus,
   subtotal: toNumber(order.subtotal),
   discount_amount: toNumber(order.discount_amount),
   tax_amount: toNumber(order.tax_amount),
   grand_total: toNumber(order.grand_total),
+  item_count: toNumber(order.item_count ?? (Array.isArray(order.lines) ? order.lines.length : 0)),
+  item_summary: order.item_summary ?? null,
   lines: Array.isArray(order.lines) ? order.lines.map(normalizeOrderLine) : [],
 });
 

@@ -1,7 +1,4 @@
 from enum import Enum
-from typing import Set
-
-
 class ProductStatus(str, Enum):
     """
     Lifecycle states for product templates.
@@ -17,20 +14,12 @@ class ProductStatus(str, Enum):
     INACTIVE = "INACTIVE"
     ARCHIVED = "ARCHIVED"
 
-    # State transition rules
-    VALID_TRANSITIONS = {
-        DRAFT:    {ACTIVE, ARCHIVED},           # Draft can go to Active or Archived
-        ACTIVE:   {INACTIVE, ARCHIVED},         # Active can go to Inactive or Archived
-        INACTIVE: {ACTIVE, ARCHIVED},           # Inactive can go back to Active or Archived
-        ARCHIVED: set(),                        # Archived is terminal
-    }
-
     @staticmethod
     def can_transition(from_status: "ProductStatus", to_status: "ProductStatus") -> bool:
         """Check if a transition is allowed."""
         if from_status == to_status:
             return True  # No-op transitions are allowed
-        return to_status in ProductStatus.VALID_TRANSITIONS.get(from_status, set())
+        return to_status in PRODUCT_STATUS_TRANSITIONS.get(from_status, set())
 
     @staticmethod
     def validate_transition(from_status: "ProductStatus", to_status: "ProductStatus") -> None:
@@ -38,7 +27,7 @@ class ProductStatus(str, Enum):
         if not ProductStatus.can_transition(from_status, to_status):
             raise ValueError(
                 f"Cannot transition from {from_status.value} to {to_status.value}. "
-                f"Valid transitions from {from_status.value}: {', '.join(s.value for s in ProductStatus.VALID_TRANSITIONS[from_status])}"
+                f"Valid transitions from {from_status.value}: {', '.join(s.value for s in PRODUCT_STATUS_TRANSITIONS[from_status])}"
             )
 
     @property
@@ -50,3 +39,13 @@ class ProductStatus(str, Enum):
     def is_usable(self) -> bool:
         """Returns True if product can be used in operations (ACTIVE or DRAFT)."""
         return self in {ProductStatus.ACTIVE, ProductStatus.DRAFT}
+
+
+# State transition rules live outside the Enum class so Python does not turn the
+# mapping itself into an enum member.
+PRODUCT_STATUS_TRANSITIONS = {
+    ProductStatus.DRAFT: {ProductStatus.ACTIVE, ProductStatus.ARCHIVED},
+    ProductStatus.ACTIVE: {ProductStatus.INACTIVE, ProductStatus.ARCHIVED},
+    ProductStatus.INACTIVE: {ProductStatus.ACTIVE, ProductStatus.ARCHIVED},
+    ProductStatus.ARCHIVED: set(),
+}

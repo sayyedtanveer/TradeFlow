@@ -2,6 +2,8 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from sqlalchemy import select
+
 from backend.app.application.bom.commands.bom_commands import (
     CreateBOMCommand,
     UpdateBOMCommand,
@@ -13,7 +15,9 @@ from backend.app.application.bom.queries.bom_queries import GetBOMQuery, ListBOM
 from backend.app.domain.bom.entities.bom import BillOfMaterial
 from backend.app.domain.bom.entities.bom_line import BOMLine
 from backend.app.domain.bom.entities.bom_operation import BOMOperation
+from backend.app.domain.inventory.entities.material import MaterialType
 from backend.app.domain.bom.services.bom_validation_service import BOMValidationService
+from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.infrastructure.persistence.repositories.bom_repository import BOMRepository
 from backend.app.infrastructure.services.bom_providers import InfrastructureBOMProvider
 
@@ -41,10 +45,47 @@ class BOMHandlers:
                 )
             seen.add(key)
 
+    async def _validate_material_components(self, tenant_id: uuid.UUID, lines) -> None:
+        material_ids = list({line.material_id for line in lines if line.material_id is not None})
+        if not material_ids:
+            return
+
+        stmt = select(
+            MaterialModel.id,
+            MaterialModel.name,
+            MaterialModel.material_type,
+        ).where(
+            MaterialModel.tenant_id == tenant_id,
+            MaterialModel.is_deleted.is_(False),
+            MaterialModel.id.in_(material_ids),
+        )
+        result = await self._uow.session.execute(stmt)
+        materials = {row.id: row for row in result}
+
+        missing_ids = [str(material_id) for material_id in material_ids if material_id not in materials]
+        if missing_ids:
+            raise ValueError(
+                "One or more selected raw materials do not exist for this tenant: "
+                + ", ".join(missing_ids[:3])
+            )
+
+        invalid_materials = [
+            row.name
+            for row in materials.values()
+            if str(row.material_type).strip().lower() != MaterialType.RAW.value
+        ]
+        if invalid_materials:
+            raise ValueError(
+                "Only raw materials can be added as BOM material lines. "
+                "Use template or variant lines for sub-assemblies or finished goods: "
+                + ", ".join(invalid_materials[:3])
+            )
+
     # ── Commands ─────────────────────────────────────────────────────────────
 
     async def handle_create(self, cmd: CreateBOMCommand) -> BillOfMaterial:
         self._ensure_unique_components(cmd.lines)
+        await self._validate_material_components(cmd.tenant_id, cmd.lines)
         # Build domain entity – constructor enforces that exactly one of template/variant is provided
         bom = BillOfMaterial(
             tenant_id=cmd.tenant_id,
@@ -94,6 +135,7 @@ class BOMHandlers:
             bom.approved_by = cmd.approved_by
         if cmd.lines is not None:
             self._ensure_unique_components(cmd.lines)
+            await self._validate_material_components(cmd.tenant_id, cmd.lines)
             bom.lines.clear()
             for line_input in cmd.lines:
                 bom.add_line(

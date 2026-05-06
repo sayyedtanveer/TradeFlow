@@ -9,6 +9,38 @@ from typing import Optional
 from backend.app.domain.shared.base_entity import BaseEntity
 
 
+_GENERIC_RAW_MATERIAL_NAMES = {
+    "raw material",
+    "raw materials",
+    "material",
+    "materials",
+    "component",
+    "components",
+    "item",
+    "items",
+}
+
+_GENERIC_FINISHED_GOOD_NAMES = {
+    "finished good",
+    "finished goods",
+    "product",
+    "products",
+    "final product",
+    "finished item",
+    "goods",
+    "item",
+    "items",
+}
+
+
+def _normalize_text(value: str) -> str:
+    return " ".join(str(value or "").split()).strip()
+
+
+def _normalize_key(value: str) -> str:
+    return _normalize_text(value).lower()
+
+
 class MaterialType(str, Enum):
     RAW = "raw"
     FINISHED = "finished"
@@ -23,6 +55,53 @@ class Material(BaseEntity):
     - reserved_stock cannot exceed current_stock
     - Every stock mutation is the caller's responsibility to log as a transaction
     """
+
+    @staticmethod
+    def normalize_code(value: str) -> str:
+        normalized = _normalize_text(value)
+        if not normalized:
+            raise ValueError("Material code is required.")
+        return normalized
+
+    @staticmethod
+    def normalize_name(value: str) -> str:
+        normalized = _normalize_text(value)
+        if not normalized:
+            raise ValueError("Material name is required.")
+        return normalized
+
+    @staticmethod
+    def coerce_material_type(value: MaterialType | str | None) -> MaterialType:
+        if isinstance(value, MaterialType):
+            return value
+
+        normalized = _normalize_key(str(value or "")).replace(" ", "_")
+        if normalized in {"finished", "finished_good", "finished_goods", "fg"}:
+            return MaterialType.FINISHED
+        return MaterialType.RAW
+
+    @classmethod
+    def validate_name_for_type(cls, name: str, material_type: MaterialType | str | None) -> None:
+        normalized_name = cls.normalize_name(name)
+        normalized_type = cls.coerce_material_type(material_type)
+        comparable_name = _normalize_key(normalized_name)
+
+        blocked_names = (
+            _GENERIC_RAW_MATERIAL_NAMES
+            if normalized_type == MaterialType.RAW
+            else _GENERIC_FINISHED_GOOD_NAMES
+        )
+
+        if comparable_name in blocked_names:
+            if normalized_type == MaterialType.RAW:
+                raise ValueError(
+                    "Please use a specific raw material name like 'Brass Body', "
+                    "'Glass Tube', or 'O-Ring Seal' instead of a generic label."
+                )
+            raise ValueError(
+                "Please use a specific finished good name like 'Gear Rotameter - Standard' "
+                "instead of a generic label."
+            )
 
     def __init__(
         self,
@@ -57,9 +136,9 @@ class Material(BaseEntity):
             is_deleted=is_deleted,
             deleted_at=deleted_at,
         )
-        self._code = code
-        self._name = name
-        self._material_type = material_type
+        self._code = self.normalize_code(code)
+        self._name = self.normalize_name(name)
+        self._material_type = self.coerce_material_type(material_type)
         self._description = description
         self._category_id = category_id
         self._base_unit_id = base_unit_id
@@ -84,7 +163,7 @@ class Material(BaseEntity):
 
     @name.setter
     def name(self, value: str) -> None:
-        self._name = value
+        self._name = self.normalize_name(value)
         self._touch()
 
     @property
@@ -273,7 +352,7 @@ class Material(BaseEntity):
     ) -> None:
         """Bulk update of editable fields."""
         if name is not None:
-            self._name = name
+            self._name = self.normalize_name(name)
         if description is not None:
             self._description = description
         if category_id is not None:
@@ -281,7 +360,7 @@ class Material(BaseEntity):
         if base_unit_id is not None:
             self._base_unit_id = base_unit_id
         if material_type is not None:
-            self._material_type = material_type
+            self._material_type = self.coerce_material_type(material_type)
         if reorder_level is not None:
             self._reorder_level = reorder_level
         if location_id is not None:

@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import uuid
 import enum
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
-    Column, String, Numeric, Boolean, Date, DateTime,
-    ForeignKey, Enum as SAEnum, Integer, Text, UniqueConstraint, Index, func
+    Boolean, Date, DateTime, Enum as SAEnum, ForeignKey, Index,
+    Integer, Numeric, String, Text, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.infrastructure.persistence.database import Base
 
@@ -39,92 +39,128 @@ class WorkOrderModel(Base):
         Index("ix_work_orders_tenant_due", "tenant_id", "due_date"),
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    wo_number = Column(String(30), nullable=False)
-    tenant_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    wo_number: Mapped[str] = mapped_column(String(30), nullable=False)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
 
     # Product / BOM snapshot references (immutable after RELEASED)
-    product_id = Column(UUID(as_uuid=True), ForeignKey("item_variants.id", ondelete="RESTRICT"), nullable=False)
-    bom_id = Column(UUID(as_uuid=True), ForeignKey("boms.id", ondelete="RESTRICT"), nullable=False)
-    sales_order_id = Column(UUID(as_uuid=True), nullable=True)
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("item_variants.id", ondelete="RESTRICT"), nullable=False
+    )
+    bom_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("boms.id", ondelete="RESTRICT"), nullable=False
+    )
+    sales_order_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     # Quantities
-    planned_quantity = Column(Numeric(15, 3), nullable=False)
-    produced_quantity = Column(Numeric(15, 3), nullable=False, default=0)
-    scrap_quantity = Column(Numeric(15, 3), nullable=False, default=0)
+    planned_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False)
+    produced_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
+    scrap_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
 
     # Lifecycle
-    status = Column(SAEnum(WorkOrderStatus, name="work_order_status"), nullable=False, default=WorkOrderStatus.PLANNED)
-    priority = Column(SAEnum(WorkOrderPriority, name="work_order_priority"), nullable=False, default=WorkOrderPriority.NORMAL)
+    status: Mapped[str] = mapped_column(
+        SAEnum(WorkOrderStatus, name="work_order_status"), nullable=False, default=WorkOrderStatus.PLANNED
+    )
+    priority: Mapped[str] = mapped_column(
+        SAEnum(WorkOrderPriority, name="work_order_priority"), nullable=False, default=WorkOrderPriority.NORMAL
+    )
 
-    start_date = Column(Date, nullable=False)
-    due_date = Column(Date, nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    due_date: Mapped[date] = mapped_column(Date, nullable=False)
 
-    notes = Column(Text, nullable=True)
-    created_by = Column(UUID(as_uuid=True), nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
 
     # Soft delete
-    is_deleted = Column(Boolean, nullable=False, default=False)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
 
     # Relationships
-    materials = relationship("WorkOrderMaterialModel", back_populates="work_order", cascade="all, delete-orphan")
-    job_cards = relationship("JobCardModel", back_populates="work_order", cascade="all, delete-orphan", order_by="JobCardModel.sequence")
-    production_records = relationship("ProductionRecordModel", back_populates="work_order", cascade="all, delete-orphan")
+    materials: Mapped[list["WorkOrderMaterialModel"]] = relationship(
+        "WorkOrderMaterialModel", back_populates="work_order", cascade="all, delete-orphan"
+    )
+    job_cards: Mapped[list["JobCardModel"]] = relationship(
+        "JobCardModel",
+        back_populates="work_order",
+        cascade="all, delete-orphan",
+        order_by="JobCardModel.sequence",
+    )
+    production_records: Mapped[list["ProductionRecordModel"]] = relationship(
+        "ProductionRecordModel", back_populates="work_order", cascade="all, delete-orphan"
+    )
 
 
 class WorkOrderMaterialModel(Base):
     """BOM snapshot — copied from BOM lines at WO creation. Never re-reads live BOM."""
     __tablename__ = "work_order_materials"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    work_order_id = Column(UUID(as_uuid=True), ForeignKey("work_orders.id", ondelete="CASCADE"), nullable=False, index=True)
-    material_id = Column(UUID(as_uuid=True), ForeignKey("materials.id", ondelete="RESTRICT"), nullable=False)
-    unit_id = Column(UUID(as_uuid=True), ForeignKey("units_of_measure.id"), nullable=False)
-    required_quantity = Column(Numeric(15, 3), nullable=False)
-    issued_quantity = Column(Numeric(15, 3), nullable=False, default=0)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    work_order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("work_orders.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    material_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("materials.id", ondelete="RESTRICT"), nullable=False
+    )
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("units_of_measure.id"), nullable=False)
+    required_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False)
+    issued_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
 
-    work_order = relationship("WorkOrderModel", back_populates="materials")
+    work_order: Mapped["WorkOrderModel"] = relationship("WorkOrderModel", back_populates="materials")
 
 
 class JobCardModel(Base):
     """Operation snapshot — copied from BOM operation list at WO creation."""
     __tablename__ = "job_cards"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    work_order_id = Column(UUID(as_uuid=True), ForeignKey("work_orders.id", ondelete="CASCADE"), nullable=False, index=True)
-    operation_id = Column(UUID(as_uuid=True), ForeignKey("operations.id", ondelete="RESTRICT"), nullable=False)
-    sequence = Column(Integer, nullable=False)
-    assigned_to = Column(UUID(as_uuid=True), nullable=True)
-    status = Column(String(20), nullable=False, default="PENDING")  # PENDING / IN_PROGRESS / DONE
-    started_at = Column(DateTime(timezone=True), nullable=True)
-    completed_at = Column(DateTime(timezone=True), nullable=True)
-    remarks = Column(Text, nullable=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    work_order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("work_orders.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    operation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("operations.id", ondelete="RESTRICT"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    assigned_to: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")  # PENDING / IN_PROGRESS / DONE
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    work_order = relationship("WorkOrderModel", back_populates="job_cards")
+    work_order: Mapped["WorkOrderModel"] = relationship("WorkOrderModel", back_populates="job_cards")
 
 
 class ProductionRecordModel(Base):
     __tablename__ = "production_records"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    work_order_id = Column(UUID(as_uuid=True), ForeignKey("work_orders.id", ondelete="CASCADE"), nullable=False, index=True)
-    produced_quantity = Column(Numeric(15, 3), nullable=False)
-    scrap_quantity = Column(Numeric(15, 3), nullable=False, default=0)
-    recorded_by = Column(UUID(as_uuid=True), nullable=False)
-    notes = Column(Text, nullable=True)
-    recorded_at = Column(DateTime(timezone=True), default=func.now(), nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    work_order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("work_orders.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    produced_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False)
+    scrap_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
+    recorded_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
 
-    work_order = relationship("WorkOrderModel", back_populates="production_records")
+    work_order: Mapped["WorkOrderModel"] = relationship("WorkOrderModel", back_populates="production_records")
 
 
 class WONumberSequenceModel(Base):
     """One row per tenant — atomically incremented to generate WO numbers."""
     __tablename__ = "wo_number_sequences"
 
-    tenant_id = Column(UUID(as_uuid=True), primary_key=True)
-    current_value = Column(Integer, nullable=False, default=0)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    current_value: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

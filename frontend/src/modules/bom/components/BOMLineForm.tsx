@@ -63,7 +63,11 @@ export function BOMLineForm({ onAdd, onCancel }: BOMLineFormProps) {
     queryKey: ["component-search", compType, debouncedSearch],
     queryFn: async (): Promise<ComponentResult[]> => {
       if (compType === "material") {
-        const r = await bomService.getMaterials({ query: debouncedSearch, page_size: 20 })
+        const r = await bomService.getMaterials({
+          query: debouncedSearch,
+          material_type: "raw",
+          page_size: 20,
+        })
         return r.items.map((m) => ({ id: m.id, label: m.name, sub: m.code, type: "material" }))
       } else if (compType === "template") {
         const r = await bomService.getTemplates({ query: debouncedSearch, page_size: 20 })
@@ -117,7 +121,7 @@ export function BOMLineForm({ onAdd, onCancel }: BOMLineFormProps) {
           <SelectContent>
             <SelectItem value="material">
               <span className="flex items-center gap-2">
-                <Package2 className="w-3.5 h-3.5" /> Material
+                <Package2 className="w-3.5 h-3.5" /> Raw Material
               </span>
             </SelectItem>
             <SelectItem value="template">
@@ -136,12 +140,18 @@ export function BOMLineForm({ onAdd, onCancel }: BOMLineFormProps) {
 
       {/* Debounced search */}
       <div className="space-y-1.5">
-        <Label>Search {compType === "material" ? "Material" : compType === "template" ? "Template" : "Variant"}</Label>
+        <Label>
+          Search {compType === "material" ? "Raw Material" : compType === "template" ? "Template" : "Variant"}
+        </Label>
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
           <Input
             className="pl-8 pr-8"
-            placeholder={`Search by name or code...`}
+            placeholder={
+              compType === "material"
+                ? "Search raw material by name or code..."
+                : "Search by name or code..."
+            }
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -186,6 +196,11 @@ export function BOMLineForm({ onAdd, onCancel }: BOMLineFormProps) {
         )}
         {!selected && search && results && results.length === 0 && !searching && (
           <p className="text-xs text-muted-foreground px-1">No results found.</p>
+        )}
+        {compType === "material" && (
+          <p className="text-xs text-muted-foreground px-1">
+            BOM material lines are only for consumable raw items. Use template or variant lines for sub-assemblies.
+          </p>
         )}
       </div>
 

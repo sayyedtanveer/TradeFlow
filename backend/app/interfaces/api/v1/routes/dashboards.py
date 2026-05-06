@@ -11,7 +11,7 @@ Dashboards are role-specific and tenant-scoped:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from decimal import Decimal
 
@@ -20,10 +20,14 @@ from sqlalchemy import select, func
 from backend.app.infrastructure.persistence.models.purchase_order_model import PurchaseOrderModel
 from backend.app.infrastructure.persistence.models.grn_model import GoodsReceiptNoteModel
 from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderModel
-from backend.app.infrastructure.persistence.models.sales_models import SalesOrderModel
+from backend.app.infrastructure.persistence.models.sales_models import ClientModel, SalesOrderModel
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.infrastructure.persistence.models.stock_level_model import StockLevelModel as InventoryModel
-from backend.app.infrastructure.persistence.models.quality_model import SupplierQuotationModel
+from backend.app.infrastructure.persistence.models.quality_model import (
+    NonConformanceReportModel,
+    QualityInspectionModel,
+    SupplierQuotationModel,
+)
 from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel
 from backend.app.infrastructure.persistence.models.user_model import UserModel
 
@@ -36,12 +40,17 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
 from backend.app.application.rbac.service import get_effective_role_permissions
 from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 
-router = APIRouter(prefix="/api/v1/dashboards", tags=["Dashboards"])
+router = APIRouter(tags=["Dashboards"])
 
 
 @router.get(
-    "/admin",
+    "/dashboards/admin",
     dependencies=[Depends(require_permission("admin:read"))],
+)
+@router.get(
+    "/dashboard/admin",
+    dependencies=[Depends(require_permission("admin:read"))],
+    include_in_schema=False,
 )
 async def admin_dashboard(
     request: Request,
@@ -114,6 +123,23 @@ async def admin_dashboard(
         so_result = await session.execute(so_stmt)
         so_by_status = {row[0]: row[1] for row in so_result}
         total_sos = sum(so_by_status.values())
+
+        revenue = await session.scalar(
+            select(func.coalesce(func.sum(SalesOrderModel.grand_total), 0)).where(
+                SalesOrderModel.tenant_id == tenant_id,
+                SalesOrderModel.status.in_(["DELIVERED", "COMPLETED"]),
+                SalesOrderModel.is_deleted.is_(False),
+            )
+        )
+        open_orders = await session.scalar(
+            select(func.count(SalesOrderModel.id)).where(
+                SalesOrderModel.tenant_id == tenant_id,
+                SalesOrderModel.status.in_(
+                    ["PENDING_APPROVAL", "APPROVED", "CONFIRMED", "PRODUCTION", "READY", "SHIPPED"]
+                ),
+                SalesOrderModel.is_deleted.is_(False),
+            )
+        )
         
         # Production completion %
         completed_wos = wo_by_status.get("COMPLETED", 0)
@@ -147,6 +173,10 @@ async def admin_dashboard(
             "low_stock_alerts": low_stock_count,
             "estimated_value": float(inv_value),
         },
+        "revenue": float(revenue or 0),
+        "open_orders": int(open_orders or 0),
+        "open_work_orders": int(total_wos - completed_wos),
+        "production_target_progress": round(production_completion_pct, 1),
         "work_orders": {
             "total": total_wos,
             "by_status": wo_by_status,
@@ -160,8 +190,13 @@ async def admin_dashboard(
 
 
 @router.get(
-    "/supplier",
+    "/dashboards/supplier",
     dependencies=[Depends(require_permission("supplier:read"))],
+)
+@router.get(
+    "/dashboard/supplier",
+    dependencies=[Depends(require_permission("supplier:read"))],
+    include_in_schema=False,
 )
 async def supplier_dashboard(
     request: Request,
@@ -246,8 +281,13 @@ async def supplier_dashboard(
 
 
 @router.get(
-    "/manager",
+    "/dashboards/manager",
     dependencies=[Depends(require_permission("sales:approve_order"))],
+)
+@router.get(
+    "/dashboard/manager",
+    dependencies=[Depends(require_permission("sales:approve_order"))],
+    include_in_schema=False,
 )
 async def manager_dashboard(
     request: Request,
@@ -304,8 +344,173 @@ async def manager_dashboard(
 
 
 @router.get(
-    "/storekeeper",
+    "/dashboards/planner",
+    dependencies=[Depends(require_permission("manufacturing:read"))],
+)
+@router.get(
+    "/dashboard/planner",
+    dependencies=[Depends(require_permission("manufacturing:read"))],
+    include_in_schema=False,
+)
+async def planner_dashboard(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Planner dashboard with open work orders, capacity load, and MRP-style shortage signals."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        wo_result = await session.execute(
+            select(WorkOrderModel.status, func.count(WorkOrderModel.id))
+            .where(
+                WorkOrderModel.tenant_id == tenant_id,
+                WorkOrderModel.is_deleted.is_(False),
+            )
+            .group_by(WorkOrderModel.status)
+        )
+        wo_by_status = {row[0]: row[1] for row in wo_result}
+        open_work_orders = sum(
+            wo_by_status.get(status_key, 0)
+            for status_key in ["DRAFT", "PLANNED", "RELEASED", "IN_PROGRESS", "ON_HOLD"]
+        )
+        completed = wo_by_status.get("COMPLETED", 0)
+        total = open_work_orders + completed
+
+        shortages = await session.scalar(
+            select(func.count(MaterialModel.id)).where(
+                MaterialModel.tenant_id == tenant_id,
+                MaterialModel.current_stock <= MaterialModel.reorder_level,
+                MaterialModel.is_deleted.is_(False),
+            )
+        )
+
+        open_pos = await session.scalar(
+            select(func.count(PurchaseOrderModel.id)).where(
+                PurchaseOrderModel.tenant_id == tenant_id,
+                PurchaseOrderModel.status.in_(["draft", "sent", "acknowledged", "partial", "partially_received"]),
+                PurchaseOrderModel.is_deleted.is_(False),
+            )
+        )
+
+    return {
+        "dashboard_type": "planner",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "open_work_orders": int(open_work_orders),
+        "capacity_load": round((open_work_orders / total * 100), 1) if total else 0,
+        "mrp_suggestions": {
+            "shortage_items": int(shortages or 0),
+            "open_purchase_orders": int(open_pos or 0),
+        },
+        "work_orders": wo_by_status,
+    }
+
+
+@router.get(
+    "/dashboards/sales",
+    dependencies=[Depends(require_permission("sales:read"))],
+)
+@router.get(
+    "/dashboard/sales",
+    dependencies=[Depends(require_permission("sales:read"))],
+    include_in_schema=False,
+)
+async def sales_dashboard(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Sales dashboard with approvals, monthly sales value, and top clients."""
+    container = get_container(request)
+    since = datetime.now(timezone.utc) - timedelta(days=30)
+    async with container.session_factory() as session:
+        pending_approvals = await session.scalar(
+            select(func.count(SalesOrderModel.id)).where(
+                SalesOrderModel.tenant_id == tenant_id,
+                SalesOrderModel.status == "PENDING_APPROVAL",
+                SalesOrderModel.is_deleted.is_(False),
+            )
+        )
+        monthly_sales = await session.scalar(
+            select(func.coalesce(func.sum(SalesOrderModel.grand_total), 0)).where(
+                SalesOrderModel.tenant_id == tenant_id,
+                SalesOrderModel.status.in_(["APPROVED", "CONFIRMED", "READY", "SHIPPED", "DELIVERED", "COMPLETED"]),
+                SalesOrderModel.created_at >= since,
+                SalesOrderModel.is_deleted.is_(False),
+            )
+        )
+        top_result = await session.execute(
+            select(
+                ClientModel.id,
+                ClientModel.name,
+                func.coalesce(func.sum(SalesOrderModel.grand_total), 0).label("sales_value"),
+            )
+            .join(SalesOrderModel, SalesOrderModel.client_id == ClientModel.id)
+            .where(
+                SalesOrderModel.tenant_id == tenant_id,
+                SalesOrderModel.is_deleted.is_(False),
+            )
+            .group_by(ClientModel.id, ClientModel.name)
+            .order_by(func.coalesce(func.sum(SalesOrderModel.grand_total), 0).desc())
+            .limit(10)
+        )
+
+    return {
+        "dashboard_type": "sales",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "pending_approvals": int(pending_approvals or 0),
+        "monthly_sales": float(monthly_sales or 0),
+        "top_clients": [
+            {"client_id": str(row[0]), "name": row[1], "sales_value": float(row[2] or 0)}
+            for row in top_result
+        ],
+    }
+
+
+@router.get(
+    "/dashboards/qc",
+    dependencies=[Depends(require_permission("quality:read"))],
+)
+@router.get(
+    "/dashboard/qc",
+    dependencies=[Depends(require_permission("quality:read"))],
+    include_in_schema=False,
+)
+async def qc_dashboard(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Quality dashboard with pending inspections and NCR counts."""
+    container = get_container(request)
+    since = datetime.now(timezone.utc) - timedelta(days=30)
+    async with container.session_factory() as session:
+        inspection_result = await session.execute(
+            select(QualityInspectionModel.result, func.count(QualityInspectionModel.id))
+            .where(QualityInspectionModel.tenant_id == tenant_id)
+            .group_by(QualityInspectionModel.result)
+        )
+        inspections_by_result = {row[0]: row[1] for row in inspection_result}
+        ncrs_this_month = await session.scalar(
+            select(func.count(NonConformanceReportModel.id)).where(
+                NonConformanceReportModel.tenant_id == tenant_id,
+                NonConformanceReportModel.created_at >= since,
+            )
+        )
+
+    return {
+        "dashboard_type": "qc",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "pending_inspections": int(inspections_by_result.get("pending", 0) + inspections_by_result.get("PENDING", 0)),
+        "ncrs_this_month": int(ncrs_this_month or 0),
+        "inspections": inspections_by_result,
+    }
+
+
+@router.get(
+    "/dashboards/storekeeper",
     dependencies=[Depends(require_permission("storekeeper:read"))],
+)
+@router.get(
+    "/dashboard/storekeeper",
+    dependencies=[Depends(require_permission("storekeeper:read"))],
+    include_in_schema=False,
 )
 async def storekeeper_dashboard(
     request: Request,
@@ -374,6 +579,14 @@ async def storekeeper_dashboard(
             InventoryModel.is_deleted.is_(False),
         )
         total_stock = (await session.execute(total_stock_stmt)).scalar() or Decimal("0")
+
+        open_pos = await session.scalar(
+            select(func.count(PurchaseOrderModel.id)).where(
+                PurchaseOrderModel.tenant_id == tenant_id,
+                PurchaseOrderModel.status.in_(["draft", "sent", "acknowledged", "partial", "partially_received"]),
+                PurchaseOrderModel.is_deleted.is_(False),
+            )
+        )
     
     return {
         "dashboard_type": "storekeeper",
@@ -387,12 +600,18 @@ async def storekeeper_dashboard(
             "total_value": float(inv_value),
             "total_quantity": float(total_stock),
         },
+        "open_purchase_orders": int(open_pos or 0),
     }
 
 
 @router.get(
-    "/worker",
+    "/dashboards/worker",
     dependencies=[Depends(require_permission("worker:read"))],
+)
+@router.get(
+    "/dashboard/worker",
+    dependencies=[Depends(require_permission("worker:read"))],
+    include_in_schema=False,
 )
 async def worker_dashboard(
     request: Request,
@@ -469,12 +688,18 @@ async def worker_dashboard(
 
 
 @router.get(
-    "/client",
+    "/dashboards/client",
     dependencies=[Depends(require_permission("client:read"))],
+)
+@router.get(
+    "/dashboard/client",
+    dependencies=[Depends(require_permission("client:read"))],
+    include_in_schema=False,
 )
 async def client_dashboard(
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """
     Client sales order dashboard.
@@ -487,6 +712,11 @@ async def client_dashboard(
     """
     container = get_container(request)
     async with container.session_factory() as session:
+        user = await session.get(UserModel, user_id)
+        client_filter = []
+        if user and user.client_id:
+            client_filter.append(SalesOrderModel.client_id == user.client_id)
+
         # SO metrics
         so_stmt = select(
             SalesOrderModel.status,
@@ -494,13 +724,14 @@ async def client_dashboard(
         ).where(
             SalesOrderModel.tenant_id == tenant_id,
             SalesOrderModel.is_deleted.is_(False),
+            *client_filter,
         ).group_by(SalesOrderModel.status)
         
         so_result = await session.execute(so_stmt)
         so_by_status = {row[0]: row[1] for row in so_result}
         
-        # Pending delivery (CONFIRMED status)
-        pending_delivery = so_by_status.get("CONFIRMED", 0)
+        # Pending delivery once stock or production is ready.
+        pending_delivery = so_by_status.get("CONFIRMED", 0) + so_by_status.get("READY", 0)
         
         # Shipped
         shipped = so_by_status.get("SHIPPED", 0)
@@ -508,13 +739,14 @@ async def client_dashboard(
         # Recent SOs (last 5)
         recent_sos_stmt = select(
             SalesOrderModel.id,
-            SalesOrderModel.so_number,
+            SalesOrderModel.order_number,
             SalesOrderModel.status,
             SalesOrderModel.order_date,
-            SalesOrderModel.expected_delivery,
+            SalesOrderModel.delivery_date,
         ).where(
             SalesOrderModel.tenant_id == tenant_id,
             SalesOrderModel.is_deleted.is_(False),
+            *client_filter,
         ).order_by(
             SalesOrderModel.created_at.desc()
         ).limit(5)
@@ -525,8 +757,8 @@ async def client_dashboard(
                 "so_id": str(row[0]),
                 "so_number": row[1],
                 "status": row[2],
-                "order_date": row[3].isoformat() if row[3] else None,
-                "expected_delivery": row[4].isoformat() if row[4] else None,
+                "order_date": str(row[3]) if row[3] else None,
+                "expected_delivery": str(row[4]) if row[4] else None,
             }
             for row in recent_result
         ]

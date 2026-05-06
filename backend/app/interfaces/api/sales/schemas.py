@@ -138,7 +138,11 @@ class SalesOrderLineResponse(BaseModel):
     id: UUID
     product_id: UUID
     product_type: str
+    product_name: Optional[str] = None
+    product_code: Optional[str] = None
     uom_id: UUID
+    uom_code: Optional[str] = None
+    uom_name: Optional[str] = None
     quantity: Decimal
     unit_price: Decimal
     tax_rate: Decimal
@@ -178,6 +182,8 @@ class SalesOrderResponse(BaseModel):
     id: UUID
     order_number: str
     client_id: UUID
+    client_name: Optional[str] = None
+    client_code: Optional[str] = None
     order_date: str
     delivery_date: str
     status: str
@@ -193,6 +199,8 @@ class SalesOrderResponse(BaseModel):
     approved_at: Optional[datetime] = None
     rejected_at: Optional[datetime] = None
     approval_notes: Optional[str] = None
+    item_count: int = 0
+    item_summary: Optional[str] = None
     lines: List[SalesOrderLineResponse] = []
     created_at: datetime
     updated_at: datetime

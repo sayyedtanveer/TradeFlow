@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -13,6 +14,7 @@ from backend.app.interfaces.api.v1.schemas.work_order_schemas import (
     WorkOrderCreateRequest, IssueMaterialRequest, RecordProductionRequest,
     StartJobCardRequest, CompleteJobCardRequest,
     WorkOrderSummary, WorkOrderDetail, JobCardResponse, WorkOrderErrorResponse,
+    MaterialAvailabilityResponse,
 )
 from backend.app.application.manufacturing.commands.work_order_commands import (
     CreateWorkOrderCommand, ReleaseWorkOrderCommand, StartWorkOrderCommand,
@@ -21,6 +23,9 @@ from backend.app.application.manufacturing.commands.work_order_commands import (
     StartJobCardCommand, CompleteJobCardCommand,
 )
 from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
+from backend.app.application.manufacturing.services.material_availability_service import (
+    MaterialAvailabilityService,
+)
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
 from backend.app.domain.manufacturing.exceptions import (
     InsufficientStockError, MaterialNotIssuedError, BOMNotFoundError, WorkOrderImmutableError
@@ -99,6 +104,33 @@ async def list_work_orders(
         result = await session.execute(stmt)
         rows = result.scalars().all()
         return [WorkOrderSummary.model_validate(r) for r in rows]
+
+
+@router.get(
+    "/material-availability",
+    response_model=MaterialAvailabilityResponse,
+    dependencies=[Depends(require_permission("manufacturing:read"))],
+)
+async def preview_material_availability(
+    request: Request,
+    product_id: uuid.UUID = Query(...),
+    quantity: Decimal = Query(..., gt=0),
+    bom_id: Optional[uuid.UUID] = Query(None),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    container = get_container(request)
+    async with container.session_factory() as session:
+        service = MaterialAvailabilityService(session)
+        try:
+            preview = await service.check_material_availability(
+                tenant_id=tenant_id,
+                product_id=product_id,
+                quantity=quantity,
+                bom_id=bom_id,
+            )
+            return MaterialAvailabilityResponse.model_validate(preview)
+        except BOMNotFoundError as exc:
+            return await _error_response(exc)
 
 
 @router.get("/{work_order_id}", response_model=WorkOrderDetail)

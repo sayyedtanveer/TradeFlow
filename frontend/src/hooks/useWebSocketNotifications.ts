@@ -6,6 +6,8 @@ export interface WebSocketNotification {
   type: string
   title: string
   message: string
+  reference_type?: string | null
+  reference_id?: string | null
   data?: Record<string, any>
   timestamp: string
 }

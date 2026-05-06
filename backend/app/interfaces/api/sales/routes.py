@@ -360,12 +360,19 @@ async def _notify_sales_order_submitted(session, container, tenant_id: UUID, ord
         email_service=getattr(container, "email_service", None),
         connection_manager=getattr(container, "connection_manager", None),
     )
+    client_label = getattr(order, "client_name", None) or str(order.client_id)
+    if getattr(order, "client_code", None):
+        client_label = f"{client_label} ({order.client_code})"
+    item_summary = getattr(order, "item_summary", None) or "No line items"
     await notification_service.broadcast_to_permission(
         tenant_id=tenant_id,
         permission="sales:approve_order",
         notification_type="SALES_ORDER_PENDING_APPROVAL",
         title=f"Order {order.order_number} needs approval",
-        message=f"Sales order {order.order_number} is waiting for manager approval.",
+        message=(
+            f"{client_label} requested {item_summary}. "
+            f"Open sales order {order.order_number} to review and approve."
+        ),
         reference_type="sales_order",
         reference_id=order.id,
     )
@@ -1086,6 +1093,24 @@ async def ship_order(
                     shipped_by=body.shipped_by,
                 )
             )
+            try:
+                from backend.app.application.delivery.delivery_service import DeliveryService
+
+                await DeliveryService(session).record_sales_shipment_document(
+                    tenant_id=tenant_id,
+                    sales_order_id=order_id,
+                    created_by=user_id,
+                    line_shipments=body.line_shipments,
+                )
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                logger.warning(
+                    "Delivery document was not recorded for order %s. "
+                    "Run the delivery module migration to enable delivery documents.",
+                    order_id,
+                    exc_info=True,
+                )
             order = await order_repo.get_by_id(order_id, tenant_id)
             if order:
                 await _notify_client_order_status(
@@ -1134,6 +1159,19 @@ async def deliver_order(
                 created_by=user_id,
                 notes="Auto-generated on sales order delivery.",
             )
+            try:
+                from backend.app.application.delivery.delivery_service import DeliveryService
+
+                await DeliveryService(session).mark_sales_order_delivered_documents(tenant_id, order_id)
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                logger.warning(
+                    "Delivery documents were not marked delivered for order %s. "
+                    "Run the delivery module migration to enable delivery documents.",
+                    order_id,
+                    exc_info=True,
+                )
             order = await order_repo.get_by_id(order_id, tenant_id)
             if order:
                 await _notify_client_order_status(

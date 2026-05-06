@@ -174,7 +174,11 @@ export default function SalesDashboardPage() {
                       <span className="font-semibold text-gray-900">{order.order_number}</span>
                       <Badge className={getStatusColor(order.status)}>{order.status}</Badge>
                     </div>
-                    <p className="mt-1 text-sm text-gray-500">Client {order.client_id}</p>
+                    <p className="mt-1 text-sm text-gray-500">
+                      {order.client_name || order.client_id}
+                      {order.client_code ? ` • ${order.client_code}` : ''}
+                    </p>
+                    <p className="mt-1 text-sm text-gray-700">{order.item_summary || 'No line items'}</p>
                   </div>
                   <div className="text-sm font-semibold text-gray-900">{formatCurrency(order.grand_total || 0)}</div>
                 </button>
@@ -223,7 +227,10 @@ export default function SalesDashboardPage() {
                   {recentOrders.map((order) => (
                     <tr key={order.id} className="border-b hover:bg-gray-50">
                       <td className="px-4 py-2 font-medium">{order.order_number}</td>
-                      <td className="px-4 py-2">{order.client_id}</td>
+                      <td className="px-4 py-2">
+                        <div className="font-medium">{order.client_name || order.client_id}</div>
+                        <div className="text-xs text-gray-500">{order.item_summary || 'No line items'}</div>
+                      </td>
                       <td className="px-4 py-2">{formatCurrency(order.grand_total)}</td>
                       <td className="px-4 py-2">
                         <Badge className={getStatusColor(order.status)}>{order.status}</Badge>

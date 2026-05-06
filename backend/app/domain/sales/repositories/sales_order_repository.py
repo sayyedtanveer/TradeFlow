@@ -10,10 +10,13 @@ from sqlalchemy.orm import selectinload
 from backend.app.domain.sales.entities.sales_order import SalesOrder
 from backend.app.domain.sales.entities.sales_order_line import SalesOrderLine
 from backend.app.domain.sales.value_objects import LineStatus, OrderStatus
+from backend.app.infrastructure.persistence.models.item_variant_model import ItemVariantModel
+from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.infrastructure.persistence.models.sales_models import (
     SalesOrderLineModel,
     SalesOrderModel,
 )
+from backend.app.infrastructure.persistence.models.unit_of_measure_model import UnitOfMeasureModel
 from backend.app.infrastructure.persistence.repositories.base_repository import BaseRepository
 
 
@@ -79,6 +82,88 @@ class SalesOrderRepository(BaseRepository):
             updated_at=model.updated_at,
         )
 
+    async def _enrich_orders(
+        self,
+        entities: list[SalesOrder],
+        models: list[SalesOrderModel],
+    ) -> list[SalesOrder]:
+        if not entities:
+            return entities
+
+        variant_ids: set[UUID] = set()
+        material_ids: set[UUID] = set()
+        uom_ids: set[UUID] = set()
+
+        for entity in entities:
+            for line in entity.lines:
+                product_type = str(getattr(line, "product_type", "")).lower()
+                if product_type == "variant":
+                    variant_ids.add(line.product_id)
+                else:
+                    material_ids.add(line.product_id)
+                uom_ids.add(line.uom_id)
+
+        variant_map = {}
+        material_map = {}
+        uom_map = {}
+
+        if variant_ids:
+            result = await self._session.execute(
+                select(ItemVariantModel).where(ItemVariantModel.id.in_(variant_ids))
+            )
+            variant_map = {row.id: row for row in result.scalars().all()}
+
+        all_material_ids = material_ids | variant_ids
+        if all_material_ids:
+            result = await self._session.execute(
+                select(MaterialModel).where(
+                    MaterialModel.id.in_(all_material_ids),
+                    MaterialModel.is_deleted.is_(False),
+                )
+            )
+            material_map = {row.id: row for row in result.scalars().all()}
+
+        if uom_ids:
+            result = await self._session.execute(
+                select(UnitOfMeasureModel).where(UnitOfMeasureModel.id.in_(uom_ids))
+            )
+            uom_map = {row.id: row for row in result.scalars().all()}
+
+        model_by_id = {model.id: model for model in models}
+
+        for entity in entities:
+            model = model_by_id.get(entity.id)
+            if model and model.client is not None:
+                entity.client_name = model.client.name
+                entity.client_code = model.client.code
+
+            summary_parts: list[str] = []
+            for index, line in enumerate(entity.lines):
+                product_type = str(getattr(line, "product_type", "")).lower()
+                preferred = variant_map.get(line.product_id) if product_type == "variant" else material_map.get(line.product_id)
+                fallback = material_map.get(line.product_id) if preferred is None else preferred
+                product = preferred or fallback
+
+                if product is not None:
+                    line.product_name = product.name
+                    line.product_code = product.code
+                else:
+                    line.product_name = f"Product {str(line.product_id)[:8]}"
+                    line.product_code = None
+
+                uom = uom_map.get(line.uom_id)
+                line.uom_code = uom.code if uom else None
+                line.uom_name = uom.name if uom else None
+
+                if index < 2:
+                    summary_parts.append(f"{line.product_name} x{line.quantity.normalize()}")
+
+            if len(entity.lines) > 2:
+                summary_parts.append(f"+{len(entity.lines) - 2} more")
+            entity.item_summary = ", ".join(summary_parts) if summary_parts else "No line items"
+
+        return entities
+
     def _to_model(self, entity: SalesOrder) -> SalesOrderModel:
         """Convert domain entity → ORM model."""
         return SalesOrderModel(
@@ -139,7 +224,10 @@ class SalesOrderRepository(BaseRepository):
         """Get a sales order aggregate with its line collection loaded."""
         stmt = (
             select(self._model_class())
-            .options(selectinload(SalesOrderModel.lines))
+            .options(
+                selectinload(SalesOrderModel.lines),
+                selectinload(SalesOrderModel.client),
+            )
             .where(
                 self._model_class().id == id,
                 self._model_class().tenant_id == tenant_id,
@@ -148,7 +236,11 @@ class SalesOrderRepository(BaseRepository):
         )
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
-        return self._to_entity(model) if model else None
+        if not model:
+            return None
+        entity = self._to_entity(model)
+        enriched = await self._enrich_orders([entity], [model])
+        return enriched[0]
 
     async def get_next_sequence(self, tenant_id: UUID, date: date) -> int:
         """Return the next SO sequence for the tenant and order date."""
@@ -187,6 +279,10 @@ class SalesOrderRepository(BaseRepository):
         """
         stmt = (
             select(self._model_class())
+            .options(
+                selectinload(SalesOrderModel.lines),
+                selectinload(SalesOrderModel.client),
+            )
             .where(
                 self._model_class().tenant_id == tenant_id,
                 self._model_class().order_number == order_number,
@@ -196,7 +292,11 @@ class SalesOrderRepository(BaseRepository):
         )
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
-        return self._to_entity(model) if model else None
+        if not model:
+            return None
+        entity = self._to_entity(model)
+        enriched = await self._enrich_orders([entity], [model])
+        return enriched[0]
 
     async def find_by_client(
         self,
@@ -221,6 +321,10 @@ class SalesOrderRepository(BaseRepository):
         """
         stmt = (
             select(self._model_class())
+            .options(
+                selectinload(SalesOrderModel.lines),
+                selectinload(SalesOrderModel.client),
+            )
             .where(
                 self._model_class().tenant_id == tenant_id,
                 self._model_class().client_id == client_id,
@@ -238,7 +342,8 @@ class SalesOrderRepository(BaseRepository):
         
         result = await self._session.execute(stmt)
         models = result.scalars().all()
-        return [self._to_entity(m) for m in models]
+        entities = [self._to_entity(m) for m in models]
+        return await self._enrich_orders(entities, list(models))
 
     async def find_by_date_range(
         self,
@@ -265,6 +370,10 @@ class SalesOrderRepository(BaseRepository):
         """
         stmt = (
             select(self._model_class())
+            .options(
+                selectinload(SalesOrderModel.lines),
+                selectinload(SalesOrderModel.client),
+            )
             .where(
                 self._model_class().tenant_id == tenant_id,
                 self._model_class().order_date >= str(start_date),
@@ -283,7 +392,8 @@ class SalesOrderRepository(BaseRepository):
         
         result = await self._session.execute(stmt)
         models = result.scalars().all()
-        return [self._to_entity(m) for m in models]
+        entities = [self._to_entity(m) for m in models]
+        return await self._enrich_orders(entities, list(models))
 
     async def find_by_delivery_date_range(
         self,
@@ -306,6 +416,10 @@ class SalesOrderRepository(BaseRepository):
         """
         stmt = (
             select(self._model_class())
+            .options(
+                selectinload(SalesOrderModel.lines),
+                selectinload(SalesOrderModel.client),
+            )
             .where(
                 self._model_class().tenant_id == tenant_id,
                 self._model_class().delivery_date >= str(start_date),
@@ -323,7 +437,8 @@ class SalesOrderRepository(BaseRepository):
         
         result = await self._session.execute(stmt)
         models = result.scalars().all()
-        return [self._to_entity(m) for m in models]
+        entities = [self._to_entity(m) for m in models]
+        return await self._enrich_orders(entities, list(models))
 
     async def count_by_status(
         self,
@@ -372,6 +487,10 @@ class SalesOrderRepository(BaseRepository):
         """
         stmt = (
             select(self._model_class())
+            .options(
+                selectinload(SalesOrderModel.lines),
+                selectinload(SalesOrderModel.client),
+            )
             .where(
                 self._model_class().tenant_id == tenant_id,
                 self._model_class().status == OrderStatus.DRAFT.name,
@@ -384,6 +503,7 @@ class SalesOrderRepository(BaseRepository):
         
         result = await self._session.execute(stmt)
         models = result.scalars().all()
-        return [self._to_entity(m) for m in models]
+        entities = [self._to_entity(m) for m in models]
+        return await self._enrich_orders(entities, list(models))
 
 

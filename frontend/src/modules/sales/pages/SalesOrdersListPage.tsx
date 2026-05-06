@@ -200,6 +200,7 @@ export default function SalesOrdersListPage() {
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Order Number</th>
                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Client</th>
+                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Requested Items</th>
                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Order Date</th>
                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Delivery Date</th>
                     <th className="px-4 py-3 text-left font-semibold text-gray-700">Total</th>
@@ -211,7 +212,16 @@ export default function SalesOrdersListPage() {
                   {orders.map((order) => (
                     <tr key={order.id} className="border-b hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium">{order.order_number}</td>
-                      <td className="px-4 py-3">{order.client_id}</td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{order.client_name || order.client_id}</div>
+                        {order.client_code && (
+                          <div className="text-xs text-gray-500">{order.client_code}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="max-w-xs text-sm text-gray-900">{order.item_summary || 'No line items'}</div>
+                        <div className="text-xs text-gray-500">{order.item_count || 0} item(s)</div>
+                      </td>
                       <td className="px-4 py-3">{new Date(order.order_date).toLocaleDateString()}</td>
                       <td className="px-4 py-3">{new Date(order.delivery_date).toLocaleDateString()}</td>
                       <td className="px-4 py-3 font-semibold">{formatCurrency(order.grand_total || 0)}</td>

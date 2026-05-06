@@ -59,6 +59,13 @@ class FinanceService:
 
     async def _next_sequence_or_count(self, sequence_name: str, model, tenant_id: uuid.UUID) -> int:
         """Use Postgres sequences when available, with a safe dev/test fallback."""
+        bind = self.session.get_bind()
+        if bind is None or bind.dialect.name != "postgresql":
+            count = await self.session.scalar(
+                select(func.count(model.id)).where(model.tenant_id == tenant_id)
+            )
+            return int(count or 0) + 1
+
         try:
             result = await self.session.execute(text(f"SELECT nextval('{sequence_name}')"))
             return int(result.scalar() or 1)

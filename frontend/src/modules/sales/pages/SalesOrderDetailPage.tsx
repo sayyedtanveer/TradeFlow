@@ -233,8 +233,9 @@ export default function SalesOrderDetailPage() {
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1">Client ID</label>
-            <p className="text-gray-900">{order.client_id}</p>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Client</label>
+            <p className="text-gray-900">{order.client_name || order.client_id}</p>
+            {order.client_code && <p className="text-xs text-gray-500 mt-1">{order.client_code}</p>}
           </div>
           <div>
             <label className="text-sm font-medium text-gray-700 block mb-1">Payment Status</label>
@@ -283,10 +284,14 @@ export default function SalesOrderDetailPage() {
                   {order.lines.map((line) => (
                     <tr key={line.id} className="border-b hover:bg-gray-50">
                       <td className="px-4 py-3">
-                        <div className="font-medium">{line.product_id}</div>
-                        <div className="text-xs text-gray-500">{line.product_type}</div>
+                        <div className="font-medium">{line.product_name || line.product_id}</div>
+                        <div className="text-xs text-gray-500">
+                          {[line.product_code, line.product_type].filter(Boolean).join(' • ')}
+                        </div>
                       </td>
-                      <td className="px-4 py-3">{line.quantity}</td>
+                      <td className="px-4 py-3">
+                        {line.quantity} {line.uom_code || ''}
+                      </td>
                       <td className="px-4 py-3">{formatCurrency(line.unit_price)}</td>
                       <td className="px-4 py-3">
                         <Badge variant="outline">{line.allocated_qty}</Badge>

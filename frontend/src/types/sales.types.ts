@@ -53,8 +53,12 @@ export interface SalesOrderLine {
   sales_order_id: string;
   product_id: string;
   product_type: 'variant' | 'finished_product';
+  product_name?: string | null;
+  product_code?: string | null;
   quantity: number;
   uom_id: string;
+  uom_code?: string | null;
+  uom_name?: string | null;
   unit_price: number;
   tax_rate: number;
   allocated_qty: number;
@@ -107,6 +111,8 @@ export interface SalesOrder {
   tenant_id: string;
   order_number: string;
   client_id: string;
+  client_name?: string | null;
+  client_code?: string | null;
   order_date: string;
   delivery_date: string;
   status: OrderStatus;
@@ -122,6 +128,8 @@ export interface SalesOrder {
   approved_at?: string | null;
   rejected_at?: string | null;
   approval_notes?: string | null;
+  item_count?: number;
+  item_summary?: string | null;
   is_active: boolean;
   lines: SalesOrderLine[];
   created_at: string;

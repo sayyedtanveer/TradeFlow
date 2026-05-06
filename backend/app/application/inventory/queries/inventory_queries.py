@@ -11,6 +11,7 @@ class ListMaterialsQuery:
     tenant_id: uuid.UUID
     query: Optional[str] = None
     category: Optional[str] = None
+    material_type: Optional[str] = None
     is_active: Optional[bool] = None
     page: int = 1
     page_size: int = 20
