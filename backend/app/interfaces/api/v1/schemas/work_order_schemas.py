@@ -16,6 +16,7 @@ class WorkOrderCreateRequest(BaseModel):
     due_date: date
     priority: str = Field("NORMAL", pattern="^(LOW|NORMAL|HIGH|URGENT)$")
     sales_order_id: Optional[uuid.UUID] = None
+    sales_order_line_id: Optional[uuid.UUID] = None
     notes: Optional[str] = None
 
     @model_validator(mode="after")
@@ -113,6 +114,7 @@ class WorkOrderSummary(BaseModel):
 class WorkOrderDetail(WorkOrderSummary):
     notes: Optional[str]
     sales_order_id: Optional[uuid.UUID]
+    sales_order_line_id: Optional[uuid.UUID]
     materials: List[WorkOrderMaterialResponse] = []
     job_cards: List[JobCardResponse] = []
 

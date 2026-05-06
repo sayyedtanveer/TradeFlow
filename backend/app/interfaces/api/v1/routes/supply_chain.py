@@ -556,36 +556,60 @@ async def get_purchase_order_receipts(
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ):
-    """Get all Goods Receipt Notes (GRN) / inventory transactions for this PO."""
+    """Get all GRN documents for this PO."""
     container = get_container(request)
     async with container.session_factory() as session:
         stmt = (
-            select(InventoryTransactionModel, MaterialModel.code, MaterialModel.name)
-            .join(MaterialModel, MaterialModel.id == InventoryTransactionModel.material_id)
+            select(GoodsReceiptNoteModel)
+            .options(selectinload(GoodsReceiptNoteModel.lines))
             .where(
-                InventoryTransactionModel.tenant_id == tenant_id,
-                InventoryTransactionModel.reference_type == "purchase_receipt",
-                InventoryTransactionModel.reference_id == po_id,
-                InventoryTransactionModel.transaction_type == "receipt",
-                InventoryTransactionModel.is_deleted.is_(False),
+                GoodsReceiptNoteModel.tenant_id == tenant_id,
+                GoodsReceiptNoteModel.purchase_order_id == po_id,
+                GoodsReceiptNoteModel.is_deleted.is_(False),
             )
-            .order_by(InventoryTransactionModel.created_at.desc())
+            .order_by(GoodsReceiptNoteModel.created_at.desc())
         )
         r = await session.execute(stmt)
-        rows = r.all()
+        rows = r.scalars().unique().all()
         
-    return [
-        {
-            "id": str(tx.id),
-            "material_id": str(tx.material_id),
-            "material_code": code,
-            "material_name": name,
-            "quantity": float(tx.quantity),
-            "created_at": tx.created_at.isoformat(),
-            "remarks": tx.remarks,
-        }
-        for tx, code, name in rows
-    ]
+    response = []
+    for grn in rows:
+        active_lines = [line for line in grn.lines if not line.is_deleted]
+        line_payload = [
+            {
+                "id": str(line.id),
+                "po_line_id": str(line.po_line_id),
+                "material_id": str(line.material_id),
+                "po_quantity": float(line.po_quantity or 0),
+                "received_quantity": float(line.received_quantity or 0),
+                "accepted_quantity": float(line.accepted_quantity or 0),
+                "rejected_quantity": float(line.rejected_quantity or 0),
+                "unit_price": float(line.unit_price or 0),
+                "inventory_transaction_id": str(line.inventory_transaction_id) if line.inventory_transaction_id else None,
+                "remarks": line.remarks,
+            }
+            for line in active_lines
+        ]
+        first_line = line_payload[0] if line_payload else None
+        response.append(
+            {
+                "id": str(grn.id),
+                "grn_number": grn.grn_number,
+                "status": grn.status,
+                "purchase_order_id": str(grn.purchase_order_id),
+                "warehouse_location_id": str(grn.warehouse_location_id) if grn.warehouse_location_id else None,
+                "actual_receipt_date": grn.actual_receipt_date.isoformat(),
+                "total_received_quantity": sum(float(line.received_quantity or 0) for line in active_lines),
+                "total_accepted_quantity": sum(float(line.accepted_quantity or 0) for line in active_lines),
+                # Backward-compatible single-line shortcuts for simple PO receipt views.
+                "material_id": first_line["material_id"] if first_line else None,
+                "quantity": first_line["received_quantity"] if first_line else 0,
+                "lines": line_payload,
+                "remarks": grn.remarks,
+                "created_at": grn.created_at.isoformat(),
+            }
+        )
+    return response
 
 
 @router.post(
@@ -1168,6 +1192,20 @@ async def receive_goods(
             raise HTTPException(status_code=400, detail="PO not open for receiving")
 
         inv = InventoryService(session)
+        grn_number = f"GRN-{await PONumberService(session).generate(tenant_id)}"
+        grn = GoodsReceiptNoteModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            grn_number=grn_number,
+            purchase_order_id=po.id,
+            supplier_id=po.supplier_id,
+            warehouse_location_id=body.warehouse_location_id,
+            status="received",
+            created_by=user_id,
+            updated_by=user_id,
+        )
+        session.add(grn)
+        await session.flush()
 
         for item in body.lines:
             lid = next((ln for ln in po.lines if ln.id == item.line_id and not ln.is_deleted), None)
@@ -1191,6 +1229,20 @@ async def receive_goods(
                 warehouse_location_id=body.warehouse_location_id,
             )
             lid.received_quantity = float(Decimal(str(lid.received_quantity)) + qty)
+            session.add(
+                GRNLineModel(
+                    id=uuid.uuid4(),
+                    tenant_id=tenant_id,
+                    grn_id=grn.id,
+                    po_line_id=lid.id,
+                    material_id=lid.material_id,
+                    po_quantity=lid.quantity,
+                    received_quantity=float(qty),
+                    accepted_quantity=float(qty),
+                    rejected_quantity=0,
+                    unit_price=lid.unit_price,
+                )
+            )
             await _apply_po_receipt_to_material_requests(
                 session,
                 tenant_id=tenant_id,
@@ -1229,9 +1281,11 @@ async def receive_goods(
         elif any_recv:
             po.status = "partial"
         po.updated_at = datetime.now(timezone.utc)
+        grn.updated_at = datetime.now(timezone.utc)
         await session.commit()
         po_number = po.po_number
         po_status = po.status
+        grn_id = grn.id
     await _log_business_event(
         request,
         action="PO_RECEIVED",
@@ -1245,7 +1299,7 @@ async def receive_goods(
             "line_count": len(body.lines),
         },
     )
-    return {"status": "ok"}
+    return {"status": "ok", "grn_id": str(grn_id)}
 
 
 @router.put(
@@ -1520,7 +1574,7 @@ async def delete_material_request(
 # ── GRN (Goods Receipt Notes) ─────────────────────────────────────────────────
 
 
-@router.get("/grn")
+@router.get("/grn", deprecated=True, dependencies=[Depends(require_permission("procurement:read"))])
 async def list_grns(
     request: Request,
     purchase_order_id: Optional[uuid.UUID] = Query(None, description="Filter by PO"),
@@ -1528,16 +1582,15 @@ async def list_grns(
     limit: int = Query(20, ge=1, le=100),
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ):
-    """List all GRNs (goods receipts) for current tenant, optionally filtered by PO."""
+    """Deprecated legacy GRN list. Mirrors GRN documents from /grns."""
     container = get_container(request)
     async with container.session_factory() as session:
-        query = select(InventoryTransactionModel).where(
-            InventoryTransactionModel.tenant_id == tenant_id,
-            InventoryTransactionModel.reference_type == "purchase_receipt",
-            InventoryTransactionModel.is_deleted.is_(False),
+        query = select(GoodsReceiptNoteModel).where(
+            GoodsReceiptNoteModel.tenant_id == tenant_id,
+            GoodsReceiptNoteModel.is_deleted.is_(False),
         )
         if purchase_order_id:
-            query = query.where(InventoryTransactionModel.reference_id == purchase_order_id)
+            query = query.where(GoodsReceiptNoteModel.purchase_order_id == purchase_order_id)
         
         # Total count
         count_stmt = select(func.count()).select_from(query.subquery())
@@ -1545,9 +1598,15 @@ async def list_grns(
         total_count = total.scalar_one()
         
         # Paginated results
-        query = query.order_by(InventoryTransactionModel.created_at.desc()).offset(skip).limit(limit)
+        query = (
+            query
+            .options(selectinload(GoodsReceiptNoteModel.lines))
+            .order_by(GoodsReceiptNoteModel.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
         r = await session.execute(query)
-        transactions = r.scalars().all()
+        grns = r.scalars().unique().all()
     
     return {
         "total": total_count,
@@ -1555,99 +1614,195 @@ async def list_grns(
         "limit": limit,
         "items": [
             {
-                "id": str(t.id),
-                "material_id": str(t.material_id),
-                "quantity": float(t.quantity),
-                "unit_id": str(t.unit_id) if t.unit_id else None,
-                "from_location_id": str(t.from_location_id) if t.from_location_id else None,
-                "to_location_id": str(t.to_location_id) if t.to_location_id else None,
-                "purchase_order_id": str(t.reference_id) if t.reference_type == "purchase_receipt" else None,
-                "remarks": t.remarks,
-                "created_by": str(t.created_by),
-                "created_at": t.created_at.isoformat(),
+                "id": str(grn.id),
+                "grn_number": grn.grn_number,
+                "purchase_order_id": str(grn.purchase_order_id),
+                "supplier_id": str(grn.supplier_id),
+                "status": grn.status,
+                "warehouse_location_id": str(grn.warehouse_location_id) if grn.warehouse_location_id else None,
+                "total_received_quantity": sum(float(line.received_quantity or 0) for line in grn.lines if not line.is_deleted),
+                "remarks": grn.remarks,
+                "created_by": str(grn.created_by),
+                "created_at": grn.created_at.isoformat(),
             }
-            for t in transactions
+            for grn in grns
         ],
     }
 
 
-@router.get("/grn/{grn_id}")
+@router.get("/grn/{grn_id}", deprecated=True, dependencies=[Depends(require_permission("procurement:read"))])
 async def get_grn(
     grn_id: uuid.UUID,
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ):
-    """Get a specific GRN by ID."""
+    """Deprecated legacy GRN detail. Mirrors a GRN document from /grns/{id}."""
     container = get_container(request)
     async with container.session_factory() as session:
-        t = await session.get(InventoryTransactionModel, grn_id)
-        if not t or t.tenant_id != tenant_id or t.is_deleted or t.reference_type != "purchase_receipt":
+        stmt = (
+            select(GoodsReceiptNoteModel)
+            .options(selectinload(GoodsReceiptNoteModel.lines))
+            .where(
+                GoodsReceiptNoteModel.id == grn_id,
+                GoodsReceiptNoteModel.tenant_id == tenant_id,
+                GoodsReceiptNoteModel.is_deleted.is_(False),
+            )
+        )
+        t = (await session.execute(stmt)).scalar_one_or_none()
+        if not t:
             raise HTTPException(status_code=404, detail="GRN not found")
-        
-        # Get material and PO details
-        material = await session.get(MaterialModel, t.material_id)
-        po = await session.get(PurchaseOrderModel, t.reference_id) if t.reference_id else None
     
     return {
         "id": str(t.id),
-        "material_id": str(t.material_id),
-        "material_code": material.code if material else None,
-        "material_name": material.name if material else None,
-        "quantity": float(t.quantity),
-        "unit_id": str(t.unit_id) if t.unit_id else None,
-        "from_location_id": str(t.from_location_id) if t.from_location_id else None,
-        "to_location_id": str(t.to_location_id) if t.to_location_id else None,
-        "purchase_order_id": str(t.reference_id) if t.reference_id else None,
-        "purchase_order_number": po.po_number if po else None,
+        "grn_number": t.grn_number,
+        "purchase_order_id": str(t.purchase_order_id),
+        "supplier_id": str(t.supplier_id),
+        "warehouse_location_id": str(t.warehouse_location_id) if t.warehouse_location_id else None,
+        "status": t.status,
         "remarks": t.remarks,
         "created_by": str(t.created_by),
         "created_at": t.created_at.isoformat(),
+        "lines": [
+            {
+                "id": str(line.id),
+                "po_line_id": str(line.po_line_id),
+                "material_id": str(line.material_id),
+                "po_quantity": float(line.po_quantity),
+                "received_quantity": float(line.received_quantity),
+                "accepted_quantity": float(line.accepted_quantity or 0),
+                "rejected_quantity": float(line.rejected_quantity or 0),
+                "unit_price": float(line.unit_price),
+                "inventory_transaction_id": str(line.inventory_transaction_id) if line.inventory_transaction_id else None,
+                "remarks": line.remarks,
+            }
+            for line in t.lines
+            if not line.is_deleted
+        ],
     }
 
 
-@router.post("/grn/{grn_id}/reverse", dependencies=[Depends(require_permission("procurement:write"))])
+@router.post("/grn/{grn_id}/reverse", deprecated=True, dependencies=[Depends(require_permission("procurement:write"))])
 async def reverse_grn(
     grn_id: uuid.UUID,
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Reverse a GRN (create a counter-receipt transaction)."""
+    """Reverse a legacy GRN endpoint using the canonical inventory service."""
     container = get_container(request)
     async with container.session_factory() as session:
+        document_stmt = (
+            select(GoodsReceiptNoteModel)
+            .options(selectinload(GoodsReceiptNoteModel.lines))
+            .where(
+                GoodsReceiptNoteModel.id == grn_id,
+                GoodsReceiptNoteModel.tenant_id == tenant_id,
+                GoodsReceiptNoteModel.is_deleted.is_(False),
+            )
+            .with_for_update(of=GoodsReceiptNoteModel)
+        )
+        grn = (await session.execute(document_stmt)).scalar_one_or_none()
+
+        if grn is not None:
+            if grn.status != "received":
+                raise HTTPException(status_code=400, detail="Only received GRNs can be reversed")
+
+            inv = InventoryService(session)
+            reversed_lines = 0
+            po_stmt = (
+                select(PurchaseOrderModel)
+                .options(selectinload(PurchaseOrderModel.lines))
+                .where(
+                    PurchaseOrderModel.id == grn.purchase_order_id,
+                    PurchaseOrderModel.tenant_id == tenant_id,
+                    PurchaseOrderModel.is_deleted.is_(False),
+                )
+                .with_for_update(of=PurchaseOrderModel)
+            )
+            po = (await session.execute(po_stmt)).scalar_one_or_none()
+
+            for line in grn.lines:
+                if line.is_deleted:
+                    continue
+                reverse_qty = Decimal(str(line.accepted_quantity or line.received_quantity or 0))
+                if reverse_qty <= 0:
+                    continue
+
+                material = await session.get(MaterialModel, line.material_id)
+                await inv.reverse_purchase_receipt(
+                    tenant_id=tenant_id,
+                    material_id=line.material_id,
+                    quantity=reverse_qty,
+                    purchase_order_id=grn.purchase_order_id,
+                    unit_id=material.base_unit_id if material else None,
+                    created_by=user_id,
+                    warehouse_location_id=grn.warehouse_location_id,
+                    reference_type="grn_reversal",
+                    reference_id=grn.id,
+                    remarks=f"Reversal of GRN {grn.grn_number}",
+                )
+
+                po_line = await session.get(PurchaseOrderLineModel, line.po_line_id)
+                if po_line is not None:
+                    po_line.received_quantity = float(
+                        max(Decimal("0"), Decimal(str(po_line.received_quantity or 0)) - reverse_qty)
+                    )
+                line.accepted_quantity = 0
+                line.inventory_transaction_id = None
+                reversed_lines += 1
+
+            grn.status = "reversed"
+            grn.updated_by = user_id
+            grn.updated_at = datetime.now(timezone.utc)
+
+            if po is not None:
+                active_lines = [po_line for po_line in po.lines if not po_line.is_deleted]
+                all_done = bool(active_lines) and all(
+                    Decimal(str(po_line.received_quantity or 0)) >= Decimal(str(po_line.quantity or 0))
+                    for po_line in active_lines
+                )
+                any_recv = any(Decimal(str(po_line.received_quantity or 0)) > 0 for po_line in active_lines)
+                if all_done:
+                    po.status = "received"
+                elif any_recv:
+                    po.status = "partial"
+                else:
+                    po.status = "acknowledged" if po.status in {"acknowledged", "partial", "received"} else "sent"
+                po.updated_at = datetime.now(timezone.utc)
+
+            await session.commit()
+            return {
+                "status": "reversed",
+                "original_grn_id": str(grn_id),
+                "reversed_lines": reversed_lines,
+            }
+
         original_grn = await session.get(InventoryTransactionModel, grn_id)
         if not original_grn or original_grn.tenant_id != tenant_id or original_grn.is_deleted:
             raise HTTPException(status_code=404, detail="GRN not found")
         if original_grn.reference_type != "purchase_receipt":
             raise HTTPException(status_code=400, detail="Can only reverse purchase receipts")
-        
-        # Create reverse transaction (out)
-        reverse_txn = InventoryTransactionModel(
-            id=uuid.uuid4(),
+
+        inv = InventoryService(session)
+        await inv.reverse_purchase_receipt(
             tenant_id=tenant_id,
             material_id=original_grn.material_id,
-            transaction_type="out",
-            quantity=-original_grn.quantity,  # Negative to reverse
+            quantity=Decimal(str(original_grn.quantity or 0)),
+            purchase_order_id=original_grn.reference_id,
             unit_id=original_grn.unit_id,
-            from_location_id=original_grn.to_location_id,  # Reverse the flow
-            to_location_id=original_grn.from_location_id,
-            reference_type="purchase_receipt_reversal",
-            reference_id=original_grn.reference_id,  # Link back to PO
-            remarks=f"Reversal of GRN {grn_id}",
             created_by=user_id,
+            warehouse_location_id=original_grn.to_location_id,
+            reference_type="purchase_receipt_reversal",
+            reference_id=original_grn.id,
+            remarks=f"Reversal of legacy GRN {grn_id}",
         )
-        session.add(reverse_txn)
-        
-        # Soft delete the original GRN
         original_grn.is_deleted = True
         original_grn.deleted_at = datetime.now(timezone.utc)
-        
         await session.commit()
-    
+
     return {
         "status": "reversed",
         "original_grn_id": str(grn_id),
-        "reversal_transaction_id": str(reverse_txn.id),
     }
 
 

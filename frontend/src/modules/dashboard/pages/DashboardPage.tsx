@@ -44,13 +44,17 @@ export default function DashboardPage() {
         <>
           <LowStockAlert count={lowStockCount} />
 
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {data?.kpis.map((kpi, index) => (
-              <KPICard key={index} data={kpi} />
+              <KPICard
+                key={index}
+                data={kpi}
+                tone={(["primary", "secondary", "soft", "glass"] as const)[index % 4]}
+              />
             ))}
           </div>
 
-          <div className="grid gap-4 grid-cols-1 lg:grid-cols-3 mt-4">
+          <div className="mt-2 grid grid-cols-1 gap-4 xl:grid-cols-3">
             <ActivityFeed activities={data?.recentActivities || []} />
             <QuickActions />
           </div>

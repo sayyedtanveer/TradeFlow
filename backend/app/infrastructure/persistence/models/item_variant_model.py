@@ -43,6 +43,11 @@ class ItemVariantModel(Base):
     attribute_values: Mapped[Any] = mapped_column(JSONB, nullable=False, default=dict)
 
     base_unit_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    material_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("materials.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     standard_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     selling_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
 

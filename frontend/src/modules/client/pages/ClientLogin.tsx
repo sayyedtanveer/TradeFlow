@@ -112,12 +112,12 @@ export default function ClientLogin() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#dbeafe_0%,#fff7ed_45%,#ffffff_100%)] px-4 py-12">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#dbeafe_0%,#fff7ed_45%,#ffffff_100%)] px-4 py-6 sm:py-12">
       <div className="mx-auto max-w-5xl">
         <div className="grid gap-8 md:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-[32px] border border-white/60 bg-white/70 p-8 shadow-2xl backdrop-blur">
+          <div className="rounded-[32px] border border-white/60 bg-white/70 p-6 shadow-2xl backdrop-blur sm:p-8">
             <p className="text-xs uppercase tracking-[0.3em] text-slate-500">MedTrack Client Portal</p>
-            <h1 className="mt-4 text-4xl font-semibold leading-tight text-slate-900">Track orders, download invoices, and reorder from one client workspace.</h1>
+            <h1 className="mt-4 text-3xl font-semibold leading-tight text-slate-900 sm:text-4xl">Track orders, download invoices, and reorder from one client workspace.</h1>
             <p className="mt-4 max-w-xl text-slate-600">
               Use your dedicated client account to follow delivery progress, monitor credit usage, manage addresses, and reach support without touching the internal ERP.
             </p>
@@ -140,10 +140,10 @@ export default function ClientLogin() {
                 </a>
                 .
               </CardDescription>
-              <div className="mt-4 flex gap-2">
-                <Button variant={mode === "login" ? "default" : "outline"} className="rounded-full" onClick={() => setMode("login")}>Login</Button>
-                <Button variant={mode === "forgot" ? "default" : "outline"} className="rounded-full" onClick={() => setMode("forgot")}>Forgot Password</Button>
-                <Button variant={mode === "reset" ? "default" : "outline"} className="rounded-full" onClick={() => setMode("reset")}>Reset</Button>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button variant={mode === "login" ? "default" : "outline"} className="flex-1 rounded-full sm:flex-none" onClick={() => setMode("login")}>Login</Button>
+                <Button variant={mode === "forgot" ? "default" : "outline"} className="flex-1 rounded-full sm:flex-none" onClick={() => setMode("forgot")}>Forgot Password</Button>
+                <Button variant={mode === "reset" ? "default" : "outline"} className="flex-1 rounded-full sm:flex-none" onClick={() => setMode("reset")}>Reset</Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">

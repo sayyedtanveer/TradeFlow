@@ -68,6 +68,18 @@ class SalesInventoryIntegrationService:
             )
             variant = variant_result.scalar_one_or_none()
             if variant is not None:
+                if getattr(variant, "material_id", None):
+                    mapped_material_result = await session.execute(
+                        select(MaterialModel).where(
+                            MaterialModel.id == variant.material_id,
+                            MaterialModel.tenant_id == tenant_id,
+                            MaterialModel.is_deleted.is_(False),
+                        )
+                    )
+                    mapped_material = mapped_material_result.scalar_one_or_none()
+                    if mapped_material is not None:
+                        return mapped_material
+
                 material_result = await session.execute(
                     select(MaterialModel).where(
                         MaterialModel.tenant_id == tenant_id,

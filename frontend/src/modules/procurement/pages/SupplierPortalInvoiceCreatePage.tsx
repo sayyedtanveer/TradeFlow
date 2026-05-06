@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
+import { ScrollText } from "lucide-react"
 import { supplyChainApi, type PurchaseOrder } from "@/services/supply-chain.service"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -14,6 +15,10 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
+import {
+  SupplierPortalHeader,
+  SupplierPortalTabs,
+} from "@/modules/procurement/components/SupplierPortalChrome"
 
 const today = () => new Date().toISOString().slice(0, 10)
 const plusDays = (days: number) => {
@@ -85,79 +90,121 @@ export default function SupplierPortalInvoiceCreatePage() {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
-      <Button variant="ghost" size="sm" asChild>
-        <Link to="/supplier-portal/invoices">{"<- Invoices"}</Link>
-      </Button>
+    <div className="mx-auto max-w-7xl space-y-6 pb-8">
+      <SupplierPortalHeader
+        eyebrow="Supplier workspace"
+        title="Submit supplier invoice"
+        description="Raise a supplier invoice with a clean buyer-ready summary and optionally link it to the relevant purchase order."
+        backHref="/supplier-portal/invoices"
+        backLabel="Invoices"
+        actions={
+          <Button onClick={submitInvoice} className="w-full sm:w-auto">
+            <ScrollText className="h-4 w-4" />
+            Submit invoice
+          </Button>
+        }
+      />
 
-      <div>
-        <h1 className="text-2xl font-semibold">Submit supplier invoice</h1>
-        <p className="text-sm text-muted-foreground">
-          Link the invoice to an acknowledged or received purchase order when available.
-        </p>
+      <div className="erp-portal-section space-y-4">
+        <SupplierPortalTabs />
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
       </div>
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.72fr)]">
+        <article className="erp-portal-section space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold text-slate-950">Invoice details</h2>
+            <p className="text-sm text-slate-600">Capture the commercial details exactly once and share the clean final value with the buyer.</p>
+          </div>
 
-      <section className="rounded-xl border bg-card p-4 space-y-4">
-        <div className="space-y-2">
-          <Label>Purchase order</Label>
-          <Select value={poId || "none"} onValueChange={(value) => setPoId(value === "none" ? "" : value)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Optional PO" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">No linked PO</SelectItem>
-              {purchaseOrders.map((po) => (
-                <SelectItem key={po.id} value={po.id}>
-                  {po.po_number} - {po.status}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {selectedPo && (
-            <Button type="button" size="sm" variant="secondary" onClick={usePoTotal}>
-              Use PO total
-            </Button>
-          )}
-        </div>
+          <div className="space-y-2">
+            <Label>Purchase order</Label>
+            <Select value={poId || "none"} onValueChange={(value) => setPoId(value === "none" ? "" : value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Optional PO" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No linked PO</SelectItem>
+                {purchaseOrders.map((po) => (
+                  <SelectItem key={po.id} value={po.id}>
+                    {po.po_number} - {po.status}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedPo && (
+              <Button type="button" size="sm" variant="secondary" onClick={usePoTotal} className="w-full sm:w-auto">
+                Use PO total
+              </Button>
+            )}
+          </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Supplier invoice reference</Label>
-            <Input value={supplierRef} onChange={(event) => setSupplierRef(event.target.value)} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Supplier invoice reference</Label>
+              <Input value={supplierRef} onChange={(event) => setSupplierRef(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Invoice date</Label>
+              <Input type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Due date</Label>
+              <Input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Subtotal</Label>
+              <Input type="number" value={subtotal} onChange={(event) => setSubtotal(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Tax amount</Label>
+              <Input type="number" value={taxAmount} onChange={(event) => setTaxAmount(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Grand total</Label>
+              <Input value={grandTotal.toFixed(2)} readOnly />
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Invoice date</Label>
-            <Input type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label>Due date</Label>
-            <Input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label>Subtotal</Label>
-            <Input type="number" value={subtotal} onChange={(event) => setSubtotal(event.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label>Tax amount</Label>
-            <Input type="number" value={taxAmount} onChange={(event) => setTaxAmount(event.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label>Grand total</Label>
-            <Input value={grandTotal.toFixed(2)} readOnly />
-          </div>
-        </div>
 
-        <div className="space-y-2">
-          <Label>Notes</Label>
-          <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
-        </div>
-        <Button onClick={submitInvoice}>Submit invoice</Button>
+          <div className="space-y-2">
+            <Label>Notes</Label>
+            <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
+          </div>
+        </article>
+
+        <article className="erp-portal-section space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold text-slate-950">Submission snapshot</h2>
+            <p className="text-sm text-slate-600">Check the commercial summary before you submit to the buyer.</p>
+          </div>
+          <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <span>Linked purchase order</span>
+                <span className="font-medium text-slate-900">{selectedPo?.po_number ?? "Not linked"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>Invoice reference</span>
+                <span className="font-medium text-slate-900">{supplierRef || "Pending"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>Invoice amount</span>
+                <span className="font-medium text-slate-900">{grandTotal.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>Due date</span>
+                <span className="font-medium text-slate-900">{dueDate}</span>
+              </div>
+            </div>
+          </div>
+          <Button onClick={submitInvoice} className="w-full">
+            Submit invoice
+          </Button>
+        </article>
       </section>
     </div>
   )

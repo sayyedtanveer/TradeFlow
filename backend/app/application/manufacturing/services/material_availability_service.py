@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.application.manufacturing.services.inventory_service import InventoryService
 from backend.app.domain.manufacturing.exceptions import BOMNotFoundError
 from backend.app.infrastructure.persistence.models.bom_model import BOMLineModel, BOMModel
+from backend.app.infrastructure.persistence.models.item_variant_model import ItemVariantModel
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.infrastructure.persistence.models.unit_of_measure_model import UnitOfMeasureModel
 
@@ -113,6 +114,31 @@ class MaterialAvailabilityService:
 
         result = await self._session.execute(stmt.limit(1))
         bom = result.scalar_one_or_none()
+        if bom is None and bom_id is None:
+            variant = (
+                await self._session.execute(
+                    select(ItemVariantModel).where(
+                        ItemVariantModel.id == product_id,
+                        ItemVariantModel.tenant_id == tenant_id,
+                        ItemVariantModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            if variant and variant.template_id:
+                template_result = await self._session.execute(
+                    select(BOMModel)
+                    .where(
+                        BOMModel.tenant_id == tenant_id,
+                        BOMModel.template_id == variant.template_id,
+                        BOMModel.is_deleted.is_(False),
+                    )
+                    .order_by(
+                        BOMModel.is_active.desc(),
+                        BOMModel.updated_at.desc(),
+                    )
+                    .limit(1)
+                )
+                bom = template_result.scalar_one_or_none()
         if bom is None:
             raise BOMNotFoundError(f"No BOM found for product {product_id}")
         return bom

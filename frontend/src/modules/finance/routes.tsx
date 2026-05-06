@@ -2,6 +2,8 @@ import { lazy, Suspense } from "react"
 import type { RouteObject } from "react-router-dom"
 
 const FinanceDashboardPage = lazy(() => import("./pages/FinanceDashboardPage"))
+const InvoiceDetailPage = lazy(() => import("./pages/InvoiceDetailPage"))
+const FinanceSettingsPage = lazy(() => import("./pages/FinanceSettingsPage"))
 const ReportsPage = lazy(() => import("./pages/ReportsPage"))
 const NewInvoicePage = lazy(() => import("./pages/NewInvoicePage"))
 const NewSupplierInvoicePage = lazy(() => import("./pages/NewSupplierInvoicePage"))
@@ -38,6 +40,22 @@ export const financeRoutes: RouteObject[] = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <NewInvoicePage />
+      </Suspense>
+    ),
+  },
+  {
+    path: "finance/invoices/:invoiceId",
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <InvoiceDetailPage />
+      </Suspense>
+    ),
+  },
+  {
+    path: "finance/settings",
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <FinanceSettingsPage />
       </Suspense>
     ),
   },

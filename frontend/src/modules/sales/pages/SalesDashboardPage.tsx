@@ -69,25 +69,25 @@ export default function SalesDashboardPage() {
       title: 'Pending Approval',
       value: statistics?.pending_approval_count || 0,
       icon: AlertCircle,
-      color: 'bg-amber-500',
+      color: 'from-amber-500 to-orange-500',
     },
     {
       title: 'Draft Orders',
       value: statistics?.draft_count || 0,
       icon: FileText,
-      color: 'bg-slate-500',
+      color: 'from-slate-700 to-slate-900',
     },
     {
       title: 'Ready to Ship',
       value: statistics?.ready_count || 0,
       icon: CheckCircle2,
-      color: 'bg-green-500',
+      color: 'from-emerald-500 to-green-600',
     },
     {
       title: 'Shipped',
       value: statistics?.shipped_count || 0,
       icon: Users,
-      color: 'bg-purple-500',
+      color: 'from-blue-600 to-indigo-700',
     },
   ];
 
@@ -112,12 +112,13 @@ export default function SalesDashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="erp-surface flex flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Sales Dashboard</h1>
-          <p className="text-gray-600 mt-2">Monitor your sales orders and client performance</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-600">Sales operations</p>
+          <h1 className="mt-2 text-3xl font-semibold text-slate-900">Sales Dashboard</h1>
+          <p className="mt-2 text-slate-500">Monitor orders, approvals, and client-facing fulfilment progress</p>
         </div>
-        <Button onClick={() => navigate('/sales/orders/new')} size="lg">
+        <Button onClick={() => navigate('/sales/orders/new')} size="lg" className="w-full sm:w-auto">
           <ShoppingCart className="mr-2 h-4 w-4" />
           New Order
         </Button>
@@ -128,17 +129,16 @@ export default function SalesDashboardPage() {
         {statsCards.map((stat) => {
           const Icon = stat.icon;
           return (
-            <Card key={stat.title}>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-gray-600">{stat.title}</CardTitle>
+            <Card key={stat.title} className={`erp-kpi-card-base overflow-hidden border-0 bg-gradient-to-br ${stat.color} text-white`}>
+              <CardHeader className="flex flex-row items-start justify-between pb-3">
+                <CardTitle className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/72">{stat.title}</CardTitle>
+                <div className="rounded-2xl border border-white/10 bg-white/12 p-2.5 shadow-sm">
+                  <Icon className="h-4 w-4 text-white" />
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center justify-between">
-                  <div className="text-3xl font-bold text-gray-900">{stat.value}</div>
-                  <div className={`${stat.color} p-3 rounded-lg`}>
-                    <Icon className="h-6 w-6 text-white" />
-                  </div>
-                </div>
+                <div className="text-3xl font-semibold leading-none text-white sm:text-[2rem]">{stat.value}</div>
+                <p className="mt-4 text-xs text-white/60">live operations snapshot</p>
               </CardContent>
             </Card>
           );

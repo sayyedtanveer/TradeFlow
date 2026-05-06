@@ -72,3 +72,19 @@ async def test_x_tenant_id_header_sets_tenant_state(async_client, test_route):
     # no user/supplier set
     assert data["supplier_id_state"] is None
     assert data["role_state"] is None
+
+
+def test_verify_token_alias_matches_decode(jwt_handler):
+    tenant_id = uuid.UUID("33333333-3333-4333-8333-333333333333")
+    user_id = uuid.UUID("44444444-4444-4444-8444-444444444444")
+    token = jwt_handler.create_access_token(
+        user_id=str(user_id),
+        tenant_id=str(tenant_id),
+        role="supplier",
+    )
+
+    payload = jwt_handler.verify_token(token)
+
+    assert payload["sub"] == str(user_id)
+    assert payload["tid"] == str(tenant_id)
+    assert payload["role"] == "supplier"

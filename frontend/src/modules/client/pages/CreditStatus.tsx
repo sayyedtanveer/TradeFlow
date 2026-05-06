@@ -20,9 +20,9 @@ export default function CreditStatus() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Credit Status</p>
-        <h1 className="mt-2 text-3xl font-semibold text-slate-900">Monitor limit, usage, and reorder risk before you submit.</h1>
+        <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">Monitor limit, usage, and reorder risk before you submit.</h1>
         <p className="mt-3 max-w-2xl text-sm text-slate-600">
           Credit usage is recalculated for every client account, helping you spot when the next order may need approval.
         </p>
@@ -58,7 +58,7 @@ export default function CreditStatus() {
             </Alert>
           )}
 
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[
               { label: "Credit Limit", value: credit.credit_limit === null ? "Unlimited" : formatCurrency(credit.credit_limit) },
               { label: "Credit Used", value: formatCurrency(credit.credit_used) },

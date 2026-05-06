@@ -32,6 +32,7 @@ class InventoryReservationService:
         product_type: str,
         uom_id: UUID,
         quantity: Decimal,
+        sales_order_id: UUID,
         sales_order_line_id: UUID,
         delivery_date,
     ) -> tuple[Decimal, Decimal, UUID | None]:
@@ -87,6 +88,7 @@ class InventoryReservationService:
                     quantity=shortage_qty,
                     uom_id=uom_id,
                     due_date=delivery_date,
+                    sales_order_id=sales_order_id,
                     sales_order_line_id=sales_order_line_id,
                 )
             

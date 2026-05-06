@@ -31,46 +31,47 @@ export default function ShopFloorPage() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="min-h-screen bg-[#0d0f14] text-white">
+    <div className="space-y-6">
       {/* Header — large touch-friendly on mobile */}
-      <div className="border-b border-white/10 bg-[#111318] px-4 py-5 sm:px-6">
+      <div className="erp-surface px-5 py-5 sm:px-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">🏭 Shop Floor</h1>
-            <p className="text-xs text-slate-400 mt-1">Active production orders — tap to manage operations</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-600">Execution</p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Shop Floor</h1>
+            <p className="mt-1 text-sm text-slate-500">Active production orders for operators and supervisors</p>
           </div>
           <button
             onClick={load}
-            className="rounded-full p-2.5 bg-white/5 hover:bg-white/10 transition-colors"
+            className="rounded-full border border-slate-200 bg-white p-2.5 text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900"
             title="Refresh"
           >
-            🔄
+            ↻
           </button>
         </div>
       </div>
 
       <div className="p-4 sm:p-6 space-y-3 max-w-2xl mx-auto">
         {loading && (
-          <div className="flex flex-col items-center justify-center h-48 gap-3 text-slate-400">
+          <div className="flex h-48 flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm">
             <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm">Loading active orders…</span>
+            <span className="text-sm">Loading active orders...</span>
           </div>
         )}
 
         {error && (
-          <div className="rounded-xl border border-red-800 bg-red-900/20 p-4 text-sm text-red-300">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             {error}
           </div>
         )}
 
         {!loading && !error && orders.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-56 gap-4">
+          <div className="flex h-56 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-slate-200 bg-white shadow-sm">
             <div className="text-5xl">✅</div>
-            <p className="text-slate-400 text-sm font-medium">No IN_PROGRESS work orders</p>
-            <p className="text-xs text-slate-500">All clear! Release and start a work order to see it here.</p>
+            <p className="text-sm font-medium text-slate-700">No in-progress work orders</p>
+            <p className="text-xs text-slate-500">Release and start a work order to see it here.</p>
             <button
               onClick={() => navigate('/work-orders')}
-              className="mt-2 rounded-lg border border-white/10 px-4 py-2 text-xs text-slate-300 hover:bg-white/5 transition-colors"
+              className="mt-2 rounded-xl border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
             >
               View all work orders
             </button>
@@ -87,35 +88,35 @@ export default function ShopFloorPage() {
               key={wo.id}
               id={`sf-wo-${wo.id}`}
               onClick={() => navigate(`${wo.id}/job-cards`)}
-              className="w-full text-left rounded-2xl border border-white/10 bg-[#111318] hover:bg-[#181c24] active:scale-[0.99] transition-all p-5 shadow-lg"
+              className="w-full rounded-2xl border border-slate-200/80 bg-white p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.99]"
             >
               {/* Top row */}
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-mono text-lg font-bold text-indigo-300">{wo.wo_number}</span>
+                    <span className="font-mono text-lg font-bold text-blue-700">{wo.wo_number}</span>
                     <span className="text-base">{PRIORITY_ICON[wo.priority]}</span>
                   </div>
-                  <p className="text-xs text-slate-400">Due: <span className="text-slate-200">{wo.due_date}</span></p>
+                  <p className="text-xs text-slate-500">Due: <span className="text-slate-800">{wo.due_date}</span></p>
                 </div>
-                <span className="text-xs bg-amber-900 text-amber-200 rounded-full px-2.5 py-1 font-semibold shrink-0">
+                <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
                   IN PROGRESS
                 </span>
               </div>
 
               {/* Progress bar */}
               <div className="mt-4">
-                <div className="flex justify-between text-xs text-slate-400 mb-1.5">
+                <div className="mb-1.5 flex justify-between text-xs text-slate-500">
                   <span>Production Progress</span>
-                  <span className="text-emerald-400 font-medium">{pct}%</span>
+                  <span className="font-medium text-emerald-600">{pct}%</span>
                 </div>
-                <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-indigo-600 to-emerald-500 transition-all duration-500"
+                    className="h-full rounded-full bg-gradient-to-r from-blue-600 to-emerald-500 transition-all duration-500"
                     style={{ width: `${pct}%` }}
                   />
                 </div>
-                <div className="flex justify-between text-xs text-slate-500 mt-1">
+                <div className="mt-1 flex justify-between text-xs text-slate-500">
                   <span>{Number(wo.produced_quantity).toFixed(3)} produced</span>
                   <span>{Number(wo.planned_quantity).toFixed(3)} planned</span>
                 </div>
@@ -123,7 +124,7 @@ export default function ShopFloorPage() {
 
               {/* CTA */}
               <div className="mt-4 text-right">
-                <span className="text-xs text-indigo-400 font-medium">Manage operations →</span>
+                <span className="text-xs font-medium text-blue-600">Manage operations →</span>
               </div>
             </button>
           );

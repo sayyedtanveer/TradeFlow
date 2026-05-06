@@ -20,12 +20,12 @@ export default function CreditProgress({
 
   return (
     <div className="space-y-3">
-      <div className={cn("flex items-end justify-between gap-4", compact && "text-sm")}>
+      <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between", compact && "text-sm")}>
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Credit Used</p>
           <p className="text-2xl font-semibold">{used.toFixed(2)}</p>
         </div>
-        <div className="text-right">
+        <div className="sm:text-right">
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Remaining</p>
           <p className="text-lg font-medium">{remaining === null ? "Unlimited" : remaining.toFixed(2)}</p>
         </div>
@@ -37,7 +37,7 @@ export default function CreditProgress({
             style={{ width: `${Math.max(0, Math.min(100, usagePercent ?? 0))}%` }}
           />
         </div>
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <div className="flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <span>{limit === null ? "No credit ceiling" : `Limit ${limit.toFixed(2)}`}</span>
           <span>{usagePercent === null ? "N/A" : `${usagePercent.toFixed(1)}% used`}</span>
         </div>

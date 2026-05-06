@@ -36,9 +36,9 @@ export default function Support() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Support</p>
-        <h1 className="mt-2 text-3xl font-semibold text-slate-900">Reach the MedTrack team without leaving the portal.</h1>
+        <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">Reach the MedTrack team without leaving the portal.</h1>
         <p className="mt-3 max-w-2xl text-sm text-slate-600">
           Use the contact form for order, invoice, or delivery issues, and check the FAQ for quick self-service answers.
         </p>
@@ -72,7 +72,7 @@ export default function Support() {
                   required
                 />
               </div>
-              <Button type="submit" className="rounded-full" disabled={supportMutation.isPending}>
+              <Button type="submit" className="w-full rounded-full sm:w-auto" disabled={supportMutation.isPending}>
                 {supportMutation.isPending ? "Sending..." : "Submit Support Request"}
               </Button>
             </form>
@@ -108,7 +108,7 @@ export default function Support() {
               <CardTitle>Support Flow</CardTitle>
               <CardDescription>What happens after you submit a ticket from the client portal.</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-3">
+            <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {[
                 { title: "1. Request sent", text: "Your message becomes an in-app alert for internal MedTrack roles." },
                 { title: "2. Team review", text: "Sales, finance, or operations can review the exact client issue inside ERP." },

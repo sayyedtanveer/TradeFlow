@@ -8,11 +8,17 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.config import settings
+from backend.app.infrastructure.persistence.models.bom_model import BOMLineModel, BOMModel
+from backend.app.infrastructure.persistence.models.item_template_model import ItemTemplateModel
+from backend.app.infrastructure.persistence.models.item_variant_model import ItemVariantModel
 from backend.app.infrastructure.persistence.models.finance_models import NotificationModel
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
+from backend.app.infrastructure.persistence.models.purchase_order_model import PurchaseOrderLineModel, PurchaseOrderModel
 from backend.app.infrastructure.persistence.models.sales_models import ClientModel, PriceListLineModel, PriceListModel, SalesOrderModel
+from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel, SupplierPriceHistoryModel
 from backend.app.infrastructure.persistence.models.unit_of_measure_model import UnitOfMeasureModel
 from backend.app.infrastructure.persistence.models.user_model import UserModel
+from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderMaterialModel, WorkOrderModel
 from backend.app.infrastructure.security.jwt_handler import JWTHandler
 from backend.app.infrastructure.security.password_hasher import BcryptPasswordHasher
 
@@ -113,6 +119,164 @@ async def _seed_price_list(db_session, tenant_id: uuid.UUID, product_id: uuid.UU
     )
     await db_session.commit()
     return price_list.id
+
+
+async def _seed_variant_bom_shortage_flow(db_session, tenant_id: uuid.UUID):
+    now = datetime.now(timezone.utc)
+    run_id = uuid.uuid4().hex[:8]
+    manager_id = uuid.uuid4()
+    unit_id = uuid.uuid4()
+    raw_material_id = uuid.uuid4()
+    finished_material_id = uuid.uuid4()
+    template_id = uuid.uuid4()
+    variant_id = uuid.uuid4()
+    bom_id = uuid.uuid4()
+    supplier_id = uuid.uuid4()
+
+    db_session.add_all(
+        [
+            UserModel(
+                id=manager_id,
+                tenant_id=tenant_id,
+                email=f"manager-shortage-{run_id}@example.com",
+                hashed_password=_hasher.hash("Password123!"),
+                first_name="Manager",
+                last_name="Planner",
+                role="manager",
+                is_active=True,
+                is_deleted=False,
+            ),
+            UnitOfMeasureModel(
+                id=unit_id,
+                tenant_id=tenant_id,
+                code=f"EA{run_id[:6]}",
+                name="Each",
+                precision=2,
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+                is_deleted=False,
+            ),
+            MaterialModel(
+                id=raw_material_id,
+                tenant_id=tenant_id,
+                code=f"RAW-{run_id}",
+                name="Shortage Raw Material",
+                material_type="raw",
+                base_unit_id=unit_id,
+                current_cost=Decimal("7.5"),
+                current_stock=Decimal("1"),
+                reserved_stock=Decimal("0"),
+                reorder_level=Decimal("0"),
+                is_active=True,
+                is_deleted=False,
+            ),
+            MaterialModel(
+                id=finished_material_id,
+                tenant_id=tenant_id,
+                code=f"FG-{run_id}",
+                name="Shortage Finished Good",
+                material_type="finished",
+                base_unit_id=unit_id,
+                current_cost=Decimal("25"),
+                current_stock=Decimal("0"),
+                reserved_stock=Decimal("0"),
+                reorder_level=Decimal("0"),
+                is_active=True,
+                is_deleted=False,
+            ),
+            ItemTemplateModel(
+                id=template_id,
+                tenant_id=tenant_id,
+                code=f"TPL-{run_id}",
+                name="Shortage Template",
+                description="Template for shortage flow",
+                base_unit_id=unit_id,
+                attributes=[],
+                status="ACTIVE",
+                is_active=True,
+                is_deleted=False,
+                created_at=now,
+                updated_at=now,
+            ),
+            ItemVariantModel(
+                id=variant_id,
+                tenant_id=tenant_id,
+                template_id=template_id,
+                code=f"VAR-{run_id}",
+                name="Shortage Variant",
+                variant_key=f"DEFAULT-{run_id}",
+                attribute_values={},
+                base_unit_id=unit_id,
+                material_id=finished_material_id,
+                standard_cost=Decimal("25"),
+                selling_price=Decimal("40"),
+                is_active=True,
+                is_deleted=False,
+                created_at=now,
+                updated_at=now,
+            ),
+            BOMModel(
+                id=bom_id,
+                tenant_id=tenant_id,
+                variant_id=variant_id,
+                template_id=None,
+                version="v1",
+                is_active=True,
+                valid_from=now,
+                valid_to=None,
+                created_by=manager_id,
+                approved_by=manager_id,
+                is_deleted=False,
+                created_at=now,
+                updated_at=now,
+            ),
+            BOMLineModel(
+                id=uuid.uuid4(),
+                tenant_id=tenant_id,
+                bom_id=bom_id,
+                material_id=raw_material_id,
+                template_id=None,
+                variant_id=None,
+                quantity=Decimal("2"),
+                scrap_percentage=Decimal("0"),
+                unit_id=unit_id,
+                is_deleted=False,
+                created_at=now,
+                updated_at=now,
+            ),
+            SupplierModel(
+                id=supplier_id,
+                tenant_id=tenant_id,
+                code=f"SUP-{run_id}",
+                name="Preferred Supplier",
+                is_active=True,
+                is_deleted=False,
+                created_at=now,
+                updated_at=now,
+            ),
+            SupplierPriceHistoryModel(
+                id=uuid.uuid4(),
+                tenant_id=tenant_id,
+                supplier_id=supplier_id,
+                material_id=raw_material_id,
+                unit_price=Decimal("7.5"),
+                effective_from=date.today(),
+                created_at=now,
+            ),
+        ]
+    )
+    await db_session.commit()
+    return {
+        "run_id": run_id,
+        "manager_id": manager_id,
+        "unit_id": unit_id,
+        "raw_material_id": raw_material_id,
+        "finished_material_id": finished_material_id,
+        "variant_id": variant_id,
+        "bom_id": bom_id,
+        "supplier_id": supplier_id,
+    }
 
 
 @pytest.mark.asyncio
@@ -369,3 +533,133 @@ async def test_client_order_creation_is_tenant_client_scoped(
     assert notifications
     assert any("Portal Client" in notification.message for notification in notifications)
     assert any("Finished approval test item x1" in notification.message for notification in notifications)
+
+
+@pytest.mark.asyncio
+async def test_sales_shortage_uses_variant_material_mapping_and_creates_linked_work_order(
+    async_client,
+    db_session,
+    token_headers,
+    test_tenant_id,
+):
+    seeded = await _seed_variant_bom_shortage_flow(db_session, test_tenant_id)
+    run_id = seeded["run_id"]
+
+    client_resp = await async_client.post(
+        "/api/v1/sales/clients",
+        headers=token_headers,
+        json={
+            "code": f"CLI-SHORT-{run_id}",
+            "name": "Shortage Flow Client",
+            "email": f"shortage-{run_id}@example.com",
+            "credit_limit": "5000",
+            "payment_terms_days": 30,
+        },
+    )
+    assert client_resp.status_code == 201, client_resp.text
+    client_id = client_resp.json()["id"]
+
+    price_list_resp = await async_client.post(
+        "/api/v1/sales/price-lists",
+        headers=token_headers,
+        json={
+            "name": f"Shortage Price List {run_id}",
+            "is_default": True,
+            "valid_from": date.today().isoformat(),
+            "valid_to": (date.today() + timedelta(days=30)).isoformat(),
+        },
+    )
+    assert price_list_resp.status_code == 201, price_list_resp.text
+    price_list_id = price_list_resp.json()["id"]
+
+    price_line_resp = await async_client.post(
+        f"/api/v1/sales/price-lists/{price_list_id}/lines",
+        headers=token_headers,
+        json={
+            "product_id": str(seeded["variant_id"]),
+            "product_type": "variant",
+            "unit_price": "40",
+        },
+    )
+    assert price_line_resp.status_code == 201, price_line_resp.text
+
+    order_resp = await async_client.post(
+        "/api/v1/sales/orders",
+        headers=token_headers,
+        json={
+            "client_id": client_id,
+            "order_date": date.today().isoformat(),
+            "delivery_date": (date.today() + timedelta(days=10)).isoformat(),
+            "notes": "Trigger shortage production",
+        },
+    )
+    assert order_resp.status_code == 201, order_resp.text
+    order = order_resp.json()
+
+    line_resp = await async_client.post(
+        f"/api/v1/sales/orders/{order['id']}/lines",
+        headers=token_headers,
+        json={
+            "product_id": str(seeded["variant_id"]),
+            "product_type": "variant",
+            "uom_id": str(seeded["unit_id"]),
+            "quantity": "3",
+            "tax_rate": "0",
+        },
+    )
+    assert line_resp.status_code == 201, line_resp.text
+    order_line_id = line_resp.json()["lines"][0]["id"]
+
+    submit_resp = await async_client.post(
+        f"/api/v1/sales/orders/{order['id']}/submit-approval",
+        headers=token_headers,
+        json={"notes": "Route to approval"},
+    )
+    assert submit_resp.status_code == 200, submit_resp.text
+
+    approve_resp = await async_client.post(
+        f"/api/v1/sales/orders/{order['id']}/approve",
+        headers=_headers(seeded["manager_id"], test_tenant_id, "manager"),
+        json={"notes": "Approve shortage order"},
+    )
+    assert approve_resp.status_code == 200, approve_resp.text
+    approved = approve_resp.json()
+    assert approved["status"] == "PRODUCTION"
+    approved_line = approved["lines"][0]
+    assert approved_line["work_order_id"]
+    assert Decimal(str(approved_line["allocated_quantity"])) == Decimal("0")
+    assert Decimal(str(approved_line["backorder_quantity"])) == Decimal("3")
+
+    work_order = await db_session.get(WorkOrderModel, uuid.UUID(approved_line["work_order_id"]))
+    assert work_order is not None
+    assert work_order.sales_order_id == uuid.UUID(order["id"])
+    assert work_order.sales_order_line_id == uuid.UUID(order_line_id)
+    assert work_order.product_id == seeded["variant_id"]
+
+    material_rows = (
+        await db_session.execute(
+            select(WorkOrderMaterialModel).where(WorkOrderMaterialModel.work_order_id == work_order.id)
+        )
+    ).scalars().all()
+    assert len(material_rows) == 1
+    assert material_rows[0].material_id == seeded["raw_material_id"]
+    assert Decimal(str(material_rows[0].required_quantity)) == Decimal("6")
+
+    po = (
+        await db_session.execute(
+            select(PurchaseOrderModel).where(
+                PurchaseOrderModel.tenant_id == test_tenant_id,
+                PurchaseOrderModel.is_deleted.is_(False),
+            )
+        )
+    ).scalars().first()
+    assert po is not None
+    assert po.supplier_id == seeded["supplier_id"]
+
+    po_line = (
+        await db_session.execute(
+            select(PurchaseOrderLineModel).where(PurchaseOrderLineModel.purchase_order_id == po.id)
+        )
+    ).scalars().one()
+    assert po_line.material_id == seeded["raw_material_id"]
+    assert Decimal(str(po_line.quantity)) == Decimal("5")

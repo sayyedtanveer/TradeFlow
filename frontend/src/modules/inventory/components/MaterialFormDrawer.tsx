@@ -15,9 +15,35 @@ import { useEffect } from "react"
 import { supplyChainApi } from "@/services/supply-chain.service"
 import { Checkbox } from "@/components/ui/checkbox"
 
+const GENERIC_RAW_NAMES = new Set([
+  "raw material",
+  "raw materials",
+  "material",
+  "materials",
+  "component",
+  "components",
+  "item",
+  "items",
+])
+
+const GENERIC_FINISHED_NAMES = new Set([
+  "finished good",
+  "finished goods",
+  "product",
+  "products",
+  "final product",
+  "finished item",
+  "goods",
+  "item",
+  "items",
+])
+
+const normalizeMaterialName = (value: string) =>
+  value.trim().replace(/\s+/g, " ").toLowerCase()
+
 const materialSchema = z.object({
-  code: z.string().min(1, "Code must be at least 1 character").max(100),
-  name: z.string().min(1, "Name is required").max(255),
+  code: z.string().trim().min(1, "Code must be at least 1 character").max(100),
+  name: z.string().trim().min(1, "Name is required").max(255),
   material_type: z.enum(["raw", "finished"]),
   base_unit_id: z.string().uuid("Please select a valid unit").nullable().optional(),
   description: z.string().max(2000).optional().nullable(),
@@ -28,6 +54,22 @@ const materialSchema = z.object({
   is_serialized: z.boolean().default(false).optional(),
   inspection_required: z.boolean().optional(),
   inspection_template_id: z.string().uuid().nullable().optional(),
+}).superRefine(({ name, material_type }, ctx) => {
+  const normalized = normalizeMaterialName(name)
+  if (material_type === "raw" && GENERIC_RAW_NAMES.has(normalized)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["name"],
+      message: "Use the actual raw material name, for example Brass Body, Glass Tube, or O-Ring Seal.",
+    })
+  }
+  if (material_type === "finished" && GENERIC_FINISHED_NAMES.has(normalized)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["name"],
+      message: "Use the actual finished good name, for example Gear Rotameter - Standard.",
+    })
+  }
 })
 
 type MaterialFormValues = z.infer<typeof materialSchema>
@@ -165,6 +207,14 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
     saveMutation.mutate(data)
   }
 
+  const selectedMaterialType = watch("material_type") || "raw"
+  const namePlaceholder =
+    selectedMaterialType === "raw" ? "E.g. Brass Body" : "E.g. Gear Rotameter - Standard"
+  const namingHint =
+    selectedMaterialType === "raw"
+      ? "Use the actual component name. Avoid generic labels like Raw Material."
+      : "Use the finished product name shown to sales, planning, and clients."
+
   return (
     <Drawer 
       open={open} 
@@ -208,8 +258,9 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Material Name</Label>
-                <Input id="name" placeholder="E.g. Steel Pipe" {...register("name")} autoFocus={isEditing} />
+                <Input id="name" placeholder={namePlaceholder} {...register("name")} autoFocus={isEditing} />
                 {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+                {!errors.name && <p className="text-xs text-muted-foreground">{namingHint}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="material_type">Material Type</Label>

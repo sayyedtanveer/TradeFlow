@@ -71,11 +71,16 @@ class CreateItemVariantRequest(BaseModel):
         ..., description="e.g. {\"SIZE\": \"SMALL\", \"COLOR\": \"RED\"}"
     )
     base_unit_id: Optional[uuid.UUID] = None
+    material_id: Optional[uuid.UUID] = Field(
+        default=None,
+        description="Optional finished-goods inventory material linked to this variant.",
+    )
     standard_cost: Decimal = Decimal("0")
     selling_price: Optional[Decimal] = None
 
 
 class UpdateItemVariantRequest(BaseModel):
+    material_id: Optional[uuid.UUID] = None
     standard_cost: Optional[Decimal] = None
     selling_price: Optional[Decimal] = None
     is_active: Optional[bool] = None
@@ -90,6 +95,7 @@ class ItemVariantResponse(BaseModel):
     variant_key: str
     attribute_values: Dict[str, Any]
     base_unit_id: Optional[uuid.UUID]
+    material_id: Optional[uuid.UUID]
     standard_cost: Decimal
     selling_price: Optional[Decimal]
     is_active: bool

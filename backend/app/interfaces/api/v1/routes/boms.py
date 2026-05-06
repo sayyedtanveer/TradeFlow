@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import select
 
 from backend.app.application.bom.commands.bom_commands import (
     CreateBOMCommand,
@@ -26,6 +27,7 @@ from backend.app.infrastructure.persistence.repositories.bom_repository import B
 from backend.app.infrastructure.persistence.repositories.workstation_repository import WorkstationRepository
 from backend.app.infrastructure.persistence.repositories.operation_repository import OperationRepository
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
+from backend.app.infrastructure.persistence.models.item_variant_model import ItemVariantModel
 from backend.app.interfaces.api.v1.dependencies.auth import (
     get_container,
     get_current_tenant_id,
@@ -119,6 +121,26 @@ async def list_product_boms(
                 page_size=page_size,
             )
         )
+        if not is_template and total == 0:
+            variant = (
+                await session.execute(
+                    select(ItemVariantModel).where(
+                        ItemVariantModel.id == product_id,
+                        ItemVariantModel.tenant_id == tenant_id,
+                        ItemVariantModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            if variant and variant.template_id:
+                boms, total = await handlers.handle_list(
+                    ListBOMsQuery(
+                        tenant_id=tenant_id,
+                        template_id=variant.template_id,
+                        variant_id=None,
+                        page=page,
+                        page_size=page_size,
+                    )
+                )
     return BOMListResponse(items=[_bom_to_response(b) for b in boms], total=total, page=page, page_size=page_size)
 
 

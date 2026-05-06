@@ -278,6 +278,21 @@ class InventoryService:
         sl = await self._lock_stock_level(tenant_id, material_id, location_id, stock_status)
         sl.quantity = float(Decimal(str(sl.quantity)) + quantity)
 
+    async def _deduct_bucket_quantity(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+        location_id: uuid.UUID,
+        stock_status: str,
+        quantity: Decimal,
+    ) -> Decimal:
+        sl = await self._lock_stock_level(tenant_id, material_id, location_id, stock_status)
+        available = Decimal(str(sl.quantity))
+        deducted = min(available, quantity)
+        sl.quantity = float(available - deducted)
+        return deducted
+
     async def _move_bucket_quantity(
         self,
         *,
@@ -581,6 +596,150 @@ class InventoryService:
             unit_cost=unit_cost,
             reference_type="purchase_order",
             reference_id=purchase_order_id,
+        )
+
+    async def reverse_purchase_receipt(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+        quantity: Decimal,
+        purchase_order_id: uuid.UUID,
+        unit_id: Optional[uuid.UUID],
+        created_by: uuid.UUID,
+        warehouse_location_id: Optional[uuid.UUID] = None,
+        reference_type: str = "purchase_receipt_reversal",
+        reference_id: Optional[uuid.UUID] = None,
+        remarks: Optional[str] = None,
+    ) -> None:
+        """Reverse a previously received purchase quantity through the canonical stock service."""
+        model = await self._lock_material(tenant_id, material_id)
+        loc = warehouse_location_id or await self._default_warehouse_location(tenant_id)
+
+        if await self._has_stock_levels(tenant_id, material_id):
+            if loc is None:
+                raise ValueError("No warehouse location configured for this tenant")
+
+            remaining = quantity
+            preferred_statuses = [_ST_PENDING] if getattr(model, "inspection_required", False) else []
+            preferred_statuses.extend([_ST_AVAILABLE, _ST_PENDING])
+
+            for stock_status in preferred_statuses:
+                if remaining <= 0:
+                    break
+                deducted = await self._deduct_bucket_quantity(
+                    tenant_id=tenant_id,
+                    material_id=material_id,
+                    location_id=loc,
+                    stock_status=stock_status,
+                    quantity=remaining,
+                )
+                remaining -= deducted
+
+            if remaining > 0:
+                remaining = await self._deduct_available_internal(tenant_id, material_id, remaining)
+            if remaining > 0:
+                raise InsufficientStockError(
+                    f"Cannot reverse receipt {quantity}: only {quantity - remaining} is still available"
+                )
+
+            await self._sync_material_total_from_buckets(model)
+        else:
+            current = Decimal(str(model.current_stock))
+            if quantity > current:
+                raise InsufficientStockError(
+                    f"Cannot reverse receipt {quantity}: only {current} remains in stock"
+                )
+            model.current_stock = float(current - quantity)
+
+        reversal_reference_id = reference_id or purchase_order_id
+        await self._log_transaction(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            transaction_type="reverse_receipt",
+            quantity=quantity,
+            unit_id=unit_id,
+            reference_type=reference_type,
+            reference_id=reversal_reference_id,
+            created_by=created_by,
+            remarks=remarks or "Goods receipt reversal",
+            from_location_id=loc,
+        )
+        await self._log_ledger(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            location_id=loc,
+            transaction_type="RECEIPT_REVERSAL",
+            quantity_change=-quantity,
+            reference_type=reference_type,
+            reference_id=reversal_reference_id,
+        )
+
+    async def transfer_stock(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+        quantity: Decimal,
+        from_location_id: uuid.UUID,
+        to_location_id: uuid.UUID,
+        unit_id: Optional[uuid.UUID],
+        created_by: uuid.UUID,
+        reference_id: Optional[uuid.UUID] = None,
+        remarks: Optional[str] = None,
+    ) -> None:
+        """Transfer available stock between two locations for the same material."""
+        if from_location_id == to_location_id:
+            raise ValueError("from_location_id and to_location_id must be different for a transfer")
+
+        model = await self._lock_material(tenant_id, material_id)
+        if not await self._has_stock_levels(tenant_id, material_id):
+            current = Decimal(str(model.current_stock))
+            if quantity > current:
+                raise InsufficientStockError(
+                    f"Cannot transfer {quantity}: only {current} available for {material_id}"
+                )
+            await self._add_bucket_quantity(
+                tenant_id=tenant_id,
+                material_id=material_id,
+                location_id=from_location_id,
+                stock_status=_ST_AVAILABLE,
+                quantity=current,
+            )
+            await self._session.flush()
+        await self._move_bucket_quantity(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            from_location_id=from_location_id,
+            to_location_id=to_location_id,
+            from_status=_ST_AVAILABLE,
+            to_status=_ST_AVAILABLE,
+            quantity=quantity,
+        )
+        await self._sync_material_total_from_buckets(model)
+
+        transfer_reference_id = reference_id or uuid.uuid4()
+        await self._log_transaction(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            transaction_type="transfer",
+            quantity=quantity,
+            unit_id=unit_id,
+            reference_type="inventory_transfer",
+            reference_id=transfer_reference_id,
+            created_by=created_by,
+            remarks=remarks or "Inventory transfer",
+            from_location_id=from_location_id,
+            to_location_id=to_location_id,
+        )
+        await self._log_ledger(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            location_id=to_location_id,
+            transaction_type="TRANSFER",
+            quantity_change=Decimal("0"),
+            reference_type="inventory_transfer",
+            reference_id=transfer_reference_id,
         )
 
     async def inspection_pass_move_to_available(

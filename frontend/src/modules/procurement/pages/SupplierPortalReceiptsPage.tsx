@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react"
-import { Link } from "react-router-dom"
 import { REALTIME_EVENT_NAME } from "@/components/notifications/RealtimeNotificationsBridge"
-import { supplyChainApi, type SupplierReceipt } from "@/services/supply-chain.service"
+import ResponsiveDataList from "@/components/shared/ResponsiveDataList"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
+import {
+  SupplierPortalEmptyState,
+  SupplierPortalHeader,
+  SupplierPortalStatusBadge,
+  SupplierPortalTabs,
+} from "@/modules/procurement/components/SupplierPortalChrome"
+import { supplyChainApi, type SupplierReceipt } from "@/services/supply-chain.service"
 
 export default function SupplierPortalReceiptsPage() {
   const { toast } = useToast()
@@ -36,56 +39,101 @@ export default function SupplierPortalReceiptsPage() {
   }, [])
 
   return (
-    <div className="max-w-5xl space-y-6">
-      <Button variant="ghost" size="sm" asChild>
-        <Link to="/supplier-portal">{"<- Portal"}</Link>
-      </Button>
-      <div>
-        <h1 className="text-2xl font-semibold">Shipment notices and receipts</h1>
-        <p className="text-sm text-muted-foreground">
-          Track ASNs submitted by supplier users and GRNs completed by the receiving team.
-        </p>
+    <div className="mx-auto max-w-7xl space-y-6 pb-8">
+      <SupplierPortalHeader
+        eyebrow="Supplier workspace"
+        title="Shipment notices and receipts"
+        description="Track supplier ASNs and buyer-side receipt updates so dispatch and receiving stay aligned."
+        backHref="/supplier-portal"
+        backLabel="Portal"
+      />
+
+      <div className="erp-portal-section space-y-4">
+        <SupplierPortalTabs counts={{ receipts: rows.length }} />
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
       </div>
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {!error && rows.length === 0 ? (
-        <Alert>
-          <AlertDescription>No shipment notices or receipts yet. Open a PO to submit a shipment notice.</AlertDescription>
-        </Alert>
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Document</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Tracking</TableHead>
-              <TableHead>Vehicle</TableHead>
-              <TableHead className="text-right">Lines</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((receipt) => (
-              <TableRow key={receipt.id}>
-                <TableCell>
-                  <div className="font-mono">{receipt.grn_number}</div>
-                  <div className="text-xs text-muted-foreground">{receipt.created_at ?? "-"}</div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{receipt.status}</Badge>
-                </TableCell>
-                <TableCell>{receipt.tracking_number ?? "-"}</TableCell>
-                <TableCell>{receipt.vehicle_number ?? "-"}</TableCell>
-                <TableCell className="text-right">{receipt.lines.length}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+      <section className="erp-portal-section space-y-4">
+        <div className="space-y-1">
+          <h2 className="text-xl font-semibold text-slate-950">Receipt timeline</h2>
+          <p className="text-sm text-slate-600">Follow every shipment notice and receiving document that the warehouse processes for your orders.</p>
+        </div>
+        <ResponsiveDataList
+          data={rows}
+          getRowKey={(receipt) => receipt.id}
+          emptyState={
+            <SupplierPortalEmptyState
+              title="No shipment notices or receipts yet"
+              description="Open a purchase order and submit a shipment notice once goods are ready to dispatch."
+              actionHref="/supplier-portal"
+              actionLabel="Open portal"
+            />
+          }
+          columns={[
+            {
+              key: "document",
+              header: "Document",
+              cell: (receipt) => (
+                <div>
+                  <div className="font-mono text-sm font-semibold text-slate-900">{receipt.grn_number}</div>
+                  <div className="text-xs text-slate-500">{receipt.created_at ?? "-"}</div>
+                </div>
+              ),
+            },
+            {
+              key: "status",
+              header: "Status",
+              cell: (receipt) => <SupplierPortalStatusBadge status={receipt.status} />,
+            },
+            {
+              key: "tracking",
+              header: "Tracking",
+              cell: (receipt) => receipt.tracking_number ?? "-",
+            },
+            {
+              key: "vehicle",
+              header: "Vehicle",
+              cell: (receipt) => receipt.vehicle_number ?? "-",
+            },
+            {
+              key: "lines",
+              header: "Lines",
+              headerClassName: "text-right",
+              className: "text-right",
+              cell: (receipt) => receipt.lines.length,
+            },
+          ]}
+          renderMobileCard={(receipt) => (
+            <article className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="font-mono text-sm font-semibold text-slate-900">{receipt.grn_number}</p>
+                  <p className="text-sm text-slate-500">{receipt.created_at ?? "-"}</p>
+                </div>
+                <SupplierPortalStatusBadge status={receipt.status} />
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-slate-500">Tracking</p>
+                  <p className="font-semibold text-slate-900">{receipt.tracking_number ?? "-"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Vehicle</p>
+                  <p className="font-semibold text-slate-900">{receipt.vehicle_number ?? "-"}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-slate-500">Lines</p>
+                  <p className="font-semibold text-slate-900">{receipt.lines.length}</p>
+                </div>
+              </div>
+            </article>
+          )}
+        />
+      </section>
     </div>
   )
 }

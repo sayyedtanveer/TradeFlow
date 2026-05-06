@@ -380,7 +380,7 @@ async def _notify_sales_order_submitted(session, container, tenant_id: UUID, ord
 
 # ==================== CLIENT ENDPOINTS ====================
 
-@router.post("/clients", response_model=ClientResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/clients", response_model=ClientResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("sales:write"))])
 async def create_client(
     body: ClientCreateRequest,
     request: Request,
@@ -419,7 +419,7 @@ async def create_client(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Creation failed")
 
 
-@router.get("/clients/{client_id}", response_model=ClientResponse)
+@router.get("/clients/{client_id}", response_model=ClientResponse, dependencies=[Depends(require_permission("sales:read"))])
 async def get_client(
     client_id: UUID,
     request: Request,
@@ -444,7 +444,7 @@ async def get_client(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Retrieval failed")
 
 
-@router.get("/clients", response_model=ClientListResponse)
+@router.get("/clients", response_model=ClientListResponse, dependencies=[Depends(require_permission("sales:read"))])
 async def list_clients(
     request: Request,
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -475,7 +475,7 @@ async def list_clients(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="List retrieval failed")
 
 
-@router.patch("/clients/{client_id}", response_model=ClientResponse)
+@router.patch("/clients/{client_id}", response_model=ClientResponse, dependencies=[Depends(require_permission("sales:write"))])
 async def update_client(
     client_id: UUID,
     body: ClientUpdateRequest,
@@ -515,7 +515,7 @@ async def update_client(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Update failed")
 
 
-@router.delete("/clients/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/clients/{client_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("sales:write"))])
 async def deactivate_client(
     client_id: UUID,
     request: Request,
@@ -542,7 +542,7 @@ async def deactivate_client(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Deactivation failed")
 
 
-@router.get("/clients/{client_id}/credit", response_model=ClientCreditCheckResponse)
+@router.get("/clients/{client_id}/credit", response_model=ClientCreditCheckResponse, dependencies=[Depends(require_permission("sales:read"))])
 async def check_client_credit(
     client_id: UUID,
     request: Request,
@@ -571,7 +571,7 @@ async def check_client_credit(
 
 # ==================== SALES ORDER ENDPOINTS ====================
 
-@router.post("/orders", response_model=SalesOrderResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/orders", response_model=SalesOrderResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("sales:write"))])
 async def create_order(
     body: SalesOrderCreateRequest,
     request: Request,
@@ -606,7 +606,7 @@ async def create_order(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Creation failed")
 
 
-@router.get("/orders/draft", response_model=SalesOrderListResponse)
+@router.get("/orders/draft", response_model=SalesOrderListResponse, dependencies=[Depends(require_permission("sales:read"))])
 async def list_draft_orders(
     request: Request,
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -631,7 +631,7 @@ async def list_draft_orders(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="List retrieval failed")
 
 
-@router.get("/orders/{order_id}", response_model=SalesOrderResponse)
+@router.get("/orders/{order_id}", response_model=SalesOrderResponse, dependencies=[Depends(require_permission("sales:read"))])
 async def get_order(
     order_id: UUID,
     request: Request,
@@ -656,7 +656,7 @@ async def get_order(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Retrieval failed")
 
 
-@router.get("/orders/number/{order_number}", response_model=SalesOrderResponse)
+@router.get("/orders/number/{order_number}", response_model=SalesOrderResponse, dependencies=[Depends(require_permission("sales:read"))])
 async def get_order_by_number(
     order_number: str,
     request: Request,
@@ -681,7 +681,7 @@ async def get_order_by_number(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Retrieval failed")
 
 
-@router.get("/orders", response_model=SalesOrderListResponse)
+@router.get("/orders", response_model=SalesOrderListResponse, dependencies=[Depends(require_permission("sales:read"))])
 async def list_orders(
     request: Request,
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -732,7 +732,7 @@ async def list_orders(
             logger.exception(f"Error listing orders: {str(e)}")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="List retrieval failed")
 
-@router.post("/orders/{order_id}/lines", response_model=SalesOrderResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/orders/{order_id}/lines", response_model=SalesOrderResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("sales:write"))])
 async def add_order_line(
     order_id: UUID,
     body: SalesOrderLineCreateRequest,
@@ -772,7 +772,7 @@ async def add_order_line(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Line addition failed")
 
 
-@router.delete("/orders/{order_id}/lines/{line_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/orders/{order_id}/lines/{line_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("sales:write"))])
 async def remove_order_line(
     order_id: UUID,
     line_id: UUID,
@@ -801,7 +801,7 @@ async def remove_order_line(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Line removal failed")
 
 
-@router.post("/orders/{order_id}/discount", response_model=SalesOrderResponse)
+@router.post("/orders/{order_id}/discount", response_model=SalesOrderResponse, dependencies=[Depends(require_permission("sales:write"))])
 async def apply_discount(
     order_id: UUID,
     body: ApplyDiscountRequest,
@@ -832,7 +832,7 @@ async def apply_discount(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Discount application failed")
 
 
-@router.post("/orders/{order_id}/submit-approval", response_model=SalesOrderResponse)
+@router.post("/orders/{order_id}/submit-approval", response_model=SalesOrderResponse, dependencies=[Depends(require_permission("sales:write"))])
 async def submit_order_for_approval(
     order_id: UUID,
     body: ApprovalActionRequest,
@@ -990,7 +990,7 @@ async def reject_order(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Rejection failed")
 
 
-@router.post("/orders/{order_id}/confirm", response_model=SalesOrderResponse)
+@router.post("/orders/{order_id}/confirm", response_model=SalesOrderResponse, dependencies=[Depends(require_permission("sales:write"))])
 async def confirm_order(
     order_id: UUID,
     body: ConfirmOrderRequest,
@@ -1053,7 +1053,7 @@ async def confirm_order(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Confirmation failed")
 
 
-@router.post("/orders/{order_id}/ship", response_model=SalesOrderResponse)
+@router.post("/orders/{order_id}/ship", response_model=SalesOrderResponse, dependencies=[Depends(require_permission("sales:write"))])
 async def ship_order(
     order_id: UUID,
     body: ShipOrderRequest,
@@ -1130,7 +1130,7 @@ async def ship_order(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Shipment recording failed")
 
 
-@router.post("/orders/{order_id}/deliver", response_model=SalesOrderResponse)
+@router.post("/orders/{order_id}/deliver", response_model=SalesOrderResponse, dependencies=[Depends(require_permission("sales:write"))])
 async def deliver_order(
     order_id: UUID,
     request: Request,
@@ -1191,7 +1191,7 @@ async def deliver_order(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Delivery recording failed")
 
 
-@router.post("/orders/{order_id}/cancel", response_model=SalesOrderResponse)
+@router.post("/orders/{order_id}/cancel", response_model=SalesOrderResponse, dependencies=[Depends(require_permission("sales:write"))])
 async def cancel_order(
     order_id: UUID,
     body: CancelOrderRequest,
@@ -1243,7 +1243,7 @@ async def cancel_order(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Cancellation failed")
 
 
-@router.get("/orders/stats/by-status", response_model=OrderStatusResponse)
+@router.get("/orders/stats/by-status", response_model=OrderStatusResponse, dependencies=[Depends(require_permission("sales:read"))])
 async def get_order_count_by_status(
     request: Request,
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -1267,7 +1267,7 @@ async def get_order_count_by_status(
 
 # ==================== PRICE LIST ENDPOINTS ====================
 
-@router.post("/price-lists", response_model=PriceListResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/price-lists", response_model=PriceListResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("sales:write"))])
 async def create_price_list(
     body: PriceListRequest,
     request: Request,
@@ -1299,7 +1299,7 @@ async def create_price_list(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Creation failed")
 
 
-@router.get("/price-lists/{price_list_id}", response_model=PriceListResponse)
+@router.get("/price-lists/{price_list_id}", response_model=PriceListResponse, dependencies=[Depends(require_permission("sales:read"))])
 async def get_price_list(
     price_list_id: UUID,
     request: Request,
@@ -1324,7 +1324,7 @@ async def get_price_list(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Retrieval failed")
 
 
-@router.get("/price-lists", response_model=PriceListListResponse)
+@router.get("/price-lists", response_model=PriceListListResponse, dependencies=[Depends(require_permission("sales:read"))])
 async def list_price_lists(
     request: Request,
     tenant_id: UUID = Depends(get_current_tenant_id),
@@ -1354,7 +1354,7 @@ async def list_price_lists(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="List retrieval failed")
 
 
-@router.post("/price-lists/{price_list_id}/lines", status_code=status.HTTP_201_CREATED)
+@router.post("/price-lists/{price_list_id}/lines", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("sales:write"))])
 async def add_price_list_line(
     price_list_id: UUID,
     body: PriceListLineRequest,
@@ -1387,7 +1387,7 @@ async def add_price_list_line(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Line addition failed")
 
 
-@router.patch("/price-lists/{price_list_id}/lines", response_model=PriceListResponse)
+@router.patch("/price-lists/{price_list_id}/lines", response_model=PriceListResponse, dependencies=[Depends(require_permission("sales:write"))])
 async def update_price_list_line(
     price_list_id: UUID,
     body: PriceListLineRequest,
@@ -1420,7 +1420,7 @@ async def update_price_list_line(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Line update failed")
 
 
-@router.delete("/price-lists/{price_list_id}/lines/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/price-lists/{price_list_id}/lines/{product_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("sales:write"))])
 async def remove_price_list_line(
     price_list_id: UUID,
     product_id: UUID,

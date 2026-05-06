@@ -81,7 +81,7 @@ async def create_work_order(
             return await _error_response(e)
 
 
-@router.get("", response_model=List[WorkOrderSummary])
+@router.get("", response_model=List[WorkOrderSummary], dependencies=[Depends(require_permission("manufacturing:read"))])
 async def list_work_orders(
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
@@ -133,7 +133,7 @@ async def preview_material_availability(
             return await _error_response(exc)
 
 
-@router.get("/{work_order_id}", response_model=WorkOrderDetail)
+@router.get("/{work_order_id}", response_model=WorkOrderDetail, dependencies=[Depends(require_permission("manufacturing:read"))])
 async def get_work_order(
     work_order_id: uuid.UUID,
     request: Request,
@@ -278,7 +278,7 @@ async def close_work_order(
             return await _error_response(e)
 
 
-@router.get("/{work_order_id}/job-cards", response_model=List[JobCardResponse])
+@router.get("/{work_order_id}/job-cards", response_model=List[JobCardResponse], dependencies=[Depends(require_permission("manufacturing:read"))])
 async def list_job_cards(
     work_order_id: uuid.UUID,
     request: Request,
@@ -300,7 +300,7 @@ async def list_job_cards(
         return [JobCardResponse.model_validate(r) for r in rows]
 
 
-@router.patch("/{work_order_id}/job-cards/{job_card_id}/start", status_code=status.HTTP_200_OK)
+@router.patch("/{work_order_id}/job-cards/{job_card_id}/start", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("manufacturing:write"))])
 async def start_job_card(
     work_order_id: uuid.UUID,
     job_card_id: uuid.UUID,
@@ -324,7 +324,7 @@ async def start_job_card(
             return await _error_response(e)
 
 
-@router.get("/{work_order_id}/material-consumption")
+@router.get("/{work_order_id}/material-consumption", dependencies=[Depends(require_permission("manufacturing:read"))])
 async def get_work_order_consumption(
     work_order_id: uuid.UUID,
     request: Request,
@@ -360,7 +360,7 @@ async def get_work_order_consumption(
         }
         for tx, code, name in rows
     ]
-@router.patch("/{work_order_id}/job-cards/{job_card_id}/complete", status_code=status.HTTP_200_OK)
+@router.patch("/{work_order_id}/job-cards/{job_card_id}/complete", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("manufacturing:write"))])
 async def complete_job_card(
     work_order_id: uuid.UUID,
     job_card_id: uuid.UUID,

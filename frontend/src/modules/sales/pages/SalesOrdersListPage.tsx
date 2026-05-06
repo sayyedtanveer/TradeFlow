@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { TableSkeleton } from '@/components/shared/LoadingSkeleton';
+import ResponsiveDataList from '@/components/shared/ResponsiveDataList';
 import { ordersApi } from '@/services/sales.service';
 import { SalesOrder, OrderStatus } from '@/types/sales.types';
 import { Plus, Filter, Eye, ShoppingCart } from 'lucide-react';
@@ -194,54 +195,122 @@ export default function SalesOrdersListPage() {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Order Number</th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Client</th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Requested Items</th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Order Date</th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Delivery Date</th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Total</th>
-                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
-                    <th className="px-4 py-3 text-right font-semibold text-gray-700">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orders.map((order) => (
-                    <tr key={order.id} className="border-b hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium">{order.order_number}</td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{order.client_name || order.client_id}</div>
-                        {order.client_code && (
-                          <div className="text-xs text-gray-500">{order.client_code}</div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="max-w-xs text-sm text-gray-900">{order.item_summary || 'No line items'}</div>
-                        <div className="text-xs text-gray-500">{order.item_count || 0} item(s)</div>
-                      </td>
-                      <td className="px-4 py-3">{new Date(order.order_date).toLocaleDateString()}</td>
-                      <td className="px-4 py-3">{new Date(order.delivery_date).toLocaleDateString()}</td>
-                      <td className="px-4 py-3 font-semibold">{formatCurrency(order.grand_total || 0)}</td>
-                      <td className="px-4 py-3">
-                        <Badge className={getStatusColor(order.status)}>{order.status}</Badge>
-                      </td>
-                      <td className="px-4 py-3 text-right space-x-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => navigate(`/sales/orders/${order.id}`)}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ResponsiveDataList
+              data={orders}
+              getRowKey={(order) => order.id}
+              columns={[
+                {
+                  key: 'order_number',
+                  header: 'Order Number',
+                  cell: (order) => <span className="font-medium">{order.order_number}</span>,
+                },
+                {
+                  key: 'client',
+                  header: 'Client',
+                  cell: (order) => (
+                    <div>
+                      <div className="font-medium">{order.client_name || order.client_id}</div>
+                      {order.client_code && <div className="text-xs text-gray-500">{order.client_code}</div>}
+                    </div>
+                  ),
+                },
+                {
+                  key: 'requested_items',
+                  header: 'Requested Items',
+                  cell: (order) => (
+                    <div className="max-w-xs">
+                      <div className="text-sm text-gray-900">{order.item_summary || 'No line items'}</div>
+                      <div className="text-xs text-gray-500">{order.item_count || 0} item(s)</div>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'order_date',
+                  header: 'Order Date',
+                  cell: (order) => new Date(order.order_date).toLocaleDateString(),
+                },
+                {
+                  key: 'delivery_date',
+                  header: 'Delivery Date',
+                  cell: (order) => new Date(order.delivery_date).toLocaleDateString(),
+                },
+                {
+                  key: 'total',
+                  header: 'Total',
+                  cell: (order) => <span className="font-semibold">{formatCurrency(order.grand_total || 0)}</span>,
+                },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  cell: (order) => <Badge className={getStatusColor(order.status)}>{order.status}</Badge>,
+                },
+                {
+                  key: 'actions',
+                  header: 'Actions',
+                  headerClassName: 'text-right',
+                  className: 'text-right',
+                  cell: (order) => (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        navigate(`/sales/orders/${order.id}`);
+                      }}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  ),
+                },
+              ]}
+              onRowClick={(order) => navigate(`/sales/orders/${order.id}`)}
+              renderMobileCard={(order) => (
+                <div
+                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:shadow-md"
+                  onClick={() => navigate(`/sales/orders/${order.id}`)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-base font-semibold text-slate-900">{order.order_number}</p>
+                      <p className="mt-1 text-sm text-slate-500">{order.client_name || order.client_id}</p>
+                      {order.client_code && <p className="text-xs text-slate-400">{order.client_code}</p>}
+                    </div>
+                    <Badge className={getStatusColor(order.status)}>{order.status}</Badge>
+                  </div>
+                  <div className="mt-4 space-y-2 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-slate-500">Items</span>
+                      <span className="text-right text-slate-900">{order.item_summary || 'No line items'}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-500">Order date</span>
+                      <span>{new Date(order.order_date).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-500">Delivery</span>
+                      <span>{new Date(order.delivery_date).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-500">Total</span>
+                      <span className="font-semibold">{formatCurrency(order.grand_total || 0)}</span>
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        navigate(`/sales/orders/${order.id}`);
+                      }}
+                    >
+                      <Eye className="mr-2 h-4 w-4" />
+                      View order
+                    </Button>
+                  </div>
+                </div>
+              )}
+            />
           )}
 
           {/* Pagination */}

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import ResponsiveDataList from "@/components/shared/ResponsiveDataList"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -66,11 +67,11 @@ export default function InvoicesList() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Invoices</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-900">Download invoices, review balances, and pay quickly.</h1>
+            <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">Download invoices, review balances, and pay quickly.</h1>
             <p className="mt-3 max-w-2xl text-sm text-slate-600">
               Every invoice stays scoped to your client account, with PDF downloads and payment links from a single list.
             </p>
@@ -82,7 +83,7 @@ export default function InvoicesList() {
               setPage(1)
             }}
           >
-            <SelectTrigger className="w-[220px]">
+            <SelectTrigger className="w-full sm:w-[220px]">
               <SelectValue placeholder="All invoice statuses" />
             </SelectTrigger>
             <SelectContent>
@@ -119,84 +120,144 @@ export default function InvoicesList() {
 
           {!invoicesQuery.isLoading && !invoicesQuery.isError && (
             <>
-              <div className="overflow-hidden rounded-3xl border border-slate-200">
-                <Table>
-                  <TableHeader className="bg-slate-50">
-                    <TableRow>
-                      <TableHead>Invoice</TableHead>
-                      <TableHead>Issued</TableHead>
-                      <TableHead>Due</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead className="text-right">Balance</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {invoicesQuery.data?.items?.length ? (
-                      invoicesQuery.data.items.map((invoice) => (
-                        <TableRow key={invoice.id}>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium">{invoice.invoice_number}</p>
-                              <p className="text-xs text-muted-foreground">{invoice.client_name}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell>{formatDate(invoice.invoice_date)}</TableCell>
-                          <TableCell>{formatDate(invoice.due_date)}</TableCell>
-                          <TableCell>
-                            <Badge className={clientInvoiceStatusClasses[invoice.status] ?? "bg-slate-100 text-slate-700"}>
-                              {formatStatusLabel(invoice.status)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right font-medium">{formatCurrency(invoice.grand_total)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(invoice.balance_due)}</TableCell>
-                          <TableCell>
-                            <div className="flex justify-end gap-2">
-                              <Button variant="outline" className="rounded-full" onClick={() => setSelectedInvoiceId(invoice.id)}>
-                                Details
-                              </Button>
-                              <Button
-                                variant="outline"
-                                className="rounded-full"
-                                disabled={downloadingInvoiceId === invoice.id}
-                                onClick={() => void handleDownload(invoice.id, invoice.invoice_number)}
-                              >
-                                <Download className="h-4 w-4" />
-                                {downloadingInvoiceId === invoice.id ? "Preparing..." : "PDF"}
-                              </Button>
-                              <Button asChild className="rounded-full">
-                                <a href={invoice.payment_link} target="_blank" rel="noreferrer">
-                                  <ExternalLink className="h-4 w-4" />
-                                  Pay
-                                </a>
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
-                          No invoices match the selected filter.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+              {invoicesQuery.data?.items?.length ? (
+                <ResponsiveDataList
+                  data={invoicesQuery.data.items}
+                  getRowKey={(invoice) => invoice.id}
+                  columns={[
+                    {
+                      key: "invoice",
+                      header: "Invoice",
+                      cell: (invoice) => (
+                        <div>
+                          <p className="font-medium">{invoice.invoice_number}</p>
+                          <p className="text-xs text-muted-foreground">{invoice.client_name}</p>
+                        </div>
+                      ),
+                    },
+                    { key: "issued", header: "Issued", cell: (invoice) => formatDate(invoice.invoice_date) },
+                    { key: "due", header: "Due", cell: (invoice) => formatDate(invoice.due_date) },
+                    {
+                      key: "status",
+                      header: "Status",
+                      cell: (invoice) => (
+                        <Badge className={clientInvoiceStatusClasses[invoice.status] ?? "bg-slate-100 text-slate-700"}>
+                          {formatStatusLabel(invoice.status)}
+                        </Badge>
+                      ),
+                    },
+                    {
+                      key: "total",
+                      header: "Total",
+                      headerClassName: "text-right",
+                      className: "text-right font-medium",
+                      cell: (invoice) => formatCurrency(invoice.grand_total),
+                    },
+                    {
+                      key: "balance",
+                      header: "Balance",
+                      headerClassName: "text-right",
+                      className: "text-right",
+                      cell: (invoice) => formatCurrency(invoice.balance_due),
+                    },
+                    {
+                      key: "actions",
+                      header: "Actions",
+                      headerClassName: "text-right",
+                      className: "text-right",
+                      cell: (invoice) => (
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Button variant="outline" className="rounded-full" onClick={() => setSelectedInvoiceId(invoice.id)}>
+                            Details
+                          </Button>
+                          <Button
+                            variant="outline"
+                            className="rounded-full"
+                            disabled={downloadingInvoiceId === invoice.id}
+                            onClick={() => void handleDownload(invoice.id, invoice.invoice_number)}
+                          >
+                            <Download className="h-4 w-4" />
+                            {downloadingInvoiceId === invoice.id ? "Preparing..." : "PDF"}
+                          </Button>
+                          <Button asChild className="rounded-full">
+                            <a href={invoice.payment_link} target="_blank" rel="noreferrer">
+                              <ExternalLink className="h-4 w-4" />
+                              Pay
+                            </a>
+                          </Button>
+                        </div>
+                      ),
+                    },
+                  ]}
+                  renderMobileCard={(invoice) => (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:shadow-md">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-base font-semibold text-slate-900">{invoice.invoice_number}</p>
+                          <p className="mt-1 text-xs text-slate-500">{invoice.client_name}</p>
+                        </div>
+                        <Badge className={clientInvoiceStatusClasses[invoice.status] ?? "bg-slate-100 text-slate-700"}>
+                          {formatStatusLabel(invoice.status)}
+                        </Badge>
+                      </div>
+                      <div className="mt-4 space-y-2 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-500">Issued</span>
+                          <span>{formatDate(invoice.invoice_date)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-500">Due</span>
+                          <span>{formatDate(invoice.due_date)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-500">Total</span>
+                          <span className="font-semibold">{formatCurrency(invoice.grand_total)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-500">Balance</span>
+                          <span>{formatCurrency(invoice.balance_due)}</span>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex flex-col gap-2">
+                        <Button variant="outline" className="w-full rounded-full" onClick={() => setSelectedInvoiceId(invoice.id)}>
+                          Details
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="w-full rounded-full"
+                          disabled={downloadingInvoiceId === invoice.id}
+                          onClick={() => void handleDownload(invoice.id, invoice.invoice_number)}
+                        >
+                          <Download className="h-4 w-4" />
+                          {downloadingInvoiceId === invoice.id ? "Preparing..." : "Download PDF"}
+                        </Button>
+                        <Button asChild className="w-full rounded-full">
+                          <a href={invoice.payment_link} target="_blank" rel="noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                            Pay invoice
+                          </a>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                />
+              ) : (
+                <div className="rounded-3xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-muted-foreground">
+                  No invoices match the selected filter.
+                </div>
+              )}
 
               <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-slate-600">
                   Page {invoicesQuery.data?.page ?? page} of {Math.max(invoicesQuery.data?.pages ?? 1, 1)}
                 </p>
-                <div className="flex gap-2">
-                  <Button variant="outline" className="rounded-full" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button variant="outline" className="w-full rounded-full sm:w-auto" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
                     Previous
                   </Button>
                   <Button
                     variant="outline"
-                    className="rounded-full"
+                    className="w-full rounded-full sm:w-auto"
                     disabled={!invoicesQuery.data || page >= Math.max(invoicesQuery.data.pages, 1)}
                     onClick={() => setPage((current) => current + 1)}
                   >
@@ -312,12 +373,12 @@ export default function InvoicesList() {
                     {invoiceDetailQuery.data.payments.length ? (
                       invoiceDetailQuery.data.payments.map((payment) => (
                         <div key={payment.id} className="rounded-3xl border border-slate-200 p-4 text-sm">
-                          <div className="flex items-center justify-between gap-4">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                             <div>
                               <p className="font-medium">{payment.payment_number}</p>
                               <p className="text-muted-foreground">{formatDate(payment.payment_date)}</p>
                             </div>
-                            <div className="text-right">
+                            <div className="sm:text-right">
                               <p className="font-medium">{formatCurrency(payment.amount)}</p>
                               <p className="text-muted-foreground">{formatStatusLabel(payment.payment_method)}</p>
                             </div>
@@ -333,12 +394,12 @@ export default function InvoicesList() {
                 </Card>
               </div>
 
-              <div className="flex flex-wrap gap-3">
-                <Button className="rounded-full" onClick={() => void handleDownload(invoiceDetailQuery.data.id, invoiceDetailQuery.data.invoice_number)}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <Button className="w-full rounded-full sm:w-auto" onClick={() => void handleDownload(invoiceDetailQuery.data.id, invoiceDetailQuery.data.invoice_number)}>
                   <ReceiptText className="h-4 w-4" />
                   Download PDF
                 </Button>
-                <Button asChild variant="outline" className="rounded-full">
+                <Button asChild variant="outline" className="w-full rounded-full sm:w-auto">
                   <a href={invoiceDetailQuery.data.payment_link} target="_blank" rel="noreferrer">
                     <ExternalLink className="h-4 w-4" />
                     Open Payment Link

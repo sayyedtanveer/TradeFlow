@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react"
-import { Link } from "react-router-dom"
 import { REALTIME_EVENT_NAME } from "@/components/notifications/RealtimeNotificationsBridge"
-import { supplyChainApi, type SupplierPayment } from "@/services/supply-chain.service"
+import ResponsiveDataList from "@/components/shared/ResponsiveDataList"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Button } from "@/components/ui/button"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
+import {
+  SupplierPortalEmptyState,
+  SupplierPortalHeader,
+  SupplierPortalTabs,
+} from "@/modules/procurement/components/SupplierPortalChrome"
+import { supplyChainApi, type SupplierPayment } from "@/services/supply-chain.service"
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(value)
@@ -38,49 +41,93 @@ export default function SupplierPortalPaymentsPage() {
   }, [])
 
   return (
-    <div className="max-w-5xl space-y-6">
-      <Button variant="ghost" size="sm" asChild>
-        <Link to="/supplier-portal">{"<- Portal"}</Link>
-      </Button>
-      <div>
-        <h1 className="text-2xl font-semibold">Supplier payments</h1>
-        <p className="text-sm text-muted-foreground">View buyer payments against submitted supplier invoices.</p>
+    <div className="mx-auto max-w-7xl space-y-6 pb-8">
+      <SupplierPortalHeader
+        eyebrow="Supplier workspace"
+        title="Supplier payments"
+        description="Keep a clear record of buyer payments, references, and settlement activity against submitted invoices."
+        backHref="/supplier-portal"
+        backLabel="Portal"
+      />
+
+      <div className="erp-portal-section space-y-4">
+        <SupplierPortalTabs counts={{ payments: rows.length }} />
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
       </div>
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {!error && rows.length === 0 ? (
-        <Alert>
-          <AlertDescription>No payments recorded yet.</AlertDescription>
-        </Alert>
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Payment</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Method</TableHead>
-              <TableHead>Reference</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((payment) => (
-              <TableRow key={payment.id}>
-                <TableCell className="font-mono">{payment.payment_number}</TableCell>
-                <TableCell>{payment.payment_date ?? "-"}</TableCell>
-                <TableCell>{payment.payment_method ?? "-"}</TableCell>
-                <TableCell>{payment.reference_number ?? "-"}</TableCell>
-                <TableCell className="text-right">{formatCurrency(payment.amount)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+      <section className="erp-portal-section space-y-4">
+        <div className="space-y-1">
+          <h2 className="text-xl font-semibold text-slate-950">Payment history</h2>
+          <p className="text-sm text-slate-600">Review payment dates, settlement references, and remittance methods from the buyer.</p>
+        </div>
+        <ResponsiveDataList
+          data={rows}
+          getRowKey={(payment) => payment.id}
+          emptyState={
+            <SupplierPortalEmptyState
+              title="No payments recorded yet"
+              description="Payments will appear here once the buyer settles a submitted supplier invoice."
+              actionHref="/supplier-portal/invoices"
+              actionLabel="View invoices"
+            />
+          }
+          columns={[
+            {
+              key: "payment",
+              header: "Payment",
+              cell: (payment) => <span className="font-mono text-sm font-semibold text-slate-900">{payment.payment_number}</span>,
+            },
+            {
+              key: "date",
+              header: "Date",
+              cell: (payment) => payment.payment_date ?? "-",
+            },
+            {
+              key: "method",
+              header: "Method",
+              cell: (payment) => payment.payment_method ?? "-",
+            },
+            {
+              key: "reference",
+              header: "Reference",
+              cell: (payment) => payment.reference_number ?? "-",
+            },
+            {
+              key: "amount",
+              header: "Amount",
+              headerClassName: "text-right",
+              className: "text-right",
+              cell: (payment) => <span className="font-semibold text-slate-900">{formatCurrency(payment.amount)}</span>,
+            },
+          ]}
+          renderMobileCard={(payment) => (
+            <article className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="space-y-1">
+                <p className="font-mono text-sm font-semibold text-slate-900">{payment.payment_number}</p>
+                <p className="text-sm text-slate-500">{payment.payment_date ?? "-"}</p>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-slate-500">Method</p>
+                  <p className="font-semibold text-slate-900">{payment.payment_method ?? "-"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Reference</p>
+                  <p className="font-semibold text-slate-900">{payment.reference_number ?? "-"}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-slate-500">Amount</p>
+                  <p className="font-semibold text-slate-900">{formatCurrency(payment.amount)}</p>
+                </div>
+              </div>
+            </article>
+          )}
+        />
+      </section>
     </div>
   )
 }

@@ -88,26 +88,34 @@ export default function ClientLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#fffef9_0%,#f5f8ff_100%)] text-slate-900">
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900">
       <div className="mx-auto flex min-h-screen max-w-[1600px]">
+        {isSidebarOpen && (
+          <button
+            type="button"
+            aria-label="Close navigation"
+            className="fixed inset-0 z-30 bg-slate-950/45 backdrop-blur-[1px] md:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-40 w-72 border-r border-slate-200 bg-white/90 p-6 shadow-xl backdrop-blur md:static md:translate-x-0",
+            "erp-sidebar-shell fixed inset-y-0 left-0 z-40 flex w-[86vw] max-w-[320px] flex-col border-r border-slate-800/80 p-5 text-slate-100 shadow-2xl md:static md:w-72 md:max-w-none md:translate-x-0 md:p-6",
             isSidebarOpen ? "translate-x-0" : "-translate-x-full",
             "transition-transform duration-300"
           )}
         >
           <div className="mb-8 flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.25em] text-slate-500">MedTrack</p>
-              <h1 className="text-xl font-semibold">Client Portal</h1>
+              <p className="text-xs uppercase tracking-[0.25em] text-blue-300/80">MedTrack</p>
+              <h1 className="text-xl font-semibold text-white">Client Portal</h1>
             </div>
-            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setIsSidebarOpen(false)}>
+            <Button variant="ghost" size="icon" className="md:hidden text-slate-300 hover:bg-slate-800 hover:text-white" onClick={() => setIsSidebarOpen(false)}>
               <X className="h-4 w-4" />
             </Button>
           </div>
 
-          <nav className="space-y-2">
+          <nav className="erp-dark-scrollbar flex-1 space-y-2 overflow-y-auto pr-1">
             {navItems.map((item) => (
               <NavLink
                 key={item.to}
@@ -116,7 +124,7 @@ export default function ClientLayout() {
                 className={({ isActive }) =>
                   cn(
                     "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-colors",
-                    isActive ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    isActive ? "bg-slate-800 text-white" : "text-slate-400 hover:bg-slate-900 hover:text-white"
                   )
                 }
                 onClick={() => setIsSidebarOpen(false)}
@@ -127,25 +135,29 @@ export default function ClientLayout() {
             ))}
           </nav>
 
-          <div className="mt-10 rounded-3xl bg-slate-950 p-5 text-white">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Signed In</p>
+          <div className="mt-6 rounded-3xl border border-slate-800/80 bg-slate-900/72 p-5 text-white backdrop-blur-sm">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Signed In</p>
             <p className="mt-2 text-lg font-semibold">{user?.first_name} {user?.last_name}</p>
             <p className="text-sm text-slate-300">{user?.email}</p>
+            <Button variant="secondary" className="mt-5 w-full rounded-full md:hidden" onClick={() => void handleLogout()}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Log Out
+            </Button>
           </div>
         </aside>
 
         <div className="flex min-h-screen flex-1 flex-col">
-          <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/85 px-4 py-4 backdrop-blur md:px-8">
-            <div className="flex items-center gap-3">
+          <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 px-3 py-3 backdrop-blur sm:px-4 md:px-8 md:py-4">
+            <div className="flex flex-wrap items-center gap-3">
               <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setIsSidebarOpen(true)}>
                 <Menu className="h-5 w-5" />
               </Button>
               <div className="min-w-0 flex-1">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{topBarTitle}</p>
-                <h2 className="truncate text-lg font-semibold">Self-service order and invoice tracking</h2>
+                <h2 className="truncate text-base font-semibold sm:text-lg">Self-service order and invoice tracking</h2>
               </div>
 
-              <form onSubmit={handleSearchSubmit} className="hidden w-full max-w-sm md:block">
+              <form onSubmit={handleSearchSubmit} className="hidden w-full max-w-sm lg:block">
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
@@ -156,7 +168,7 @@ export default function ClientLayout() {
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="relative rounded-full border border-slate-200">
+                  <Button variant="outline" size="icon" className="relative rounded-full border-slate-200 bg-white">
                     <Bell className="h-4 w-4" />
                     {unreadCount > 0 && (
                       <Badge className="absolute -right-1 -top-1 h-5 min-w-5 rounded-full px-1 text-[10px]">{unreadCount}</Badge>
@@ -186,7 +198,7 @@ export default function ClientLayout() {
             </div>
           </header>
 
-          <main className="flex-1 px-4 py-6 pb-24 md:px-8 md:pb-8">
+          <main className="flex-1 px-3 py-5 pb-24 sm:px-4 sm:py-6 md:px-8 md:pb-8">
             <Outlet />
           </main>
 

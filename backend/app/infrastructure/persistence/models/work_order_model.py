@@ -51,6 +51,7 @@ class WorkOrderModel(Base):
         UUID(as_uuid=True), ForeignKey("boms.id", ondelete="RESTRICT"), nullable=False
     )
     sales_order_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    sales_order_line_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     # Quantities
     planned_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False)

@@ -365,6 +365,7 @@ class ConfirmSalesOrderCommandHandler:
                     product_type=line.product_type,
                     uom_id=line.uom_id,
                     quantity=line.quantity,
+                    sales_order_id=order.id,
                     sales_order_line_id=line.id,
                     delivery_date=order.delivery_date,
                 )

@@ -88,9 +88,9 @@ export default function ClientNewOrder() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <p className="text-xs uppercase tracking-[0.25em] text-slate-500">New Order</p>
-        <h1 className="mt-2 text-3xl font-semibold text-slate-900">Submit a fresh order for approval.</h1>
+        <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">Submit a fresh order for approval.</h1>
         <p className="mt-3 max-w-2xl text-sm text-slate-600">
           Add products, quantities, and an optional delivery date. Pricing is resolved from the active sales price list when unit price is left blank.
         </p>
@@ -138,8 +138,8 @@ export default function ClientNewOrder() {
 
           <div className="space-y-4">
             {lines.map((line, index) => (
-              <div key={index} className="grid gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-6">
-                <div className="md:col-span-3">
+              <div key={index} className="grid gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-6">
+                <div className="sm:col-span-2 lg:col-span-3">
                   <label className="mb-1 block text-xs font-medium uppercase tracking-[0.16em] text-slate-500">Product</label>
                   <Select value={line.catalog_key} onValueChange={(value) => selectProduct(index, value)} disabled={catalogQuery.isLoading || catalog.length === 0}>
                     <SelectTrigger>
@@ -168,7 +168,7 @@ export default function ClientNewOrder() {
                   <label className="mb-1 block text-xs font-medium uppercase tracking-[0.16em] text-slate-500">Qty</label>
                   <Input type="number" min="1" value={line.quantity} onChange={(event) => updateLine(index, { quantity: Number(event.target.value) })} />
                 </div>
-                <div className="flex items-end gap-2">
+                <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-1">
                   <div className="flex-1">
                     <label className="mb-1 block text-xs font-medium uppercase tracking-[0.16em] text-slate-500">Price</label>
                     <Input
@@ -186,11 +186,11 @@ export default function ClientNewOrder() {
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-            <Button type="button" variant="outline" className="rounded-full" onClick={() => setLines((current) => [...current, emptyLine()])}>
+            <Button type="button" variant="outline" className="w-full rounded-full sm:w-auto" onClick={() => setLines((current) => [...current, emptyLine()])}>
               <Plus className="mr-2 h-4 w-4" />
               Add Line
             </Button>
-            <Button className="rounded-full" disabled={!canSubmit || createMutation.isPending} onClick={() => createMutation.mutate()}>
+            <Button className="w-full rounded-full sm:w-auto" disabled={!canSubmit || createMutation.isPending} onClick={() => createMutation.mutate()}>
               Submit For Approval
             </Button>
           </div>

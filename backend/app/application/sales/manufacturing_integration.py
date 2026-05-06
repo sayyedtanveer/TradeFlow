@@ -49,6 +49,7 @@ class SalesManufacturingIntegrationService:
         quantity: Decimal,
         uom_id: UUID,
         due_date,
+        sales_order_id: UUID,
         sales_order_line_id: UUID,
     ) -> Optional[UUID]:
         """
@@ -56,21 +57,11 @@ class SalesManufacturingIntegrationService:
         Assumes product_id is an item_variant with a default BOM.
         """
         try:
-            # We need the default BOM for this product_id.
-            # WorkOrderHandler's handle_create accepts a CreateWorkOrderCommand 
-            # which expects bom_id. We need to find the default BOM first.
-            session = self.wo_handler._session
-            # We must import BOM models here to avoid circular imports at top level
-            from backend.app.infrastructure.persistence.models.bom_model import BOMModel
-
-            stmt = select(BOMModel).where(
-                BOMModel.tenant_id == tenant_id,
-                BOMModel.item_variant_id == product_id,
-                BOMModel.is_active.is_(True)
-            ).order_by(BOMModel.created_at.desc()).limit(1)
-            
-            result = await session.execute(stmt)
-            bom = result.scalar_one_or_none()
+            bom, work_order_product_id = await self._resolve_active_bom(
+                tenant_id=tenant_id,
+                product_id=product_id,
+                product_type=product_type,
+            )
 
             if not bom:
                 logger.warning(f"No active BOM found for product {product_id}. Cannot auto-create Work Order.")
@@ -82,13 +73,14 @@ class SalesManufacturingIntegrationService:
 
             cmd = CreateWorkOrderCommand(
                 tenant_id=tenant_id,
-                product_id=product_id,
+                product_id=work_order_product_id,
                 bom_id=bom.id,
                 planned_quantity=quantity,
                 start_date=start_date,
                 due_date=due_date,
                 priority="HIGH",  # Shortages are high priority
-                sales_order_id=sales_order_line_id, # Links to SO line in the current schema
+                sales_order_id=sales_order_id,
+                sales_order_line_id=sales_order_line_id,
                 created_by=actor_id,
                 notes=f"Auto-generated for Sales shortage."
             )
@@ -131,6 +123,115 @@ class SalesManufacturingIntegrationService:
         except Exception as e:
             logger.error(f"Auto Work Order creation failed for product {product_id}: {str(e)}")
             return None
+
+    async def _resolve_active_bom(
+        self,
+        *,
+        tenant_id: UUID,
+        product_id: UUID,
+        product_type: str,
+    ):
+        """Resolve the active BOM for a sales product using current schema first."""
+        session = self.wo_handler._session
+        from backend.app.infrastructure.persistence.models.bom_model import BOMModel
+        from backend.app.infrastructure.persistence.models.item_variant_model import ItemVariantModel
+
+        variant_id = await self._resolve_variant_id_for_product(
+            tenant_id=tenant_id,
+            product_id=product_id,
+            product_type=product_type,
+        )
+        if variant_id is None:
+            return None, product_id
+
+        stmt = (
+            select(BOMModel)
+            .where(
+                BOMModel.tenant_id == tenant_id,
+                BOMModel.variant_id == variant_id,
+                BOMModel.is_active.is_(True),
+                BOMModel.is_deleted.is_(False),
+            )
+            .order_by(BOMModel.updated_at.desc(), BOMModel.created_at.desc())
+            .limit(1)
+        )
+        result = await session.execute(stmt)
+        bom = result.scalar_one_or_none()
+        if bom is not None:
+            return bom, variant_id
+
+        variant = (
+            await session.execute(
+                select(ItemVariantModel).where(
+                    ItemVariantModel.id == variant_id,
+                    ItemVariantModel.tenant_id == tenant_id,
+                    ItemVariantModel.is_deleted.is_(False),
+                )
+            )
+        ).scalar_one_or_none()
+        if variant is None or variant.template_id is None:
+            return None, variant_id
+
+        template_bom_result = await session.execute(
+            select(BOMModel)
+            .where(
+                BOMModel.tenant_id == tenant_id,
+                BOMModel.template_id == variant.template_id,
+                BOMModel.is_active.is_(True),
+                BOMModel.is_deleted.is_(False),
+            )
+            .order_by(BOMModel.updated_at.desc(), BOMModel.created_at.desc())
+            .limit(1)
+        )
+        return template_bom_result.scalar_one_or_none(), variant_id
+
+    async def _resolve_variant_id_for_product(
+        self,
+        *,
+        tenant_id: UUID,
+        product_id: UUID,
+        product_type: str,
+    ) -> Optional[UUID]:
+        """Resolve the variant that should drive BOM/work-order execution."""
+        session = self.wo_handler._session
+        from backend.app.infrastructure.persistence.models.item_variant_model import ItemVariantModel
+        from backend.app.infrastructure.persistence.models.material_model import MaterialModel
+
+        if str(product_type).lower() == "variant":
+            variant = (
+                await session.execute(
+                    select(ItemVariantModel.id).where(
+                        ItemVariantModel.id == product_id,
+                        ItemVariantModel.tenant_id == tenant_id,
+                        ItemVariantModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            if variant is not None:
+                return variant
+
+        material = (
+            await session.execute(
+                select(MaterialModel).where(
+                    MaterialModel.id == product_id,
+                    MaterialModel.tenant_id == tenant_id,
+                    MaterialModel.is_deleted.is_(False),
+                )
+            )
+        ).scalar_one_or_none()
+        if material is None:
+            return None
+
+        variant = (
+            await session.execute(
+                select(ItemVariantModel.id).where(
+                    ItemVariantModel.tenant_id == tenant_id,
+                    ItemVariantModel.code == material.code,
+                    ItemVariantModel.is_deleted.is_(False),
+                )
+            )
+        ).scalar_one_or_none()
+        return variant
 
     async def _resolve_actor_id(self, tenant_id: UUID) -> UUID:
         if self.created_by:
@@ -189,8 +290,6 @@ class SalesManufacturingIntegrationService:
             return
 
         po_number_service = PONumberService(session)
-        supplier = await self._choose_supplier(tenant_id)
-
         for requirement, material in material_rows:
             required_qty = Decimal(str(requirement.required_quantity))
             available_qty = max(
@@ -238,6 +337,7 @@ class SalesManufacturingIntegrationService:
             )
             session.add(material_request)
 
+            supplier = await self._choose_supplier(tenant_id, material.id)
             if supplier is None:
                 logger.warning(
                     "WO %s has raw-material shortage for %s but no active supplier exists.",
@@ -300,8 +400,32 @@ class SalesManufacturingIntegrationService:
         )
         return Decimal(str(result.scalar_one() or 0))
 
-    async def _choose_supplier(self, tenant_id: UUID):
-        from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel
+    async def _choose_supplier(self, tenant_id: UUID, material_id: UUID):
+        from backend.app.infrastructure.persistence.models.supplier_model import (
+            SupplierModel,
+            SupplierPriceHistoryModel,
+        )
+
+        preferred = (
+            await self.wo_handler._session.execute(
+                select(SupplierModel)
+                .join(SupplierPriceHistoryModel, SupplierPriceHistoryModel.supplier_id == SupplierModel.id)
+                .where(
+                    SupplierModel.tenant_id == tenant_id,
+                    SupplierModel.is_active.is_(True),
+                    SupplierModel.is_deleted.is_(False),
+                    SupplierPriceHistoryModel.tenant_id == tenant_id,
+                    SupplierPriceHistoryModel.material_id == material_id,
+                )
+                .order_by(
+                    SupplierPriceHistoryModel.effective_from.desc(),
+                    SupplierPriceHistoryModel.created_at.desc(),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if preferred is not None:
+            return preferred
 
         return (
             await self.wo_handler._session.execute(

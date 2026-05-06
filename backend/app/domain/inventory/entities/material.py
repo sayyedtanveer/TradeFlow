@@ -76,6 +76,8 @@ class Material(BaseEntity):
             return value
 
         normalized = _normalize_key(str(value or "")).replace(" ", "_")
+        if normalized in {"raw", "raw_material", "raw-material", "rm"}:
+            return MaterialType.RAW
         if normalized in {"finished", "finished_good", "finished_goods", "fg"}:
             return MaterialType.FINISHED
         return MaterialType.RAW

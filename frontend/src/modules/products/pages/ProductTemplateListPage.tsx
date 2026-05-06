@@ -8,18 +8,18 @@ import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import ResponsiveDataList from "@/components/shared/ResponsiveDataList"
 
 export default function ProductTemplateListPage() {
   const navigate = useNavigate()
   const { hasRole } = usePermissions()
   const { toast } = useToast()
   const canEdit = hasRole(["ADMIN", "MANAGER"])
-  
+
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
   const [page, setPage] = useState(1)
 
-  // simple debounce
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedQuery(query)
@@ -34,7 +34,6 @@ export default function ProductTemplateListPage() {
     staleTime: 10_000,
   })
 
-  // Show error toast if query fails
   useEffect(() => {
     if (isError && error && !isLoading) {
       toast({
@@ -47,7 +46,7 @@ export default function ProductTemplateListPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Finished Goods</h1>
           <p className="text-muted-foreground">
@@ -56,7 +55,7 @@ export default function ProductTemplateListPage() {
         </div>
         {canEdit && (
           <Button onClick={() => navigate("/products/new")}>
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="mr-2 h-4 w-4" />
             New Template
           </Button>
         )}
@@ -70,89 +69,108 @@ export default function ProductTemplateListPage() {
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search by code or name..." 
-            className="pl-8" 
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by code or name..."
+            className="pl-8"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
       </div>
 
-      <div className="rounded-md border bg-card">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-muted/50">
-            <tr>
-              <th className="h-10 px-4 text-left font-medium text-muted-foreground">Code</th>
-              <th className="h-10 px-4 text-left font-medium text-muted-foreground">Name</th>
-              <th className="h-10 px-4 text-left font-medium text-muted-foreground">Category</th>
-              <th className="h-10 px-4 text-left font-medium text-muted-foreground">Status</th>
-              <th className="h-10 px-4 text-right font-medium text-muted-foreground">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {isError ? (
-              <tr>
-                <td colSpan={5} className="py-10 px-4">
-                  <div className="flex items-start gap-3 max-w-md bg-destructive/10 border border-destructive/50 rounded-md p-4 mx-auto">
-                    <AlertCircle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
-                    <div className="flex-1">
-                      <p className="font-medium text-destructive">Failed to load templates</p>
-                      <p className="text-sm text-destructive/80 mt-1">
-                        {error instanceof Error ? error.message : "An error occurred while loading product templates."}
-                      </p>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => window.location.reload()}
-                        className="mt-3"
-                      >
-                        Retry
-                      </Button>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            ) : isLoading ? (
-              <tr>
-                <td colSpan={5} className="py-10 text-center text-muted-foreground">
-                  Loading templates...
-                </td>
-              </tr>
-            ) : data?.items.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="py-12 text-center text-muted-foreground">
-                  <PackageSearch className="w-8 h-8 mx-auto mb-3 opacity-50" />
-                  <p>No product templates found.</p>
-                </td>
-              </tr>
-            ) : (
-              data?.items.map((tpl) => (
-                <tr key={tpl.id} className="hover:bg-muted/30">
-                  <td className="px-4 py-3 font-mono">{tpl.code}</td>
-                  <td className="px-4 py-3 font-medium">{tpl.name}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{tpl.category_id ? "—" : "—"}</td>
-                  <td className="px-4 py-3">
-                    <Badge variant={tpl.is_active ? "outline" : "secondary"}>
-                      {tpl.is_active ? "Active" : "Inactive"}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Button variant="ghost" size="sm" onClick={() => navigate(`/products/${tpl.id}/edit`)}>
-                      {canEdit ? "Edit" : "View"}
-                    </Button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {isError ? (
+        <div className="rounded-3xl border border-destructive/40 bg-destructive/5 p-4">
+          <div className="flex max-w-md items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-destructive" />
+            <div className="flex-1">
+              <p className="font-medium text-destructive">Failed to load templates</p>
+              <p className="mt-1 text-sm text-destructive/80">
+                {error instanceof Error ? error.message : "An error occurred while loading product templates."}
+              </p>
+              <Button variant="outline" size="sm" onClick={() => window.location.reload()} className="mt-3">
+                Retry
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : isLoading ? (
+        <div className="rounded-3xl border bg-card py-10 text-center text-muted-foreground">
+          Loading templates...
+        </div>
+      ) : data?.items.length === 0 ? (
+        <div className="rounded-3xl border bg-card py-12 text-center text-muted-foreground">
+          <PackageSearch className="mx-auto mb-3 h-8 w-8 opacity-50" />
+          <p>No product templates found.</p>
+        </div>
+      ) : (
+        <ResponsiveDataList
+          data={data?.items ?? []}
+          getRowKey={(tpl) => tpl.id}
+          columns={[
+            { key: "code", header: "Code", cell: (tpl) => <span className="font-mono">{tpl.code}</span> },
+            { key: "name", header: "Name", cell: (tpl) => <span className="font-medium">{tpl.name}</span> },
+            { key: "category", header: "Category", cell: () => <span className="text-muted-foreground">—</span> },
+            {
+              key: "status",
+              header: "Status",
+              cell: (tpl) => <Badge variant={tpl.is_active ? "outline" : "secondary"}>{tpl.is_active ? "Active" : "Inactive"}</Badge>,
+            },
+            {
+              key: "actions",
+              header: "Actions",
+              headerClassName: "text-right",
+              className: "text-right",
+              cell: (tpl) => (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    navigate(`/products/${tpl.id}/edit`)
+                  }}
+                >
+                  {canEdit ? "Edit" : "View"}
+                </Button>
+              ),
+            },
+          ]}
+          onRowClick={(tpl) => navigate(`/products/${tpl.id}/edit`)}
+          renderMobileCard={(tpl) => (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:shadow-md" onClick={() => navigate(`/products/${tpl.id}/edit`)}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-mono text-sm text-slate-500">{tpl.code}</p>
+                  <p className="mt-1 text-base font-semibold text-slate-900">{tpl.name}</p>
+                </div>
+                <Badge variant={tpl.is_active ? "outline" : "secondary"}>
+                  {tpl.is_active ? "Active" : "Inactive"}
+                </Badge>
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-3 text-sm">
+                <span className="text-slate-500">Category</span>
+                <span className="text-slate-700">—</span>
+              </div>
+              <div className="mt-4">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    navigate(`/products/${tpl.id}/edit`)
+                  }}
+                >
+                  {canEdit ? "Edit template" : "View template"}
+                </Button>
+              </div>
+            </div>
+          )}
+        />
+      )}
 
       {data && data.total > data.page_size && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted-foreground">
             Showing {(page - 1) * data.page_size + 1}–{Math.min(page * data.page_size, data.total)} of {data.total}
           </p>

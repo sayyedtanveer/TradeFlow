@@ -7,9 +7,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import ResponsiveDataList from "@/components/shared/ResponsiveDataList"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { clientOrderStatusClasses, clientService } from "../services/client.service"
 import { formatCurrency, formatDate, formatStatusLabel } from "../utils/formatters"
 
@@ -54,21 +54,21 @@ export default function OrdersList() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.25em] text-slate-500">My Orders</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-900">Track every order from draft to delivery.</h1>
+            <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">Track every order from draft to delivery.</h1>
             <p className="mt-3 max-w-2xl text-sm text-slate-600">
               Search by order number, filter by lifecycle stage, and jump straight into reorders when you need a fast repeat.
             </p>
           </div>
-          <div className="rounded-3xl bg-slate-950 px-5 py-4 text-white">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Order Snapshot</p>
+          <div className="erp-kpi-gradient w-full rounded-3xl px-5 py-4 text-white sm:max-w-xs">
+            <p className="text-xs uppercase tracking-[0.2em] text-white/75">Order Snapshot</p>
             <p className="mt-2 text-2xl font-semibold">{ordersQuery.data?.total ?? 0}</p>
-            <p className="text-sm text-slate-300">orders visible in this portal</p>
+            <p className="text-sm text-white/75">orders visible in this portal</p>
           </div>
-          <Button asChild className="rounded-full">
+          <Button asChild className="w-full rounded-full sm:w-auto">
             <Link to="/client/orders/new">
               <Plus className="mr-2 h-4 w-4" />
               New Order
@@ -84,9 +84,9 @@ export default function OrdersList() {
               <CardTitle>Order History</CardTitle>
               <CardDescription>Status colors match the client portal timeline and delivery stages.</CardDescription>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <form
-                className="flex gap-2"
+                className="flex flex-col gap-2 sm:flex-row"
                 onSubmit={(event) => {
                   event.preventDefault()
                   updateParams({ search: searchInput || null, page: "1" })
@@ -96,9 +96,9 @@ export default function OrdersList() {
                   value={searchInput}
                   onChange={(event) => setSearchInput(event.target.value)}
                   placeholder="Search order number"
-                  className="min-w-[220px]"
+                  className="w-full min-w-0 sm:min-w-[220px]"
                 />
-                <Button type="submit" className="rounded-full">
+                <Button type="submit" className="w-full rounded-full sm:w-auto">
                   <Search className="h-4 w-4" />
                   Search
                 </Button>
@@ -108,7 +108,7 @@ export default function OrdersList() {
                 value={selectedStatus}
                 onValueChange={(value) => updateParams({ status: value === "ALL" ? null : value, page: "1" })}
               >
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-full sm:w-[200px]">
                   <SelectValue placeholder="All statuses" />
                 </SelectTrigger>
                 <SelectContent>
@@ -141,69 +141,111 @@ export default function OrdersList() {
 
           {!ordersQuery.isLoading && !ordersQuery.isError && (
             <>
-              <div className="overflow-hidden rounded-3xl border border-slate-200">
-                <Table>
-                  <TableHeader className="bg-slate-50">
-                    <TableRow>
-                      <TableHead>Order</TableHead>
-                      <TableHead>Order Date</TableHead>
-                      <TableHead>Delivery</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Payment</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {ordersQuery.data?.items?.length ? (
-                      ordersQuery.data.items.map((order) => (
-                        <TableRow key={order.id}>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium text-slate-900">{order.order_number}</p>
-                              <p className="text-xs text-muted-foreground">{order.line_count} line items</p>
-                            </div>
-                          </TableCell>
-                          <TableCell>{formatDate(order.order_date)}</TableCell>
-                          <TableCell>{formatDate(order.delivery_date)}</TableCell>
-                          <TableCell>
-                            <Badge className={clientOrderStatusClasses[order.status] ?? "bg-slate-100 text-slate-700"}>
-                              {formatStatusLabel(order.status)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{formatStatusLabel(order.payment_status)}</TableCell>
-                          <TableCell className="text-right font-medium">{formatCurrency(order.grand_total)}</TableCell>
-                          <TableCell>
-                            <div className="flex justify-end gap-2">
-                              <Button asChild variant="outline" className="rounded-full">
-                                <Link to={`/client/orders/${order.id}`}>View</Link>
-                              </Button>
-                              <Button asChild className="rounded-full">
-                                <Link to={`/client/reorder?orderId=${order.id}`}>Reorder</Link>
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
-                          No orders matched your current filters.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+              {ordersQuery.data?.items?.length ? (
+                <ResponsiveDataList
+                  data={ordersQuery.data.items}
+                  getRowKey={(order) => order.id}
+                  columns={[
+                    {
+                      key: "order",
+                      header: "Order",
+                      cell: (order) => (
+                        <div>
+                          <p className="font-medium text-slate-900">{order.order_number}</p>
+                          <p className="text-xs text-muted-foreground">{order.line_count} line items</p>
+                        </div>
+                      ),
+                    },
+                    { key: "order_date", header: "Order Date", cell: (order) => formatDate(order.order_date) },
+                    { key: "delivery_date", header: "Delivery", cell: (order) => formatDate(order.delivery_date) },
+                    {
+                      key: "status",
+                      header: "Status",
+                      cell: (order) => (
+                        <Badge className={clientOrderStatusClasses[order.status] ?? "bg-slate-100 text-slate-700"}>
+                          {formatStatusLabel(order.status)}
+                        </Badge>
+                      ),
+                    },
+                    { key: "payment", header: "Payment", cell: (order) => formatStatusLabel(order.payment_status) },
+                    {
+                      key: "total",
+                      header: "Total",
+                      headerClassName: "text-right",
+                      className: "text-right font-medium",
+                      cell: (order) => formatCurrency(order.grand_total),
+                    },
+                    {
+                      key: "actions",
+                      header: "Actions",
+                      headerClassName: "text-right",
+                      className: "text-right",
+                      cell: (order) => (
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Button asChild variant="outline" className="rounded-full">
+                            <Link to={`/client/orders/${order.id}`}>View</Link>
+                          </Button>
+                          <Button asChild className="rounded-full">
+                            <Link to={`/client/reorder?orderId=${order.id}`}>Reorder</Link>
+                          </Button>
+                        </div>
+                      ),
+                    },
+                  ]}
+                  renderMobileCard={(order) => (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:shadow-md">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-base font-semibold text-slate-900">{order.order_number}</p>
+                          <p className="mt-1 text-xs text-slate-500">{order.line_count} line items</p>
+                        </div>
+                        <Badge className={clientOrderStatusClasses[order.status] ?? "bg-slate-100 text-slate-700"}>
+                          {formatStatusLabel(order.status)}
+                        </Badge>
+                      </div>
+                      <div className="mt-4 space-y-2 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-500">Order date</span>
+                          <span>{formatDate(order.order_date)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-500">Delivery</span>
+                          <span>{formatDate(order.delivery_date)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-500">Payment</span>
+                          <span>{formatStatusLabel(order.payment_status)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-slate-500">Total</span>
+                          <span className="font-semibold">{formatCurrency(order.grand_total)}</span>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex flex-col gap-2">
+                        <Button asChild variant="outline" className="w-full rounded-full">
+                          <Link to={`/client/orders/${order.id}`}>View</Link>
+                        </Button>
+                        <Button asChild className="w-full rounded-full">
+                          <Link to={`/client/reorder?orderId=${order.id}`}>Reorder</Link>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                />
+              ) : (
+                <div className="rounded-3xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-muted-foreground">
+                  No orders matched your current filters.
+                </div>
+              )}
 
               <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-slate-600">
                   Page {ordersQuery.data?.page ?? currentPage} of {Math.max(ordersQuery.data?.pages ?? 1, 1)}
                 </p>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <Button
                     variant="outline"
-                    className="rounded-full"
+                    className="w-full rounded-full sm:w-auto"
                     disabled={currentPage <= 1}
                     onClick={() => updateParams({ page: String(currentPage - 1) })}
                   >
@@ -211,7 +253,7 @@ export default function OrdersList() {
                   </Button>
                   <Button
                     variant="outline"
-                    className="rounded-full"
+                    className="w-full rounded-full sm:w-auto"
                     disabled={!ordersQuery.data || currentPage >= Math.max(ordersQuery.data.pages, 1)}
                     onClick={() => updateParams({ page: String(currentPage + 1) })}
                   >

@@ -23,15 +23,14 @@ from backend.app.application.manufacturing.commands.work_order_commands import (
 from backend.app.application.manufacturing.services.inventory_service import InventoryService
 from backend.app.application.manufacturing.services.wo_number_service import WONumberService
 from backend.app.domain.manufacturing.entities.work_order import WorkOrder, WorkOrderStatus, WorkOrderPriority
-from backend.app.domain.manufacturing.exceptions import BOMNotFoundError, MaterialNotIssuedError
+from backend.app.domain.manufacturing.exceptions import BOMNotFoundError
 from backend.app.domain.manufacturing.events.work_order_events import (
     WorkOrderReleased, WorkOrderStarted, WorkOrderCompleted, WorkOrderClosed,
 )
 from backend.app.infrastructure.persistence.models.work_order_model import (
     WorkOrderModel, WorkOrderMaterialModel, JobCardModel, ProductionRecordModel
 )
-from backend.app.infrastructure.persistence.models.bom_model import BOMModel, BOMLineModel
-from backend.app.infrastructure.persistence.models.bom_operation_model import BOMOperationModel
+from backend.app.infrastructure.persistence.models.bom_model import BOMModel
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +84,7 @@ class WorkOrderHandler:
             start_date=cmd.start_date,
             due_date=cmd.due_date,
             sales_order_id=cmd.sales_order_id,
+            sales_order_line_id=cmd.sales_order_line_id,
             notes=cmd.notes,
             created_by=cmd.created_by,
         )
@@ -114,6 +114,8 @@ class WorkOrderHandler:
                 )
                 self._session.add(jc)
 
+        # Keep the freshly snapshotted materials visible for same-transaction release planning.
+        await self._session.flush()
         return wo.id
 
     # ── Release ─────────────────────────────────────────────────────────────────
@@ -231,57 +233,59 @@ class WorkOrderHandler:
                 existing_request.required_quantity = float(shortage_qty)
                 existing_request.required_by = wo.due_date
 
-        supplier = (
-            await self._session.execute(
-                select(SupplierModel)
-                .where(
-                    SupplierModel.tenant_id == wo.tenant_id,
-                    SupplierModel.is_active.is_(True),
-                    SupplierModel.is_deleted.is_(False),
-                )
-                .order_by(SupplierModel.created_at.asc())
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if supplier is None:
-            logger.warning("WO %s has material shortage but no active supplier is available.", wo.id)
-            return
-
-        po_total = Decimal("0")
-        po_number = await PONumberService(self._session).generate(wo.tenant_id)
-        po = PurchaseOrderModel(
-            id=uuid.uuid4(),
-            tenant_id=wo.tenant_id,
-            po_number=po_number,
-            supplier_id=supplier.id,
-            order_date=date.today(),
-            expected_delivery=wo.due_date,
-            status="sent",
-            total_amount=0,
-            notes=f"Auto-created for WO {wo.id} raw-material shortage.",
-            created_by=wo.created_by,
-        )
-        self._session.add(po)
-        await self._session.flush()
-
+        supplier_groups: dict[
+            uuid.UUID,
+            tuple[SupplierModel, list[tuple[WorkOrderMaterialModel, MaterialModel, Decimal]]],
+        ] = {}
         for requirement, material, shortage_qty in shortage_lines:
-            unit_price = Decimal(str(material.current_cost or 0))
-            line_total = shortage_qty * unit_price
-            po_total += line_total
-            self._session.add(
-                PurchaseOrderLineModel(
-                    id=uuid.uuid4(),
-                    tenant_id=wo.tenant_id,
-                    purchase_order_id=po.id,
-                    material_id=material.id,
-                    quantity=float(shortage_qty),
-                    received_quantity=0,
-                    unit_price=float(unit_price),
-                    line_total=float(line_total),
+            supplier = await self._choose_supplier_for_material(wo.tenant_id, material.id)
+            if supplier is None:
+                logger.warning(
+                    "WO %s has material shortage for %s but no active supplier is available.",
+                    wo.id,
+                    material.id,
                 )
-            )
+                continue
 
-        po.total_amount = float(po_total)
+            _, grouped_lines = supplier_groups.setdefault(supplier.id, (supplier, []))
+            grouped_lines.append((requirement, material, shortage_qty))
+
+        for supplier, grouped_lines in supplier_groups.values():
+            po_total = Decimal("0")
+            po_number = await PONumberService(self._session).generate(wo.tenant_id)
+            po = PurchaseOrderModel(
+                id=uuid.uuid4(),
+                tenant_id=wo.tenant_id,
+                po_number=po_number,
+                supplier_id=supplier.id,
+                order_date=date.today(),
+                expected_delivery=wo.due_date,
+                status="sent",
+                total_amount=0,
+                notes=f"Auto-created for WO {wo.id} raw-material shortage.",
+                created_by=wo.created_by,
+            )
+            self._session.add(po)
+            await self._session.flush()
+
+            for _, material, shortage_qty in grouped_lines:
+                unit_price = Decimal(str(material.current_cost or 0))
+                line_total = shortage_qty * unit_price
+                po_total += line_total
+                self._session.add(
+                    PurchaseOrderLineModel(
+                        id=uuid.uuid4(),
+                        tenant_id=wo.tenant_id,
+                        purchase_order_id=po.id,
+                        material_id=material.id,
+                        quantity=float(shortage_qty),
+                        received_quantity=0,
+                        unit_price=float(unit_price),
+                        line_total=float(line_total),
+                    )
+                )
+
+            po.total_amount = float(po_total)
 
     async def _open_po_quantity(self, tenant_id: uuid.UUID, material_id: uuid.UUID) -> Decimal:
         from backend.app.infrastructure.persistence.models.purchase_order_model import (
@@ -306,6 +310,48 @@ class WorkOrderHandler:
             )
         )
         return Decimal(str(result.scalar_one() or 0))
+
+    async def _choose_supplier_for_material(self, tenant_id: uuid.UUID, material_id: uuid.UUID):
+        from backend.app.infrastructure.persistence.models.supplier_model import (
+            SupplierModel,
+            SupplierPriceHistoryModel,
+        )
+
+        preferred = (
+            await self._session.execute(
+                select(SupplierModel)
+                .join(SupplierPriceHistoryModel, SupplierPriceHistoryModel.supplier_id == SupplierModel.id)
+                .where(
+                    SupplierModel.tenant_id == tenant_id,
+                    SupplierModel.is_active.is_(True),
+                    SupplierModel.is_deleted.is_(False),
+                    SupplierPriceHistoryModel.tenant_id == tenant_id,
+                    SupplierPriceHistoryModel.material_id == material_id,
+                )
+                .order_by(
+                    SupplierPriceHistoryModel.effective_from.desc(),
+                    SupplierPriceHistoryModel.created_at.desc(),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if preferred is not None:
+            return preferred
+
+        from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel
+
+        return (
+            await self._session.execute(
+                select(SupplierModel)
+                .where(
+                    SupplierModel.tenant_id == tenant_id,
+                    SupplierModel.is_active.is_(True),
+                    SupplierModel.is_deleted.is_(False),
+                )
+                .order_by(SupplierModel.created_at.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
 
     # ── Start ───────────────────────────────────────────────────────────────────
 
@@ -410,14 +456,24 @@ class WorkOrderHandler:
             variant = variant_result.scalar_one_or_none()
 
             if variant is not None:
-                code_stmt = select(MaterialModel).where(
-                    MaterialModel.tenant_id == wo.tenant_id,
-                    MaterialModel.code == variant.code,
-                    MaterialModel.material_type == "finished",
-                    MaterialModel.is_deleted.is_(False),
-                ).limit(1)
-                code_result = await self._session.execute(code_stmt)
-                fg_material = code_result.scalar_one_or_none()
+                if getattr(variant, "material_id", None):
+                    mapped_stmt = select(MaterialModel).where(
+                        MaterialModel.id == variant.material_id,
+                        MaterialModel.tenant_id == wo.tenant_id,
+                        MaterialModel.is_deleted.is_(False),
+                    ).limit(1)
+                    mapped_result = await self._session.execute(mapped_stmt)
+                    fg_material = mapped_result.scalar_one_or_none()
+
+                if fg_material is None:
+                    code_stmt = select(MaterialModel).where(
+                        MaterialModel.tenant_id == wo.tenant_id,
+                        MaterialModel.code == variant.code,
+                        MaterialModel.material_type == "finished",
+                        MaterialModel.is_deleted.is_(False),
+                    ).limit(1)
+                    code_result = await self._session.execute(code_stmt)
+                    fg_material = code_result.scalar_one_or_none()
 
         if fg_material is None:
             # Fallback: no linked material found — skip inventory update but log warning.
@@ -520,7 +576,7 @@ class WorkOrderHandler:
         recorded_by: uuid.UUID,
     ) -> None:
         """Allocate newly produced finished goods back to the linked sales line."""
-        if not work_order.sales_order_id:
+        if not work_order.sales_order_line_id:
             return
 
         from backend.app.infrastructure.persistence.models.sales_models import (
@@ -530,7 +586,7 @@ class WorkOrderHandler:
 
         line_result = await self._session.execute(
             select(SalesOrderLineModel).where(
-                SalesOrderLineModel.id == work_order.sales_order_id,
+                SalesOrderLineModel.id == work_order.sales_order_line_id,
             )
         )
         line = line_result.scalar_one_or_none()
@@ -659,6 +715,7 @@ class WorkOrderHandler:
             status=WorkOrderStatus(model.status),
             priority=WorkOrderPriority(model.priority),
             sales_order_id=model.sales_order_id,
+            sales_order_line_id=model.sales_order_line_id,
             notes=model.notes,
             created_by=model.created_by,
         )

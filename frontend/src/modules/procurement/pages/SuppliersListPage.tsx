@@ -4,6 +4,7 @@ import { usersService } from "@/services/users.service"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import ResponsiveDataList from "@/components/shared/ResponsiveDataList"
 import {
   Dialog,
   DialogContent,
@@ -14,7 +15,6 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import type { User } from "@/types/auth.types"
@@ -506,66 +506,127 @@ export default function SuppliersListPage() {
         </Alert>
       )}
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Code</TableHead>
-            <TableHead>Name</TableHead>
-            <TableHead>Contact</TableHead>
-            <TableHead>Email</TableHead>
-            <TableHead>Phone</TableHead>
-            <TableHead>Payment terms</TableHead>
-            <TableHead>Portal access</TableHead>
-            <TableHead>Active</TableHead>
-            <TableHead />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {items.map((supplier) => {
-            const supplierUser = supplierUserBySupplierId.get(supplier.id)
-            const portalActionLoading = portalSavingSupplierId === supplier.id
-            return (
-              <TableRow key={supplier.id}>
-                <TableCell className="font-medium">{supplier.code}</TableCell>
-                <TableCell>{supplier.name}</TableCell>
-                <TableCell>{supplier.contact_person || "-"}</TableCell>
-                <TableCell>{supplier.email || "-"}</TableCell>
-                <TableCell>{supplier.phone || "-"}</TableCell>
-                <TableCell>{supplier.payment_terms || "-"}</TableCell>
-                <TableCell>
-                  {supplierUser ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => resetPortalPassword(supplier, supplierUser)}
-                      disabled={portalActionLoading}
-                    >
-                      <KeyRound className="mr-2 h-4 w-4" />
-                      {portalActionLoading ? "Generating..." : "Reset password"}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => createPortalLogin(supplier)}
-                      disabled={portalActionLoading || !supplier.email}
-                    >
-                      <KeyRound className="mr-2 h-4 w-4" />
-                      {portalActionLoading ? "Creating..." : "Create login"}
-                    </Button>
-                  )}
-                </TableCell>
-                <TableCell>{supplier.is_active ? "Yes" : "No"}</TableCell>
-                <TableCell className="text-right">
-                  <Button variant="ghost" size="icon" onClick={() => openEdit(supplier)}>
-                    <Pencil className="h-4 w-4" />
+      <ResponsiveDataList
+        data={items}
+        getRowKey={(supplier) => supplier.id}
+        columns={[
+          { key: "code", header: "Code", cell: (supplier) => <span className="font-medium">{supplier.code}</span> },
+          { key: "name", header: "Name", cell: (supplier) => supplier.name },
+          { key: "contact", header: "Contact", cell: (supplier) => supplier.contact_person || "-" },
+          { key: "email", header: "Email", cell: (supplier) => supplier.email || "-" },
+          { key: "phone", header: "Phone", cell: (supplier) => supplier.phone || "-" },
+          { key: "payment_terms", header: "Payment terms", cell: (supplier) => supplier.payment_terms || "-" },
+          {
+            key: "portal_access",
+            header: "Portal access",
+            cell: (supplier) => {
+              const supplierUser = supplierUserBySupplierId.get(supplier.id)
+              const portalActionLoading = portalSavingSupplierId === supplier.id
+              return supplierUser ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void resetPortalPassword(supplier, supplierUser)
+                  }}
+                  disabled={portalActionLoading}
+                >
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  {portalActionLoading ? "Generating..." : "Reset password"}
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void createPortalLogin(supplier)
+                  }}
+                  disabled={portalActionLoading || !supplier.email}
+                >
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  {portalActionLoading ? "Creating..." : "Create login"}
+                </Button>
+              )
+            },
+          },
+          { key: "active", header: "Active", cell: (supplier) => (supplier.is_active ? "Yes" : "No") },
+          {
+            key: "actions",
+            header: "",
+            headerClassName: "text-right",
+            className: "text-right",
+            cell: (supplier) => (
+              <Button variant="ghost" size="icon" onClick={(event) => { event.stopPropagation(); openEdit(supplier) }}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+            ),
+          },
+        ]}
+        renderMobileCard={(supplier) => {
+          const supplierUser = supplierUserBySupplierId.get(supplier.id)
+          const portalActionLoading = portalSavingSupplierId === supplier.id
+          return (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:shadow-md">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-base font-semibold text-slate-900">{supplier.name}</p>
+                  <p className="mt-1 text-xs font-mono text-slate-500">{supplier.code}</p>
+                </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                  {supplier.is_active ? "Active" : "Inactive"}
+                </span>
+              </div>
+              <div className="mt-4 space-y-2 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500">Contact</span>
+                  <span>{supplier.contact_person || "-"}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500">Email</span>
+                  <span className="text-right">{supplier.email || "-"}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500">Phone</span>
+                  <span>{supplier.phone || "-"}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500">Payment terms</span>
+                  <span>{supplier.payment_terms || "-"}</span>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-col gap-2">
+                {supplierUser ? (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => void resetPortalPassword(supplier, supplierUser)}
+                    disabled={portalActionLoading}
+                  >
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    {portalActionLoading ? "Generating..." : "Reset password"}
                   </Button>
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => void createPortalLogin(supplier)}
+                    disabled={portalActionLoading || !supplier.email}
+                  >
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    {portalActionLoading ? "Creating..." : "Create login"}
+                  </Button>
+                )}
+                <Button variant="outline" className="w-full" onClick={() => openEdit(supplier)}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit supplier
+                </Button>
+              </div>
+            </div>
+          )
+        }}
+      />
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">

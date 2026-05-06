@@ -7,7 +7,7 @@ export function TableSkeleton({ rows = 5 }: { rows?: number }) {
         <Skeleton className="h-10 w-64" />
         <Skeleton className="h-10 w-24" />
       </div>
-      <div className="rounded-md border p-6">
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
         <div className="space-y-4">
           {Array.from({ length: rows }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full" />
@@ -37,7 +37,7 @@ export function FormSkeleton({ fields = 4 }: { fields?: number }) {
 
 export function CardSkeleton() {
   return (
-    <div className="rounded-xl border bg-card text-card-foreground shadow space-y-4 p-6">
+    <div className="rounded-2xl border border-slate-200/80 bg-card text-card-foreground shadow-sm space-y-4 p-6">
       <div className="flex items-center justify-between">
         <Skeleton className="h-4 w-1/3" />
         <Skeleton className="h-4 w-4 rounded-full" />

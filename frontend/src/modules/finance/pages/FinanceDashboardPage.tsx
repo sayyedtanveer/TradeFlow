@@ -6,6 +6,7 @@ import {
   IndianRupee, TrendingUp, TrendingDown, AlertCircle, CheckCircle2,
   Clock, FileText, Plus, Search, RefreshCw, Eye,
   CreditCard, Building2, BarChart3, ArrowUpRight, ArrowDownRight,
+  Settings2,
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 
@@ -265,6 +266,14 @@ export default function FinanceDashboardPage() {
               Refresh
             </button>
             <button
+              id="finance-settings-btn"
+              onClick={() => navigate("/finance/settings")}
+              className="flex items-center gap-2 px-4 py-2 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 rounded-xl text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+            >
+              <Settings2 className="w-4 h-4" />
+              Settings
+            </button>
+            <button
               id="new-invoice-btn"
               onClick={() => navigate("/finance/invoices/new")}
               className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-sm font-medium hover:from-emerald-700 hover:to-teal-700 transition-all shadow-sm"
@@ -404,7 +413,9 @@ export default function FinanceDashboardPage() {
                             <td className="py-2 text-right text-slate-600">{formatCurrency(row.current_amount || 0)}</td>
                             <td className="py-2 text-right text-amber-600">{formatCurrency(row.overdue_1_30 || 0)}</td>
                             <td className="py-2 text-right text-orange-600">{formatCurrency(row.overdue_31_60 || 0)}</td>
-                            <td className="py-2 text-right text-red-600">{formatCurrency(row.overdue_60_plus || 0)}</td>
+                            <td className="py-2 text-right text-red-600">
+                              {formatCurrency((row.overdue_61_90 || 0) + (row.overdue_90_plus || 0))}
+                            </td>
                             <td className="py-2 text-right font-semibold text-slate-900 dark:text-white">{formatCurrency(row.total_outstanding || 0)}</td>
                           </tr>
                         ))}

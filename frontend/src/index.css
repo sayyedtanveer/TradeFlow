@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -37,7 +39,7 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
 
-    --radius: 0.5rem;
+    --radius: 1rem;
   }
 
   .dark {
@@ -75,7 +77,161 @@
   * {
     @apply border-border;
   }
+  html {
+    scroll-behavior: smooth;
+  }
   body {
-    @apply bg-background text-foreground;
+    font-family: "Inter", sans-serif;
+    @apply bg-background text-foreground antialiased;
+    background:
+      radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 28%),
+      radial-gradient(circle at top right, rgba(14, 165, 233, 0.08), transparent 24%),
+      #f8fafc;
+    min-height: 100vh;
+  }
+  button,
+  input,
+  textarea,
+  select {
+    @apply transition-all duration-200;
+  }
+  ::selection {
+    background: rgba(37, 99, 235, 0.16);
+  }
+}
+
+@layer components {
+  .erp-surface {
+    @apply rounded-[28px] border border-slate-200/80 bg-white shadow-sm;
+  }
+
+  .erp-kpi-card-base {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: white;
+    box-shadow:
+      0 22px 48px rgba(15, 23, 42, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  .erp-kpi-card-base::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -2;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 34%),
+      linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 42%);
+    pointer-events: none;
+  }
+
+  .erp-kpi-card-base::after {
+    content: "";
+    position: absolute;
+    top: -72px;
+    right: -38px;
+    z-index: -1;
+    width: 190px;
+    height: 190px;
+    border-radius: 9999px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.12) 34%, transparent 72%);
+    filter: blur(6px);
+    pointer-events: none;
+  }
+
+  .erp-kpi-gradient {
+    @apply erp-kpi-card-base border-0 text-white;
+    background-image: linear-gradient(135deg, #2563eb 0%, #1d4ed8 45%, #0f172a 120%);
+  }
+
+  .erp-kpi-gradient-alt {
+    @apply erp-kpi-card-base border-0 text-white;
+    background-image: linear-gradient(135deg, #0f172a 0%, #1d4ed8 42%, #0ea5e9 100%);
+  }
+
+  .erp-kpi-gradient-soft {
+    @apply erp-kpi-card-base border-0 text-white;
+    background-image: linear-gradient(135deg, #1e293b 0%, #2563eb 55%, #38bdf8 115%);
+  }
+
+  .erp-subtle-grid {
+    background-image:
+      linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  .erp-sidebar-shell {
+    background:
+      radial-gradient(circle at top left, rgba(37, 99, 235, 0.18), transparent 24%),
+      radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.08), transparent 20%),
+      linear-gradient(180deg, #020617 0%, #030712 48%, #02040c 100%);
+  }
+
+  .erp-dark-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.48) rgba(255, 255, 255, 0.05);
+  }
+
+  .erp-dark-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .erp-dark-scrollbar::-webkit-scrollbar-track {
+    border-radius: 9999px;
+    background: rgba(15, 23, 42, 0.72);
+  }
+
+  .erp-dark-scrollbar::-webkit-scrollbar-thumb {
+    border: 2px solid rgba(15, 23, 42, 0.85);
+    border-radius: 9999px;
+    background-image: linear-gradient(180deg, rgba(96, 165, 250, 0.72), rgba(51, 65, 85, 0.98));
+  }
+
+  .erp-dark-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-image: linear-gradient(180deg, rgba(125, 211, 252, 0.84), rgba(71, 85, 105, 1));
+  }
+
+  .erp-portal-section {
+    @apply rounded-[28px] border border-slate-200/80 bg-white p-4 shadow-sm sm:p-6;
+  }
+
+  .erp-portal-kpi-card {
+    @apply relative overflow-hidden rounded-[26px] border border-slate-200/80 bg-gradient-to-br p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md;
+  }
+
+  .erp-portal-kpi-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    opacity: 0.9;
+  }
+
+  .erp-portal-tab {
+    @apply inline-flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:text-slate-900 hover:shadow-md;
+  }
+
+  .erp-portal-tabs-scroll {
+    contain: paint;
+  }
+
+  .erp-portal-tab-active {
+    @apply -translate-y-0.5 border-blue-200 bg-gradient-to-r from-blue-50 via-white to-sky-50 text-slate-950 shadow-md ring-1 ring-blue-100;
+  }
+
+  .erp-portal-banner {
+    @apply flex items-start gap-3 rounded-[24px] border p-4 shadow-sm;
+  }
+
+  .erp-portal-banner-warning {
+    @apply border-amber-200 bg-amber-50 text-amber-900;
+  }
+
+  .erp-portal-banner-critical {
+    @apply border-red-200 bg-red-50 text-red-900;
   }
 }

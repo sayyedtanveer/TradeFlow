@@ -15,7 +15,7 @@ const toneMap: Record<ClientTimelineStep["status"], string> = {
 export default function OrderTimeline({ steps }: OrderTimelineProps) {
   return (
     <div className="overflow-x-auto">
-      <div className="flex min-w-[640px] items-start gap-3">
+      <div className="flex min-w-[540px] items-start gap-3 sm:min-w-[640px]">
         {steps.map((step, index) => (
           <div key={`${step.label}-${index}`} className="flex flex-1 items-center gap-3">
             <div className="min-w-0 flex-1">

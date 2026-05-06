@@ -134,10 +134,40 @@ def _variant_from_result(r) -> ItemVariantResponse:
         variant_key=r.variant_key,
         attribute_values=r.attribute_values,
         base_unit_id=uuid.UUID(r.base_unit_id) if r.base_unit_id else None,
+        material_id=uuid.UUID(r.material_id) if r.material_id else None,
         standard_cost=Decimal(r.standard_cost),
         selling_price=Decimal(r.selling_price) if r.selling_price else None,
         is_active=r.is_active,
     )
+
+
+async def _validate_variant_material_link(
+    session,
+    tenant_id: uuid.UUID,
+    material_id: Optional[uuid.UUID],
+) -> None:
+    if material_id is None:
+        return
+
+    material = (
+        await session.execute(
+            select(MaterialModel).where(
+                MaterialModel.id == material_id,
+                MaterialModel.tenant_id == tenant_id,
+                MaterialModel.is_deleted.is_(False),
+            )
+        )
+    ).scalar_one_or_none()
+    if material is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Linked inventory material not found",
+        )
+    if material.material_type != "finished":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Variant inventory link must point to a finished material",
+        )
 
 
 async def _batch_fg_material_ids(
@@ -148,7 +178,10 @@ async def _batch_fg_material_ids(
     """Resolve FG stock material id: same UUID as variant, or finished material with matching code."""
     if not variant_rows:
         return {}
-    out: Dict[str, Optional[uuid.UUID]] = {r.id: None for r in variant_rows}
+    out: Dict[str, Optional[uuid.UUID]] = {
+        r.id: uuid.UUID(r.material_id) if getattr(r, "material_id", None) else None
+        for r in variant_rows
+    }
     ids = [uuid.UUID(r.id) for r in variant_rows]
     stmt = select(MaterialModel).where(
         MaterialModel.tenant_id == tenant_id,
@@ -350,6 +383,7 @@ async def create_variant(
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
         handler = CreateItemVariantHandler(template_repo=t_repo, variant_repo=v_repo, uow=uow)
         try:
+            await _validate_variant_material_link(session, tenant_id, body.material_id)
             result = await handler.handle(
                 CreateItemVariantCommand(
                     tenant_id=tenant_id,
@@ -357,6 +391,7 @@ async def create_variant(
                     created_by=user_id,
                     attribute_values=body.attribute_values,
                     base_unit_id=body.base_unit_id,
+                    material_id=body.material_id,
                     standard_cost=body.standard_cost,
                     selling_price=body.selling_price,
                 )
@@ -495,10 +530,12 @@ async def update_variant(
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
         handler = UpdateItemVariantHandler(variant_repo=v_repo, uow=uow)
         try:
+            await _validate_variant_material_link(session, tenant_id, body.material_id)
             result = await handler.handle(
                 UpdateItemVariantCommand(
                     id=variant_id,
                     tenant_id=tenant_id,
+                    material_id=body.material_id,
                     standard_cost=body.standard_cost,
                     selling_price=body.selling_price,
                     is_active=body.is_active,

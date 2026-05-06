@@ -35,13 +35,16 @@ export function Breadcrumb() {
   const paths = location.pathname.split("/").filter(Boolean)
 
   return (
-    <nav aria-label="Breadcrumb" className="mb-4 flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
+    <nav
+      aria-label="Breadcrumb"
+      className="mb-1 flex flex-wrap items-center gap-1 rounded-full border border-slate-200/80 bg-white px-3 py-2 text-sm text-slate-500 shadow-sm"
+    >
       <Link
         to="/"
-        className="flex items-center gap-1 hover:text-foreground transition-colors rounded px-1"
+        className="flex items-center gap-1 rounded-full px-2 py-1 font-medium hover:bg-slate-50 hover:text-slate-900 transition-colors"
       >
         <Home className="h-3.5 w-3.5" />
-        <span className="font-medium">Dashboard</span>
+        <span>Dashboard</span>
       </Link>
 
       {paths.map((segment, index) => {
@@ -54,7 +57,7 @@ export function Breadcrumb() {
             <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" />
             {isLast ? (
               <span
-                className="text-foreground font-medium px-1 rounded"
+                className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-900"
                 aria-current="page"
               >
                 {label}
@@ -62,7 +65,7 @@ export function Breadcrumb() {
             ) : (
               <Link
                 to={to}
-                className="hover:text-foreground transition-colors px-1 rounded"
+                className="rounded-full px-2 py-1 transition-colors hover:bg-slate-50 hover:text-slate-900"
               >
                 {label}
               </Link>

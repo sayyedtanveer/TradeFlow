@@ -140,19 +140,19 @@ export default function Reorder() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Reorder</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-900">Start a draft order from your order history.</h1>
+            <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">Start a draft order from your order history.</h1>
             <p className="mt-3 max-w-2xl text-sm text-slate-600">
               Pick a previous order, adjust quantities, review stock and credit warnings, then submit a fresh draft for the team to confirm.
             </p>
           </div>
-          <div className="rounded-3xl bg-slate-950 px-5 py-4 text-white">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Estimated Draft Total</p>
+          <div className="erp-kpi-gradient-soft w-full rounded-3xl px-5 py-4 text-white sm:max-w-xs">
+            <p className="text-xs uppercase tracking-[0.2em] text-white/75">Estimated Draft Total</p>
             <p className="mt-2 text-2xl font-semibold">{formatCurrency(estimatedTotal, formatCurrency(0))}</p>
-            <p className="text-sm text-slate-300">subtotal plus estimated tax</p>
+            <p className="text-sm text-white/75">subtotal plus estimated tax</p>
           </div>
         </div>
       </section>
@@ -198,7 +198,7 @@ export default function Reorder() {
                   }`}
                   onClick={() => selectOrder(order.id)}
                 >
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="font-medium">{order.order_number}</p>
                       <p className={`text-sm ${selectedOrderId === order.id ? "text-slate-300" : "text-slate-500"}`}>
@@ -290,7 +290,59 @@ export default function Reorder() {
                   <CardDescription>Set any line to zero if you do not want it included in the new draft.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="overflow-hidden rounded-3xl border border-slate-200">
+                  <div className="space-y-4 md:hidden">
+                    {draftLines.map((line) => {
+                      const quantity = Number(line.quantity) || 0
+                      const estimatedLineTotal = quantity * line.unit_price * (1 + line.tax_rate / 100)
+                      const exceedsAvailability =
+                        line.availability.available_quantity !== null && quantity > line.availability.available_quantity
+
+                      return (
+                        <div key={line.source_line_id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-base font-semibold text-slate-900">{line.product_name}</p>
+                              <p className="mt-1 text-xs text-slate-500">{line.product_code || line.product_type}</p>
+                            </div>
+                            <span className={`text-sm font-medium ${exceedsAvailability ? "text-rose-600" : "text-slate-700"}`}>
+                              {formatCurrency(estimatedLineTotal)}
+                            </span>
+                          </div>
+                          <div className="mt-4 space-y-2">
+                            <Label htmlFor={`qty-${line.source_line_id}`}>Quantity</Label>
+                            <Input
+                              id={`qty-${line.source_line_id}`}
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={line.quantity}
+                              onChange={(event) =>
+                                setDraftLines((current) =>
+                                  current.map((item) =>
+                                    item.source_line_id === line.source_line_id ? { ...item, quantity: event.target.value } : item
+                                  )
+                                )
+                              }
+                            />
+                          </div>
+                          <div className="mt-4 space-y-2 text-sm">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-slate-500">Unit price</span>
+                              <span>{formatCurrency(line.unit_price)}</span>
+                            </div>
+                            <div className="flex items-start justify-between gap-3">
+                              <span className="text-slate-500">Availability</span>
+                              <span className={`max-w-[55%] text-right ${exceedsAvailability ? "text-rose-600" : "text-slate-700"}`}>
+                                {line.availability.message}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <div className="hidden overflow-hidden rounded-3xl border border-slate-200 md:block">
                     <Table>
                       <TableHeader className="bg-slate-50">
                         <TableRow>
@@ -355,12 +407,12 @@ export default function Reorder() {
                         Subtotal {formatCurrency(subtotal)} + tax {formatCurrency(taxTotal)}
                       </p>
                     </div>
-                    <div className="flex flex-wrap gap-3">
-                      <Button asChild variant="outline" className="rounded-full">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                      <Button asChild variant="outline" className="w-full rounded-full sm:w-auto">
                         <Link to="/client/orders">Back to Orders</Link>
                       </Button>
                       <Button
-                        className="rounded-full"
+                        className="w-full rounded-full sm:w-auto"
                         disabled={!selectedOrderId || preparedLines.length === 0 || reorderMutation.isPending}
                         onClick={() => reorderMutation.mutate()}
                       >

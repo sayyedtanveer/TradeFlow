@@ -1,8 +1,9 @@
-"""Reporting & Analytics API routes — role-filtered cross-module reports."""
+"""Reporting & Analytics API routes - role-filtered cross-module reports."""
 
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -160,6 +161,81 @@ async def ar_aging(
     try:
         svc = ReportingService(session)
         return await svc.ar_aging(tenant_id, role.upper())
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@router.get("/finance/ap-aging")
+async def ap_aging(
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    role: str = Depends(get_current_role),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Accounts Payable aging by supplier."""
+    try:
+        svc = ReportingService(session)
+        return await svc.ap_aging(tenant_id, role.upper())
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@router.get("/finance/trial-balance")
+async def trial_balance(
+    as_of: Optional[date] = Query(None),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    role: str = Depends(get_current_role),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Trial balance as of a date."""
+    try:
+        svc = ReportingService(session)
+        return await svc.trial_balance(tenant_id, role.upper(), as_of=as_of)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@router.get("/finance/profit-loss")
+async def profit_and_loss(
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    role: str = Depends(get_current_role),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Profit and loss report."""
+    try:
+        svc = ReportingService(session)
+        return await svc.profit_and_loss(tenant_id, role.upper(), from_date=from_date, to_date=to_date)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@router.get("/finance/balance-sheet")
+async def balance_sheet(
+    as_of: Optional[date] = Query(None),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    role: str = Depends(get_current_role),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Balance sheet as of a date."""
+    try:
+        svc = ReportingService(session)
+        return await svc.balance_sheet(tenant_id, role.upper(), as_of=as_of)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@router.get("/finance/cash-flow")
+async def cash_flow(
+    months: int = Query(6, ge=1, le=24),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    role: str = Depends(get_current_role),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Cash flow statement."""
+    try:
+        svc = ReportingService(session)
+        return await svc.cash_flow(tenant_id, role.upper(), months=months)
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 

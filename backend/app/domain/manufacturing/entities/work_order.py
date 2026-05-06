@@ -66,6 +66,7 @@ class WorkOrder:
         produced_quantity: Decimal = Decimal("0"),
         scrap_quantity: Decimal = Decimal("0"),
         sales_order_id: Optional[uuid.UUID] = None,
+        sales_order_line_id: Optional[uuid.UUID] = None,
         notes: Optional[str] = None,
         is_deleted: bool = False,
         created_at: Optional[datetime] = None,
@@ -85,6 +86,7 @@ class WorkOrder:
         self.produced_quantity = produced_quantity
         self.scrap_quantity = scrap_quantity
         self.sales_order_id = sales_order_id
+        self.sales_order_line_id = sales_order_line_id
         self.notes = notes
         self.is_deleted = is_deleted
         self.created_at = created_at or datetime.now(timezone.utc)

@@ -83,30 +83,31 @@ export default function OrderDetail() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[32px] bg-slate-950 px-6 py-8 text-white shadow-xl">
+      <section className="erp-surface relative overflow-hidden px-5 py-6 sm:px-6 sm:py-8">
+        <div className="absolute inset-y-0 right-0 hidden w-1/3 bg-gradient-to-l from-blue-50 via-sky-50/80 to-transparent lg:block" />
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.25em] text-slate-300">Order Detail</p>
-            <h1 className="mt-2 text-3xl font-semibold">{order.order_number}</h1>
-            <p className="mt-3 max-w-2xl text-sm text-slate-300">
+            <p className="text-xs uppercase tracking-[0.25em] text-blue-600">Order Detail</p>
+            <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">{order.order_number}</h1>
+            <p className="mt-3 max-w-2xl text-sm text-slate-600">
               Follow production progress, review availability warnings, and jump into a reorder when this order needs repeating.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <Button asChild variant="secondary" className="rounded-full">
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap">
+            <Button asChild className="w-full rounded-full sm:w-auto">
               <Link to={`/client/reorder?orderId=${order.id}`}>Reorder</Link>
             </Button>
             {canCancel && (
               <Button
                 variant="outline"
-                className="rounded-full border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
+                className="w-full rounded-full sm:w-auto"
                 disabled={cancelMutation.isPending}
                 onClick={() => cancelMutation.mutate()}
               >
                 {cancelMutation.isPending ? "Requesting..." : "Request Cancellation"}
               </Button>
             )}
-            <Button variant="outline" className="rounded-full border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white" onClick={() => navigate("/client/orders")}>
+            <Button variant="outline" className="w-full rounded-full sm:w-auto" onClick={() => navigate("/client/orders")}>
               Back to Orders
             </Button>
           </div>
@@ -188,7 +189,49 @@ export default function OrderDetail() {
           <CardDescription>Availability checks help flag backorder risk before you repeat the order.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-3xl border border-slate-200">
+          <div className="space-y-4 md:hidden">
+            {order.lines.map((line) => (
+              <div key={line.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-base font-semibold text-slate-900">{line.product_name}</p>
+                    <p className="mt-1 text-xs text-slate-500">{line.product_code || line.product_type}</p>
+                  </div>
+                  <Badge className={line.availability.backorder_warning ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}>
+                    {line.availability.backorder_warning ? "Backorder Risk" : formatStatusLabel(line.availability.status)}
+                  </Badge>
+                </div>
+                <div className="mt-4 space-y-2 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">Requested</span>
+                    <span>{line.quantity}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">Allocated</span>
+                    <span>{line.allocated_quantity}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">Shipped</span>
+                    <span>{line.shipped_quantity}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">Line status</span>
+                    <span>{formatStatusLabel(line.status)}</span>
+                  </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-slate-500">Availability</span>
+                    <span className="max-w-[55%] text-right text-slate-700">{line.availability.message}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">Line total</span>
+                    <span className="font-semibold">{formatCurrency(line.line_total)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden overflow-hidden rounded-3xl border border-slate-200 md:block">
             <Table>
               <TableHeader className="bg-slate-50">
                 <TableRow>

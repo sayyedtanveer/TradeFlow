@@ -11,31 +11,8 @@ from backend.app.domain.inventory.entities.material import Material, MaterialTyp
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 from backend.app.infrastructure.persistence.repositories.base_repository import BaseRepository
 
-_MATERIAL_TYPE_ALIASES = {
-    "raw": MaterialType.RAW.value,
-    "raw_material": MaterialType.RAW.value,
-    "raw-material": MaterialType.RAW.value,
-    "rm": MaterialType.RAW.value,
-    "finished": MaterialType.FINISHED.value,
-    "finished_good": MaterialType.FINISHED.value,
-    "finished_goods": MaterialType.FINISHED.value,
-    "finished-good": MaterialType.FINISHED.value,
-    "finished-goods": MaterialType.FINISHED.value,
-    "fg": MaterialType.FINISHED.value,
-}
-
-
 def _normalize_material_type(value: MaterialType | str | None) -> MaterialType:
-    if isinstance(value, MaterialType):
-        return value
-
-    normalized = str(value or "").strip().lower().replace(" ", "_")
-    mapped = _MATERIAL_TYPE_ALIASES.get(normalized, normalized)
-
-    if mapped == MaterialType.FINISHED.value:
-        return MaterialType.FINISHED
-
-    return MaterialType.RAW
+    return Material.coerce_material_type(value)
 
 
 def _normalize_material_name(value: str) -> str:

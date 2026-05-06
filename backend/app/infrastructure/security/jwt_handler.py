@@ -57,6 +57,10 @@ class JWTHandler:
                 code="INVALID_TOKEN",
             ) from exc
 
+    def verify_token(self, token: str) -> Dict[str, Any]:
+        """Backward-compatible alias used by the websocket auth path."""
+        return self.decode_token(token)
+
     def get_user_id(self, token: str) -> str:
         return self.decode_token(token)["sub"]
 

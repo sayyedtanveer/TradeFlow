@@ -52,6 +52,7 @@ class ItemVariantResult:
     variant_key: str
     attribute_values: Dict[str, Any]
     base_unit_id: Optional[str]
+    material_id: Optional[str]
     standard_cost: str
     selling_price: Optional[str]
     is_active: bool
@@ -162,6 +163,7 @@ class CreateItemVariantHandler:
             attribute_keys_ordered=ordered_keys,
             attribute_values=normalised_values,
             base_unit_id=cmd.base_unit_id or template.base_unit_id,
+            material_id=cmd.material_id,
             standard_cost=cmd.standard_cost,
             selling_price=cmd.selling_price,
         )
@@ -180,6 +182,8 @@ class UpdateItemVariantHandler:
         if not variant:
             raise ValueError(f"Item variant '{cmd.id}' not found.")
 
+        if cmd.material_id is not None:
+            variant.set_material_link(cmd.material_id)
         if cmd.standard_cost is not None or cmd.selling_price is not None:
             variant.update_pricing(
                 standard_cost=cmd.standard_cost,
@@ -241,6 +245,7 @@ def _to_variant_result(v: ItemVariant) -> ItemVariantResult:
         variant_key=v.variant_key,
         attribute_values=v.attribute_values,
         base_unit_id=str(v.base_unit_id) if v.base_unit_id else None,
+        material_id=str(v.material_id) if v.material_id else None,
         standard_cost=str(v.standard_cost),
         selling_price=str(v.selling_price) if v.selling_price is not None else None,
         is_active=v.is_active,

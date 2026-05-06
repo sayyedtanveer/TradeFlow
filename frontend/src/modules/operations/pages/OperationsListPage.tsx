@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { PageHeader } from "@/components/layout/PageHeader"
+import ResponsiveDataList from "@/components/shared/ResponsiveDataList"
 import { toast } from "sonner"
 
 export default function OperationsListPage() {
@@ -95,77 +96,139 @@ export default function OperationsListPage() {
           )}
         </div>
       ) : (
-        <div className="rounded-xl border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 border-b">
-              <tr className="text-left">
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Workstation</th>
-                <th className="px-4 py-3 font-medium text-right">Setup (min)</th>
-                <th className="px-4 py-3 font-medium text-right">Run Time (min/unit)</th>
-                {canEdit && <th className="px-4 py-3 font-medium text-right">Actions</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {filtered.map((op) => (
-                <tr key={op.id} className="hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="font-medium">{op.name}</div>
-                    {op.description && (
-                      <div className="text-xs text-muted-foreground mt-0.5 truncate max-w-xs">
-                        {op.description}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {op.workstation_id ? (
-                      <Badge variant="secondary" className="font-normal">
-                        {wsMap[op.workstation_id] ?? op.workstation_id.slice(0, 8)}
-                      </Badge>
-                    ) : (
-                      <span className="text-muted-foreground text-xs">Unassigned</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="flex items-center justify-end gap-1">
-                      <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                      {op.setup_time}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="flex items-center justify-end gap-1">
-                      <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                      {op.run_time}
-                    </span>
-                  </td>
-                  {canEdit && (
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => navigate(`/operations/${op.id}/edit`)}
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 hover:text-destructive"
-                          onClick={() => handleDelete(op.id, op.name)}
-                          disabled={deleteMutation.isPending}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </td>
+        <ResponsiveDataList
+          data={filtered}
+          getRowKey={(op) => op.id}
+          columns={[
+            {
+              key: "name",
+              header: "Name",
+              cell: (op) => (
+                <div>
+                  <div className="font-medium">{op.name}</div>
+                  {op.description && (
+                    <div className="mt-0.5 max-w-xs truncate text-xs text-muted-foreground">{op.description}</div>
                   )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                </div>
+              ),
+            },
+            {
+              key: "workstation",
+              header: "Workstation",
+              cell: (op) =>
+                op.workstation_id ? (
+                  <Badge variant="secondary" className="font-normal">
+                    {wsMap[op.workstation_id] ?? op.workstation_id.slice(0, 8)}
+                  </Badge>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Unassigned</span>
+                ),
+            },
+            {
+              key: "setup_time",
+              header: "Setup (min)",
+              headerClassName: "text-right",
+              className: "text-right",
+              cell: (op) => (
+                <span className="inline-flex items-center justify-end gap-1">
+                  <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                  {op.setup_time}
+                </span>
+              ),
+            },
+            {
+              key: "run_time",
+              header: "Run Time (min/unit)",
+              headerClassName: "text-right",
+              className: "text-right",
+              cell: (op) => (
+                <span className="inline-flex items-center justify-end gap-1">
+                  <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                  {op.run_time}
+                </span>
+              ),
+            },
+            ...(canEdit
+              ? [{
+                  key: "actions",
+                  header: "Actions",
+                  headerClassName: "text-right",
+                  className: "text-right",
+                  cell: (op: typeof filtered[number]) => (
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          navigate(`/operations/${op.id}/edit`)
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 hover:text-destructive"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleDelete(op.id, op.name)
+                        }}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ),
+                }]
+              : []),
+          ]}
+          renderMobileCard={(op) => (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:shadow-md">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-base font-semibold text-slate-900">{op.name}</p>
+                  {op.description && <p className="mt-1 text-sm text-slate-500">{op.description}</p>}
+                </div>
+                {op.workstation_id ? (
+                  <Badge variant="secondary" className="font-normal">
+                    {wsMap[op.workstation_id] ?? op.workstation_id.slice(0, 8)}
+                  </Badge>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Unassigned</span>
+                )}
+              </div>
+              <div className="mt-4 space-y-2 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500">Setup</span>
+                  <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-muted-foreground" />{op.setup_time} min</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500">Run time</span>
+                  <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-muted-foreground" />{op.run_time} min/unit</span>
+                </div>
+              </div>
+              {canEdit && (
+                <div className="mt-4 flex flex-col gap-2">
+                  <Button variant="outline" className="w-full" onClick={() => navigate(`/operations/${op.id}/edit`)}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full hover:text-destructive"
+                    onClick={() => handleDelete(op.id, op.name)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        />
       )}
     </div>
   )

@@ -53,6 +53,7 @@ class CreateItemVariantCommand:
     created_by: uuid.UUID
     attribute_values: Dict[str, Any]
     base_unit_id: Optional[uuid.UUID] = None
+    material_id: Optional[uuid.UUID] = None
     standard_cost: Decimal = Decimal("0")
     selling_price: Optional[Decimal] = None
 
@@ -61,6 +62,7 @@ class CreateItemVariantCommand:
 class UpdateItemVariantCommand:
     id: uuid.UUID
     tenant_id: uuid.UUID
+    material_id: Optional[uuid.UUID] = None
     standard_cost: Optional[Decimal] = None
     selling_price: Optional[Decimal] = None
     is_active: Optional[bool] = None

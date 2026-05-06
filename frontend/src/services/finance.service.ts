@@ -104,7 +104,19 @@ export interface ARAgingRow {
   current_amount: number
   overdue_1_30: number
   overdue_31_60: number
-  overdue_60_plus: number
+  overdue_61_90: number
+  overdue_90_plus: number
+  total_outstanding: number
+}
+
+export interface APAgingRow {
+  supplier_id: string
+  supplier_name: string
+  current_amount: number
+  overdue_1_30: number
+  overdue_31_60: number
+  overdue_61_90: number
+  overdue_90_plus: number
   total_outstanding: number
 }
 
@@ -117,6 +129,94 @@ export interface LedgerEntry {
   credit: number
   description: string
   created_at: string
+}
+
+export interface TrialBalanceEntry {
+  code: string
+  name: string
+  account_type: string
+  debit: number
+  credit: number
+  balance: number
+}
+
+export interface TrialBalanceReport {
+  as_of: string
+  items: TrialBalanceEntry[]
+  totals: {
+    debit: number
+    credit: number
+    is_balanced: boolean
+  }
+}
+
+export interface ProfitAndLossReport {
+  period: {
+    from: string
+    to: string
+  }
+  income: Array<{ code: string; name: string; amount: number }>
+  expenses: Array<{ code: string; name: string; amount: number }>
+  totals: {
+    income: number
+    expense: number
+    net_profit: number
+  }
+}
+
+export interface BalanceSheetReport {
+  as_of: string
+  assets: Array<{ code: string; name: string; amount: number }>
+  liabilities: Array<{ code: string; name: string; amount: number }>
+  equity: Array<{ code: string; name: string; amount: number }>
+  totals: {
+    assets: number
+    liabilities: number
+    equity: number
+    liabilities_and_equity: number
+    is_balanced: boolean
+  }
+}
+
+export interface CashFlowReport {
+  months: number
+  items: Array<{ month: string; cash_in: number; cash_out: number }>
+  totals: {
+    cash_in: number
+    cash_out: number
+    net_cash_flow: number
+  }
+}
+
+export interface FinanceSettings {
+  tenant_id: string
+  invoice_prefix: string
+  supplier_invoice_prefix: string
+  payment_prefix: string
+  supplier_payment_prefix: string
+  invoice_template: string
+  default_tax_rate: number
+  default_payment_terms_days: number
+  gst_number?: string
+  logo_url?: string
+  custom_template: Record<string, unknown>
+  ar_account_code: string
+  bank_account_code: string
+  ap_account_code: string
+  revenue_account_code: string
+  expense_account_code: string
+  updated_at: string
+}
+
+export interface ChartOfAccount {
+  id: string
+  code: string
+  name: string
+  account_type: string
+  category: string
+  normal_balance: string
+  is_system: boolean
+  is_active: boolean
 }
 
 export interface Notification {
@@ -134,8 +234,20 @@ const BASE = "/finance"
 const REPORTS_BASE = "/reports"
 const NOTIF_BASE = "/notifications"
 
+async function downloadBlob(path: string, filename?: string) {
+  const res = await apiClient.get(path, { responseType: "blob" })
+  const blob = new Blob([res.data], { type: res.headers["content-type"] || "application/pdf" })
+  const url = window.URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = filename || "download.pdf"
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.URL.revokeObjectURL(url)
+}
+
 export const financeService = {
-  // ── Invoices ──────────────────────────────────────────────────────
   async createInvoiceFromSO(payload: {
     sales_order_id: string
     notes?: string
@@ -171,7 +283,10 @@ export const financeService = {
     return res.data
   },
 
-  // ── Payments ──────────────────────────────────────────────────────
+  async downloadInvoicePdf(id: string, invoiceNumber?: string) {
+    await downloadBlob(`${BASE}/invoices/${id}/pdf`, `${invoiceNumber || id}.pdf`)
+  },
+
   async recordPayment(payload: {
     invoice_id: string
     amount: number
@@ -189,7 +304,10 @@ export const financeService = {
     return res.data as { items: Payment[]; total: number; page: number; pages: number }
   },
 
-  // ── Supplier Invoices ────────────────────────────────────────────
+  async downloadReceiptPdf(id: string, paymentNumber?: string) {
+    await downloadBlob(`${BASE}/payments/${id}/receipt-pdf`, `${paymentNumber || id}.pdf`)
+  },
+
   async createSupplierInvoice(payload: {
     supplier_id: string
     purchase_order_id?: string
@@ -227,7 +345,6 @@ export const financeService = {
     return res.data
   },
 
-  // ── Dashboard & Analytics ────────────────────────────────────────
   async getDashboard(): Promise<FinanceDashboard> {
     const res = await apiClient.get(`${BASE}/dashboard`)
     return res.data
@@ -238,12 +355,51 @@ export const financeService = {
     return res.data
   },
 
+  async getAPAging(): Promise<APAgingRow[]> {
+    const res = await apiClient.get(`${BASE}/ap-aging`)
+    return res.data
+  },
+
   async getLedger(params?: { reference_type?: string; page?: number; page_size?: number }) {
     const res = await apiClient.get(`${BASE}/ledger`, { params })
     return res.data as { items: LedgerEntry[]; total: number; page: number; pages: number }
   },
 
-  // ── Reports ──────────────────────────────────────────────────────
+  async getTrialBalance(asOf?: string): Promise<TrialBalanceReport> {
+    const res = await apiClient.get(`${BASE}/trial-balance`, { params: { as_of: asOf } })
+    return res.data
+  },
+
+  async getProfitAndLoss(params?: { from_date?: string; to_date?: string }): Promise<ProfitAndLossReport> {
+    const res = await apiClient.get(`${BASE}/profit-loss`, { params })
+    return res.data
+  },
+
+  async getBalanceSheet(asOf?: string): Promise<BalanceSheetReport> {
+    const res = await apiClient.get(`${BASE}/balance-sheet`, { params: { as_of: asOf } })
+    return res.data
+  },
+
+  async getCashFlow(months = 6): Promise<CashFlowReport> {
+    const res = await apiClient.get(`${BASE}/cash-flow`, { params: { months } })
+    return res.data
+  },
+
+  async getFinanceSettings(): Promise<FinanceSettings> {
+    const res = await apiClient.get(`${BASE}/settings`)
+    return res.data
+  },
+
+  async updateFinanceSettings(payload: Partial<FinanceSettings>): Promise<FinanceSettings> {
+    const res = await apiClient.put(`${BASE}/settings`, payload)
+    return res.data
+  },
+
+  async getChartOfAccounts(): Promise<ChartOfAccount[]> {
+    const res = await apiClient.get(`${BASE}/chart-of-accounts`)
+    return res.data
+  },
+
   async getInventorySummary() {
     const res = await apiClient.get(`${REPORTS_BASE}/inventory/summary`)
     return res.data
@@ -289,9 +445,33 @@ export const financeService = {
     return res.data
   },
 
-  // ── Notifications ────────────────────────────────────────────────
+  async getFinanceAPAging() {
+    const res = await apiClient.get(`${REPORTS_BASE}/finance/ap-aging`)
+    return res.data
+  },
+
+  async getFinanceTrialBalance() {
+    const res = await apiClient.get(`${REPORTS_BASE}/finance/trial-balance`)
+    return res.data
+  },
+
+  async getFinanceProfitLoss() {
+    const res = await apiClient.get(`${REPORTS_BASE}/finance/profit-loss`)
+    return res.data
+  },
+
+  async getFinanceBalanceSheet() {
+    const res = await apiClient.get(`${REPORTS_BASE}/finance/balance-sheet`)
+    return res.data
+  },
+
+  async getFinanceCashFlow() {
+    const res = await apiClient.get(`${REPORTS_BASE}/finance/cash-flow`)
+    return res.data
+  },
+
   async getNotifications(params?: { unread_only?: boolean; page?: number; page_size?: number }) {
-    const res = await apiClient.get(NOTIF_BASE + "/", { params })
+    const res = await apiClient.get(`${NOTIF_BASE}/`, { params })
     return res.data as {
       items: Notification[]
       total: number

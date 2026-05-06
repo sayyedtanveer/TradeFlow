@@ -70,6 +70,11 @@ const REPORT_SECTIONS: ReportSection[] = [
     color: "from-rose-500 to-rose-600",
     endpoints: [
       { key: "finance-summary", label: "AR/AP Summary", fn: financeService.getFinanceSummary },
+      { key: "finance-ap-aging", label: "AP Aging", fn: financeService.getFinanceAPAging },
+      { key: "finance-trial-balance", label: "Trial Balance", fn: financeService.getFinanceTrialBalance },
+      { key: "finance-profit-loss", label: "Profit & Loss", fn: financeService.getFinanceProfitLoss },
+      { key: "finance-balance-sheet", label: "Balance Sheet", fn: financeService.getFinanceBalanceSheet },
+      { key: "finance-cash-flow", label: "Cash Flow", fn: financeService.getFinanceCashFlow },
     ],
   },
 ]

@@ -66,7 +66,7 @@ export const BottomNavigation = ({
 
   return (
     <nav
-      className={`fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white ${className}`}
+      className={`fixed bottom-3 left-3 right-3 z-30 rounded-2xl border border-slate-200/80 bg-white/95 shadow-lg backdrop-blur ${className}`}
       // Don't display on desktop - handled by media query in CSS
       style={{ display: 'none' }}
       data-mobile-nav="true"
@@ -78,7 +78,7 @@ export const BottomNavigation = ({
           }
           
           body {
-            padding-bottom: 80px;
+            padding-bottom: 96px;
           }
         }
       `}</style>
@@ -93,16 +93,16 @@ export const BottomNavigation = ({
               key={item.path}
               to={item.path}
               className={`
-                flex flex-1 flex-col items-center justify-center gap-1 px-3 py-3 text-xs font-medium transition-colors
+                flex flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-3 text-[11px] font-medium transition-colors
                 ${
                   active
-                    ? 'border-t-2 border-blue-600 text-blue-600'
-                    : 'border-t-2 border-transparent text-gray-600 hover:text-gray-900'
+                    ? 'bg-blue-50 text-blue-700'
+                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                 }
               `}
             >
-              <Icon className="h-6 w-6" />
-              <span className="hidden sm:inline">{item.label}</span>
+              <Icon className="h-5 w-5" />
+              <span>{item.label}</span>
             </Link>
           )
         })}

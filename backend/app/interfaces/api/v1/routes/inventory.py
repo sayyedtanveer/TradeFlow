@@ -114,6 +114,7 @@ async def create_material(
     "/materials",
     response_model=MaterialListResponse,
     summary="List all materials with optional search and filter",
+    dependencies=[Depends(require_permission("inventory:read"))],
 )
 async def list_materials(
     request: Request,
@@ -154,6 +155,7 @@ async def list_materials(
     "/materials/{material_id}",
     response_model=MaterialResponse,
     summary="Get a single material by ID",
+    dependencies=[Depends(require_permission("inventory:read"))],
 )
 async def get_material(
     material_id: uuid.UUID,
@@ -248,6 +250,7 @@ async def delete_material(
     "/materials/{material_id}/stock",
     response_model=StockResponse,
     summary="Get current stock levels for a material",
+    dependencies=[Depends(require_permission("inventory:read"))],
 )
 async def get_stock(
     material_id: uuid.UUID,
@@ -284,6 +287,7 @@ async def get_stock(
     response_model=MaterialResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a stock transaction (IN / OUT / ADJUSTMENT)",
+    dependencies=[Depends(require_permission("inventory:write"))],
 )
 async def create_transaction(
     body: TransactionRequest,
@@ -329,8 +333,35 @@ async def create_transaction(
                 )
 
             elif body.transaction_type == "transfer":
-                # Transfer logic can be a helper that sequences OUT then IN
-                pass # TODO: Implement Transfer
+                if body.from_location_id is None or body.to_location_id is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Transfer requires both from_location_id and to_location_id",
+                    )
+                from backend.app.application.manufacturing.services.inventory_service import InventoryService
+
+                inventory_service = InventoryService(session)
+                await inventory_service.transfer_stock(
+                    tenant_id=tenant_id,
+                    material_id=body.material_id,
+                    quantity=body.quantity,
+                    from_location_id=body.from_location_id,
+                    to_location_id=body.to_location_id,
+                    unit_id=body.unit_id,
+                    created_by=user_id,
+                    reference_id=body.reference_id,
+                    remarks=body.remarks,
+                )
+                await uow.commit()
+                query_handler = InventoryQueryHandler(material_repo=material_repo, tx_repo=tx_repo)
+                result = await query_handler.get_material(
+                    GetMaterialQuery(id=body.material_id, tenant_id=tenant_id)
+                )
+                if result is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Material not found",
+                    )
 
             else:  # adjustment
                 new_qty = body.new_quantity if body.new_quantity is not None else body.quantity
@@ -356,6 +387,7 @@ async def create_transaction(
     "/transactions",
     response_model=List[TransactionResponse],
     summary="List all transactions, optionally filtered by material",
+    dependencies=[Depends(require_permission("inventory:read"))],
 )
 async def list_transactions(
     request: Request,

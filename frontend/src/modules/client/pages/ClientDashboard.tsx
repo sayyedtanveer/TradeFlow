@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
+import { Activity, Banknote, CreditCard, Package2 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -19,12 +20,13 @@ export default function ClientDashboard() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[32px] bg-slate-950 px-6 py-8 text-white shadow-xl">
-        <p className="text-xs uppercase tracking-[0.25em] text-slate-300">Welcome Back</p>
-        <h1 className="mt-3 text-3xl font-semibold">
+      <section className="erp-surface relative overflow-hidden px-5 py-6 sm:px-6 sm:py-8">
+        <div className="absolute inset-y-0 right-0 hidden w-1/3 bg-gradient-to-l from-blue-50 via-sky-50/80 to-transparent lg:block" />
+        <p className="text-xs uppercase tracking-[0.25em] text-blue-600">Welcome Back</p>
+        <h1 className="mt-3 text-2xl font-semibold leading-tight text-slate-900 sm:text-3xl">
           {dashboard ? `${dashboard.welcome_name}, here is your latest account view.` : "Loading your portal..."}
         </h1>
-        <p className="mt-3 max-w-2xl text-slate-300">
+        <p className="mt-3 max-w-2xl text-slate-500">
           Review recent orders, monitor open balances, and keep an eye on credit usage before sending another reorder request.
         </p>
       </section>
@@ -53,17 +55,25 @@ export default function ClientDashboard() {
         </Alert>
       )}
 
-      <section className="grid gap-4 md:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: "Orders", value: dashboard?.kpis.orders ?? 0 },
-          { label: "Active Orders", value: dashboard?.kpis.active_orders ?? 0 },
-          { label: "Spent", value: formatCurrency(dashboard?.kpis.spent ?? 0) },
-          { label: "Open Balance", value: formatCurrency(dashboard?.kpis.open_balance ?? 0) },
+          { label: "Orders", value: dashboard?.kpis.orders ?? 0, tone: "erp-kpi-gradient", helper: "portal total", icon: Package2 },
+          { label: "Active Orders", value: dashboard?.kpis.active_orders ?? 0, tone: "erp-kpi-gradient-alt", helper: "in progress", icon: Activity },
+          { label: "Spent", value: formatCurrency(dashboard?.kpis.spent ?? 0), tone: "erp-kpi-gradient-soft", helper: "lifetime billed", icon: Banknote },
+          { label: "Open Balance", value: formatCurrency(dashboard?.kpis.open_balance ?? 0), tone: "erp-kpi-gradient", helper: "awaiting payment", icon: CreditCard },
         ].map((item) => (
-          <Card key={item.label} className="rounded-[28px] border-slate-200/70">
-            <CardContent className="pt-6">
-              <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{item.label}</p>
-              <p className="mt-3 text-3xl font-semibold">{item.value}</p>
+          <Card key={item.label} className={`${item.tone} h-full overflow-hidden rounded-[28px]`}>
+            <CardContent className="flex h-full min-h-[136px] flex-col justify-between p-5 pt-5 sm:min-h-[144px] sm:p-6 sm:pt-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/72">{item.label}</p>
+                  <p className="mt-2 text-xs text-white/55">{item.helper}</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/12 p-2.5 shadow-sm">
+                  <item.icon className="h-4 w-4 text-white" />
+                </div>
+              </div>
+              <p className="mt-5 text-2xl font-semibold leading-none text-white sm:text-[2rem]">{item.value}</p>
             </CardContent>
           </Card>
         ))}
@@ -71,21 +81,21 @@ export default function ClientDashboard() {
 
       <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <Card className="rounded-[28px] border-slate-200/70">
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Recent Orders</CardTitle>
-            <Button asChild variant="outline" className="rounded-full">
+            <Button asChild variant="outline" className="w-full rounded-full sm:w-auto">
               <Link to="/client/orders">View All</Link>
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
             {dashboard?.recent_orders?.length ? (
               dashboard.recent_orders.map((order) => (
-                <Link key={order.id} to={`/client/orders/${order.id}`} className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 transition hover:border-slate-400">
+                <Link key={order.id} to={`/client/orders/${order.id}`} className="flex flex-col gap-3 rounded-2xl border border-slate-200 px-4 py-3 transition hover:border-slate-400 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="font-medium">{order.order_number}</p>
                     <p className="text-sm text-muted-foreground">Delivery {formatDate(order.delivery_date)}</p>
                   </div>
-                  <div className="text-right">
+                  <div className="sm:text-right">
                     <Badge className={clientOrderStatusClasses[order.status] ?? "bg-slate-100 text-slate-700"}>{order.status}</Badge>
                     <p className="mt-2 text-sm font-medium">{formatCurrency(order.grand_total)}</p>
                   </div>
@@ -98,9 +108,9 @@ export default function ClientDashboard() {
         </Card>
 
         <Card className="rounded-[28px] border-slate-200/70">
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <CardTitle>Credit Progress</CardTitle>
-            <Button asChild variant="ghost" className="rounded-full">
+            <Button asChild variant="ghost" className="w-full rounded-full sm:w-auto">
               <Link to="/client/credit">Details</Link>
             </Button>
           </CardHeader>
@@ -112,13 +122,13 @@ export default function ClientDashboard() {
               usagePercent={dashboard?.credit.usage_percent ?? null}
             />
             <div className="grid gap-3 sm:grid-cols-3">
-              <Button asChild className="rounded-full">
+              <Button asChild className="w-full rounded-full">
                 <Link to="/client/reorder">Start Reorder</Link>
               </Button>
-              <Button asChild variant="outline" className="rounded-full">
+              <Button asChild variant="outline" className="w-full rounded-full">
                 <Link to="/client/invoices">Invoices</Link>
               </Button>
-              <Button asChild variant="outline" className="rounded-full">
+              <Button asChild variant="outline" className="w-full rounded-full">
                 <Link to="/client/support">Support</Link>
               </Button>
             </div>

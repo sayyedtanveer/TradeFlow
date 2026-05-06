@@ -1,10 +1,15 @@
 import { useEffect, useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { useParams } from "react-router-dom"
+import { Send } from "lucide-react"
 import { supplyChainApi, type SupplierQuotation } from "@/services/supply-chain.service"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
+import {
+  SupplierPortalHeader,
+  SupplierPortalStatusBadge,
+  SupplierPortalTabs,
+} from "@/modules/procurement/components/SupplierPortalChrome"
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(value)
@@ -46,55 +51,71 @@ export default function SupplierPortalQuotationDetailPage() {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
-      <Button variant="ghost" size="sm" asChild>
-        <Link to="/supplier-portal/quotations">{"<- Quotations"}</Link>
-      </Button>
+    <div className="mx-auto max-w-5xl space-y-6 pb-8">
+      <SupplierPortalHeader
+        eyebrow="Supplier workspace"
+        title="Quotation detail"
+        description="Review the selected quotation before sending it to the buyer."
+        backHref="/supplier-portal/quotations"
+        backLabel="Quotations"
+        actions={
+          quotation?.status === "draft" ? (
+            <Button onClick={submitQuotation} className="w-full sm:w-auto">
+              <Send className="h-4 w-4" />
+              Submit quotation
+            </Button>
+          ) : undefined
+        }
+      />
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+      <div className="erp-portal-section space-y-4">
+        <SupplierPortalTabs />
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+      </div>
 
-      {!quotation && !error && <p className="text-muted-foreground">Loading quotation...</p>}
+      {!quotation && !error && <p className="text-sm text-muted-foreground">Loading quotation...</p>}
 
       {quotation && (
-        <section className="rounded-xl border bg-card p-5 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-semibold">Quotation</h1>
-              <p className="font-mono text-xs text-muted-foreground">{quotation.id}</p>
+        <section className="erp-portal-section space-y-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-2">
+              <p className="font-mono text-sm text-slate-500">{quotation.id}</p>
+              <SupplierPortalStatusBadge status={quotation.status} />
             </div>
-            <Badge variant="secondary">{quotation.status}</Badge>
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Share the quote once the numbers and validity period are final.
+            </div>
           </div>
           <dl className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <dt className="text-sm text-muted-foreground">Material</dt>
-              <dd className="font-mono text-sm">{quotation.material_id}</dd>
+            <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+              <dt className="text-sm text-slate-500">Material</dt>
+              <dd className="mt-1 font-mono text-sm text-slate-900">{quotation.material_id}</dd>
             </div>
-            <div>
-              <dt className="text-sm text-muted-foreground">Linked PO</dt>
-              <dd className="font-mono text-sm">{quotation.purchase_order_id ?? "-"}</dd>
+            <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+              <dt className="text-sm text-slate-500">Linked PO</dt>
+              <dd className="mt-1 font-mono text-sm text-slate-900">{quotation.purchase_order_id ?? "-"}</dd>
             </div>
-            <div>
-              <dt className="text-sm text-muted-foreground">Quantity</dt>
-              <dd>{quotation.quantity}</dd>
+            <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+              <dt className="text-sm text-slate-500">Quantity</dt>
+              <dd className="mt-1 text-lg font-semibold text-slate-900">{quotation.quantity}</dd>
             </div>
-            <div>
-              <dt className="text-sm text-muted-foreground">Unit price</dt>
-              <dd>{formatCurrency(quotation.unit_price)}</dd>
+            <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+              <dt className="text-sm text-slate-500">Unit price</dt>
+              <dd className="mt-1 text-lg font-semibold text-slate-900">{formatCurrency(quotation.unit_price)}</dd>
             </div>
-            <div>
-              <dt className="text-sm text-muted-foreground">Valid until</dt>
-              <dd>{quotation.valid_until ?? "-"}</dd>
+            <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+              <dt className="text-sm text-slate-500">Valid until</dt>
+              <dd className="mt-1 text-slate-900">{quotation.valid_until ?? "-"}</dd>
             </div>
-            <div>
-              <dt className="text-sm text-muted-foreground">Created</dt>
-              <dd>{quotation.created_at ?? "-"}</dd>
+            <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+              <dt className="text-sm text-slate-500">Created</dt>
+              <dd className="mt-1 text-slate-900">{quotation.created_at ?? "-"}</dd>
             </div>
           </dl>
-          {quotation.status === "draft" && <Button onClick={submitQuotation}>Submit quotation</Button>}
         </section>
       )}
     </div>

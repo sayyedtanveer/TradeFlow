@@ -18,6 +18,7 @@ class CreateWorkOrderCommand(BaseModel):
     due_date: date
     priority: str = "NORMAL"
     sales_order_id: Optional[uuid.UUID] = None
+    sales_order_line_id: Optional[uuid.UUID] = None
     notes: Optional[str] = None
     created_by: uuid.UUID
 

@@ -68,6 +68,7 @@ class ItemVariant(BaseEntity):
         attribute_keys_ordered: List[str],
         attribute_values: Dict[str, Any],
         base_unit_id: Optional[uuid.UUID] = None,
+        material_id: Optional[uuid.UUID] = None,
         standard_cost: Decimal = Decimal("0"),
         selling_price: Optional[Decimal] = None,
         # Can be supplied when rehydrating from DB (already computed)
@@ -96,6 +97,7 @@ class ItemVariant(BaseEntity):
         self._template_id = template_id
         self._attribute_values = normalised_values
         self._base_unit_id = base_unit_id
+        self._material_id = material_id
         self._standard_cost = Decimal(str(standard_cost))
         self._selling_price = Decimal(str(selling_price)) if selling_price is not None else None
         self._is_active = is_active
@@ -130,6 +132,10 @@ class ItemVariant(BaseEntity):
     @property
     def base_unit_id(self) -> Optional[uuid.UUID]:
         return self._base_unit_id
+
+    @property
+    def material_id(self) -> Optional[uuid.UUID]:
+        return self._material_id
 
     @property
     def standard_cost(self) -> Decimal:
@@ -167,4 +173,8 @@ class ItemVariant(BaseEntity):
 
     def deactivate(self) -> None:
         self._is_active = False
+        self._touch()
+
+    def set_material_link(self, material_id: Optional[uuid.UUID]) -> None:
+        self._material_id = material_id
         self._touch()

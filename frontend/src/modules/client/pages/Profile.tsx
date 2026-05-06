@@ -213,20 +213,20 @@ export default function Profile() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Profile</p>
-        <h1 className="mt-2 text-3xl font-semibold text-slate-900">Manage contact details, addresses, and alerts.</h1>
+        <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">Manage contact details, addresses, and alerts.</h1>
         <p className="mt-3 max-w-2xl text-sm text-slate-600">
           Company information stays view-only, while client contact, address book, and notification preferences remain editable here.
         </p>
       </section>
 
       <Tabs defaultValue="company" className="space-y-6">
-        <TabsList className="h-auto flex-wrap rounded-3xl bg-slate-100 p-2">
-          <TabsTrigger value="company" className="rounded-2xl px-5 py-2">Company Info</TabsTrigger>
-          <TabsTrigger value="contact" className="rounded-2xl px-5 py-2">Contacts</TabsTrigger>
-          <TabsTrigger value="addresses" className="rounded-2xl px-5 py-2">Addresses</TabsTrigger>
-          <TabsTrigger value="notifications" className="rounded-2xl px-5 py-2">Notifications</TabsTrigger>
+        <TabsList className="grid h-auto grid-cols-2 gap-2 rounded-3xl bg-slate-100 p-2 sm:flex sm:flex-wrap">
+          <TabsTrigger value="company" className="rounded-2xl px-4 py-2 sm:px-5">Company Info</TabsTrigger>
+          <TabsTrigger value="contact" className="rounded-2xl px-4 py-2 sm:px-5">Contacts</TabsTrigger>
+          <TabsTrigger value="addresses" className="rounded-2xl px-4 py-2 sm:px-5">Addresses</TabsTrigger>
+          <TabsTrigger value="notifications" className="rounded-2xl px-4 py-2 sm:px-5">Notifications</TabsTrigger>
         </TabsList>
 
         <TabsContent value="company">
@@ -283,7 +283,7 @@ export default function Profile() {
                   <Input type="email" value={contactForm.email} onChange={(event) => setContactForm({ ...contactForm, email: event.target.value })} />
                 </div>
                 <div className="md:col-span-2">
-                  <Button type="submit" className="rounded-full" disabled={contactMutation.isPending}>
+                  <Button type="submit" className="w-full rounded-full sm:w-auto" disabled={contactMutation.isPending}>
                     {contactMutation.isPending ? "Saving..." : "Save Contact"}
                   </Button>
                 </div>
@@ -299,7 +299,7 @@ export default function Profile() {
                 <CardTitle>Address Book</CardTitle>
                 <CardDescription>Maintain multiple shipping and billing destinations for the client account.</CardDescription>
               </div>
-              <Button className="rounded-full" onClick={openCreateAddress}>Add Address</Button>
+              <Button className="w-full rounded-full sm:w-auto" onClick={openCreateAddress}>Add Address</Button>
             </CardHeader>
             <CardContent className="grid gap-4 lg:grid-cols-2">
               {profile.addresses.length ? (
@@ -316,13 +316,13 @@ export default function Profile() {
                     {address.contact_name && <p className="mt-3 text-sm text-slate-600">Contact: {address.contact_name}</p>}
                     {address.phone && <p className="text-sm text-slate-600">Phone: {address.phone}</p>}
                     {address.email && <p className="text-sm text-slate-600">Email: {address.email}</p>}
-                    <div className="mt-5 flex gap-2">
-                      <Button variant="outline" className="rounded-full" onClick={() => openEditAddress(address)}>
+                    <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+                      <Button variant="outline" className="w-full rounded-full sm:w-auto" onClick={() => openEditAddress(address)}>
                         Edit
                       </Button>
                       <Button
                         variant="destructive"
-                        className="rounded-full"
+                        className="w-full rounded-full sm:w-auto"
                         disabled={deleteAddressMutation.isPending}
                         onClick={() => deleteAddressMutation.mutate(address.id)}
                       >
@@ -371,7 +371,7 @@ export default function Profile() {
                   </div>
                 </label>
               ))}
-              <Button className="rounded-full" disabled={notificationMutation.isPending} onClick={() => notificationMutation.mutate()}>
+              <Button className="w-full rounded-full sm:w-auto" disabled={notificationMutation.isPending} onClick={() => notificationMutation.mutate()}>
                 {notificationMutation.isPending ? "Saving..." : "Save Preferences"}
               </Button>
             </CardContent>
@@ -445,7 +445,7 @@ export default function Profile() {
               <Label>Email</Label>
               <Input type="email" value={addressForm.email} onChange={(event) => setAddressForm({ ...addressForm, email: event.target.value })} />
             </div>
-            <label className="md:col-span-2 flex items-center gap-3 rounded-3xl border border-slate-200 p-4">
+            <label className="flex items-center gap-3 rounded-3xl border border-slate-200 p-4 md:col-span-2">
               <Checkbox checked={addressForm.is_default} onCheckedChange={(checked) => setAddressForm({ ...addressForm, is_default: checked === true })} />
               <div>
                 <p className="font-medium text-slate-900">Make default {addressForm.type} address</p>
@@ -453,7 +453,7 @@ export default function Profile() {
               </div>
             </label>
             <div className="md:col-span-2">
-              <Button type="submit" className="rounded-full" disabled={addressMutation.isPending}>
+              <Button type="submit" className="w-full rounded-full sm:w-auto" disabled={addressMutation.isPending}>
                 {addressMutation.isPending ? "Saving..." : editingAddress ? "Save Address" : "Add Address"}
               </Button>
             </div>
