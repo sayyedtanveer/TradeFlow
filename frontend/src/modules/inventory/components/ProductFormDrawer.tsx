@@ -3,6 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { inventoryService } from "@/services/inventory.service"
+import { materialService } from "@/services/material.service"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,9 +18,9 @@ const productSchema = z.object({
   sku: z.string().min(3, "SKU must be at least 3 characters"),
   name: z.string().min(2, "Name is required"),
   description: z.string().optional(),
-  category: z.string().min(1, "Category is required"),
+  category_id: z.string().uuid("Please select a valid category").nullable().optional(),
+  base_unit_id: z.string().uuid("Please select a valid unit").nullable().optional(),
   reorder_point: z.coerce.number().min(0),
-  price: z.coerce.number().min(0),
 })
 
 type ProductFormValues = z.infer<typeof productSchema>
@@ -40,6 +41,18 @@ export function ProductFormDrawer({ productId, open, onClose }: Props) {
     enabled: isEditing && open,
   })
 
+  const { data: categories } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => materialService.getCategories(),
+    enabled: open,
+  })
+
+  const { data: units } = useQuery({
+    queryKey: ["units"],
+    queryFn: () => materialService.getUnits(),
+    enabled: open,
+  })
+
   // Using raw uncontrolled form approach with react-hook-form register for simplicity in Phase 1
   const { register, handleSubmit, formState: { errors }, setValue, watch, reset } = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
@@ -47,9 +60,9 @@ export function ProductFormDrawer({ productId, open, onClose }: Props) {
       sku: "",
       name: "",
       description: "",
-      category: "",
+      category_id: null,
+      base_unit_id: null,
       reorder_point: 10,
-      price: 0,
     }
   })
 
@@ -60,29 +73,32 @@ export function ProductFormDrawer({ productId, open, onClose }: Props) {
         sku: product.sku,
         name: product.name,
         description: product.description || "",
-        category: product.category,
+        category_id: product.category === "Uncategorized" ? null : product.category,
+        base_unit_id: null,
         reorder_point: product.reorder_point,
-        price: product.price,
       })
     } else if (productId === "new") {
       reset({
         sku: "",
         name: "",
         description: "",
-        category: "",
+        category_id: null,
+        base_unit_id: null,
         reorder_point: 10,
-        price: 0,
       })
     }
   }, [product, productId, reset])
 
   const saveMutation = useMutation({
     mutationFn: async (data: ProductFormValues) => {
-      await new Promise(resolve => setTimeout(resolve, 800))
-      return { id: isEditing ? productId : Math.random().toString(), ...data }
+      if (isEditing) {
+        return inventoryService.updateProduct(productId!, data)
+      }
+      return inventoryService.createProduct(data)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["products"] })
+      queryClient.invalidateQueries({ queryKey: ["materials"] })
       onClose()
     }
   })
@@ -120,22 +136,23 @@ export function ProductFormDrawer({ productId, open, onClose }: Props) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="category">Category</Label>
+              <Label htmlFor="category_id">Category</Label>
               <Select 
-                value={watch("category")} 
-                onValueChange={(val) => setValue("category", val, { shouldValidate: true })}
+                value={watch("category_id") || ""} 
+                onValueChange={(val) => setValue("category_id", val, { shouldValidate: true })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Category" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Raw Materials">Raw Materials</SelectItem>
-                  <SelectItem value="Packaging">Packaging</SelectItem>
-                  <SelectItem value="Finished Goods">Finished Goods</SelectItem>
-                  <SelectItem value="Consumables">Consumables</SelectItem>
+                  {categories?.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              {errors.category && <p className="text-xs text-destructive">{errors.category.message}</p>}
+              {errors.category_id && <p className="text-xs text-destructive">{errors.category_id.message}</p>}
             </div>
             
             <div className="grid grid-cols-2 gap-4">
@@ -145,9 +162,23 @@ export function ProductFormDrawer({ productId, open, onClose }: Props) {
                 {errors.reorder_point && <p className="text-xs text-destructive">{errors.reorder_point.message}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="price">Unit Price</Label>
-                <Input id="price" type="number" step="0.01" min="0" {...register("price")} />
-                {errors.price && <p className="text-xs text-destructive">{errors.price.message}</p>}
+                <Label htmlFor="base_unit_id">Base Unit</Label>
+                <Select
+                  value={watch("base_unit_id") || ""}
+                  onValueChange={(val) => setValue("base_unit_id", val, { shouldValidate: true })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {units?.map((unit) => (
+                      <SelectItem key={unit.id} value={unit.id}>
+                        {unit.name} ({unit.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.base_unit_id && <p className="text-xs text-destructive">{errors.base_unit_id.message}</p>}
               </div>
             </div>
           </div>

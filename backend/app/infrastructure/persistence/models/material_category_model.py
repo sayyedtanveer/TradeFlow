@@ -16,6 +16,7 @@ class MaterialCategoryModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    code_prefix: Mapped[str] = mapped_column(String(20), nullable=False, default="GEN")
     description: Mapped[Optional[str]] = mapped_column(String)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 

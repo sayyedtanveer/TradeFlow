@@ -24,6 +24,7 @@ class MaterialModel(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     code = Column(String(50), nullable=False)
+    code_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     name = Column(String(255), nullable=False)
     description = Column(String, nullable=True)
 

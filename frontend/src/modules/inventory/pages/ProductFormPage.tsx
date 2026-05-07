@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { inventoryService } from "@/services/inventory.service"
+import { materialService } from "@/services/material.service"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,9 +18,8 @@ const productSchema = z.object({
   sku: z.string().min(3, "SKU must be at least 3 characters"),
   name: z.string().min(2, "Name is required"),
   description: z.string().optional(),
-  category: z.string().min(1, "Category is required"),
+  category_id: z.string().uuid("Please select a valid category").nullable().optional(),
   reorder_point: z.coerce.number().min(0),
-  price: z.coerce.number().min(0),
 })
 
 type ProductFormValues = z.infer<typeof productSchema>
@@ -36,35 +36,38 @@ export default function ProductFormPage() {
     enabled: isEditing,
   })
 
-  // Using raw uncontrolled form approach with react-hook-form register for simplicity in Phase 1
-  // Can be mapped to shadcn Form components later if needed
+  const { data: categories } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => materialService.getCategories(),
+  })
+
   const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
     values: product ? {
       sku: product.sku,
       name: product.name,
       description: product.description || "",
-      category: product.category,
+      category_id: product.category === "Uncategorized" ? null : product.category,
       reorder_point: product.reorder_point,
-      price: product.price,
     } : {
       sku: "",
       name: "",
       description: "",
-      category: "",
+      category_id: null,
       reorder_point: 10,
-      price: 0,
     }
   })
 
   const saveMutation = useMutation({
     mutationFn: async (data: ProductFormValues) => {
-      // Mock API call
-      await new Promise(resolve => setTimeout(resolve, 800))
-      return { id: isEditing ? id : Math.random().toString(), ...data }
+      if (isEditing) {
+        return inventoryService.updateProduct(id!, data)
+      }
+      return inventoryService.createProduct(data)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["products"] })
+      queryClient.invalidateQueries({ queryKey: ["materials"] })
       navigate("/inventory/products")
     }
   })
@@ -119,34 +122,30 @@ export default function ProductFormPage() {
           <Textarea id="description" rows={3} {...register("description")} />
         </div>
 
-        <div className="grid sm:grid-cols-3 gap-4">
+        <div className="grid sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="category">Category</Label>
+            <Label htmlFor="category_id">Category</Label>
             <Select 
-              value={watch("category")} 
-              onValueChange={(val) => setValue("category", val, { shouldValidate: true })}
+              value={watch("category_id") || ""} 
+              onValueChange={(val) => setValue("category_id", val, { shouldValidate: true })}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select Category" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Raw Materials">Raw Materials</SelectItem>
-                <SelectItem value="Packaging">Packaging</SelectItem>
-                <SelectItem value="Finished Goods">Finished Goods</SelectItem>
-                <SelectItem value="Consumables">Consumables</SelectItem>
+                {categories?.map((category) => (
+                  <SelectItem key={category.id} value={category.id}>
+                    {category.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-            {errors.category && <p className="text-xs text-destructive">{errors.category.message}</p>}
+            {errors.category_id && <p className="text-xs text-destructive">{errors.category_id.message}</p>}
           </div>
           <div className="space-y-2">
             <Label htmlFor="reorder_point">Reorder Point</Label>
             <Input id="reorder_point" type="number" min="0" {...register("reorder_point")} />
             {errors.reorder_point && <p className="text-xs text-destructive">{errors.reorder_point.message}</p>}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="price">Unit Price</Label>
-            <Input id="price" type="number" step="0.01" min="0" {...register("price")} />
-            {errors.price && <p className="text-xs text-destructive">{errors.price.message}</p>}
           </div>
         </div>
       </div>

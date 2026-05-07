@@ -103,11 +103,14 @@ export interface ItemTemplate {
   id: string;
   tenant_id: string;
   code: string;
+  item_code: string;
+  item_type: "RAW" | "FG" | "SF" | string;
   name: string;
   description?: string;
   category_id?: string;
   base_unit_id?: string;
   attributes: { key: string; label: string; values?: string[] }[];
+  code_locked: boolean;
   is_active: boolean;
 }
 

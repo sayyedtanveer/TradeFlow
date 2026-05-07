@@ -14,8 +14,8 @@ from backend.app.domain.product.value_objects.product_status import ProductStatu
 class CreateItemTemplateCommand:
     tenant_id: uuid.UUID
     created_by: uuid.UUID
-    code: str
     name: str
+    code: Optional[str] = None
     description: Optional[str] = None
     category_id: Optional[uuid.UUID] = None
     base_unit_id: Optional[uuid.UUID] = None

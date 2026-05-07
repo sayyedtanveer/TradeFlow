@@ -42,12 +42,12 @@ const normalizeMaterialName = (value: string) =>
   value.trim().replace(/\s+/g, " ").toLowerCase()
 
 const materialSchema = z.object({
-  code: z.string().trim().min(1, "Code must be at least 1 character").max(100),
+  code: z.string().trim().max(50).optional(),
   name: z.string().trim().min(1, "Name is required").max(255),
-  material_type: z.enum(["raw", "finished"]),
+  material_type: z.enum(["raw", "finished", "semi_finished"]),
   base_unit_id: z.string().uuid("Please select a valid unit").nullable().optional(),
   description: z.string().max(2000).optional().nullable(),
-  category_id: z.string().uuid("Please select a valid category").nullable().optional(),
+  category_id: z.string().uuid("Please select a valid category"),
   reorder_level: z.coerce.number().min(0).optional().nullable(),
   location_id: z.string().uuid("Please select a valid location").nullable().optional(),
   is_batch_tracked: z.boolean().default(false).optional(),
@@ -63,7 +63,7 @@ const materialSchema = z.object({
       message: "Use the actual raw material name, for example Brass Body, Glass Tube, or O-Ring Seal.",
     })
   }
-  if (material_type === "finished" && GENERIC_FINISHED_NAMES.has(normalized)) {
+  if ((material_type === "finished" || material_type === "semi_finished") && GENERIC_FINISHED_NAMES.has(normalized)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["name"],
@@ -121,7 +121,7 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
       material_type: "raw",
       base_unit_id: null,
       description: "",
-      category_id: null,
+      category_id: "",
       reorder_level: 10,
       location_id: null,
       is_batch_tracked: false,
@@ -135,12 +135,12 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
   useEffect(() => {
     if (material) {
       reset({
-        code: material.code,
+        code: material.item_code || material.code,
         name: material.name,
-        material_type: (material.material_type as "raw" | "finished") || "raw",
+        material_type: (material.material_type as "raw" | "finished" | "semi_finished") || "raw",
         base_unit_id: material.base_unit_id || null,
         description: material.description || "",
-        category_id: material.category_id || null,
+        category_id: material.category_id || "",
         reorder_level: material.reorder_level ?? 10,
         location_id: material.location_id || null,
         is_batch_tracked: material.is_batch_tracked ?? false,
@@ -155,7 +155,7 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
         material_type: "raw",
         base_unit_id: null,
         description: "",
-        category_id: null,
+        category_id: "",
         reorder_level: 10,
         location_id: null,
         is_batch_tracked: false,
@@ -184,7 +184,7 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
         })
       } else {
         return await materialService.createMaterial({
-          code: data.code,
+          item_code: data.code || null,
           name: data.name,
           material_type: data.material_type,
           base_unit_id: data.base_unit_id,
@@ -229,8 +229,8 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="code">Material Code</Label>
-                <Input id="code" placeholder="E.g. MAT-001" {...register("code")} disabled={isEditing} autoFocus={!isEditing} />
+                <Label htmlFor="code">Item Code</Label>
+                <Input id="code" placeholder="Auto-generate if blank" {...register("code")} disabled={isEditing} autoFocus={!isEditing} />
                 {errors.code && <p className="text-xs text-destructive">{errors.code.message}</p>}
               </div>
 
@@ -266,13 +266,14 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
                 <Label htmlFor="material_type">Material Type</Label>
                 <Select 
                   value={watch("material_type") || "raw"} 
-                  onValueChange={(val) => setValue("material_type", val as "raw" | "finished", { shouldValidate: true })}
+                  onValueChange={(val) => setValue("material_type", val as "raw" | "finished" | "semi_finished", { shouldValidate: true })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select Type" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="raw">Raw Material</SelectItem>
+                    <SelectItem value="semi_finished">Semi-finished</SelectItem>
                     <SelectItem value="finished">Finished Good</SelectItem>
                   </SelectContent>
                 </Select>

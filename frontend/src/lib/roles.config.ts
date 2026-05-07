@@ -15,6 +15,7 @@ export enum UserRole {
   QC = "QC",
   PLANNER = "PLANNER",
   SALES = "SALES",
+  ACCOUNTANT = "ACCOUNTANT",
   WORKER = "WORKER",
   CLIENT = "CLIENT",
   SUPPLIER = "SUPPLIER",
@@ -32,6 +33,7 @@ export type AppModuleKey =
   | "procurement"
   | "quality"
   | "sales"
+  | "finance"
   | "shopFloor"
   | "reports"
   | "auditLogs"
@@ -51,6 +53,7 @@ export const ROLE_MODULE_ACCESS: Record<UserRole, AppModuleKey[]> = {
     "procurement",
     "quality",
     "sales",
+    "finance",
     "shopFloor",
     "reports",
     "auditLogs",
@@ -68,6 +71,7 @@ export const ROLE_MODULE_ACCESS: Record<UserRole, AppModuleKey[]> = {
     "procurement",
     "quality",
     "sales",
+    "finance",
     "shopFloor",
     "reports",
     "auditLogs",
@@ -87,8 +91,10 @@ export const ROLE_MODULE_ACCESS: Record<UserRole, AppModuleKey[]> = {
     "procurement",
     "quality",
     "sales",
+    "finance",
     "reports",
   ],
+  [UserRole.ACCOUNTANT]: ["dashboard", "finance", "reports"],
   [UserRole.SALES]: ["dashboard", "sales"],
   [UserRole.QC]: ["dashboard", "quality", "workOrders", "inventory"],
   [UserRole.WORKER]: ["shopFloor"],
@@ -103,6 +109,7 @@ export const ROLE_DASHBOARD_PATHS: Partial<Record<UserRole, string>> = {
   [UserRole.PLANNER]: "/dashboard/planner",
   [UserRole.STOREKEEPER]: "/dashboard/storekeeper",
   [UserRole.SALES]: "/dashboard/sales",
+  [UserRole.ACCOUNTANT]: "/finance",
   [UserRole.QC]: "/procurement/quality",
   [UserRole.WORKER]: "/shop-floor",
   [UserRole.CLIENT]: "/client",
@@ -176,33 +183,40 @@ export const ROLE_CONFIG: Record<
     color: "text-cyan-600",
     sortOrder: 8,
   },
+  [UserRole.ACCOUNTANT]: {
+    label: "Accountant",
+    description: "Finance & reports",
+    icon: Users,
+    color: "text-emerald-600",
+    sortOrder: 9,
+  },
   [UserRole.WORKER]: {
     label: "Worker",
     description: "Shop floor",
     icon: Wrench,
     color: "text-orange-600",
-    sortOrder: 9,
+    sortOrder: 10,
   },
   [UserRole.CLIENT]: {
     label: "Client",
     description: "Portal",
     icon: Eye,
     color: "text-gray-600",
-    sortOrder: 10,
+    sortOrder: 11,
   },
   [UserRole.SUPPLIER]: {
     label: "Supplier",
     description: "Supplier portal",
     icon: Users,
     color: "text-violet-600",
-    sortOrder: 11,
+    sortOrder: 12,
   },
   [UserRole.VIEWER]: {
     label: "Viewer",
     description: "Read-only",
     icon: Eye,
     color: "text-gray-600",
-    sortOrder: 12,
+    sortOrder: 13,
   },
 }
 
@@ -259,6 +273,7 @@ export const MODULE_ROLES: Record<string, UserRole[]> = {
     UserRole.STOREKEEPER,
     UserRole.OPERATOR,
     UserRole.SALES,
+    UserRole.ACCOUNTANT,
     UserRole.QC,
     UserRole.WORKER,
     UserRole.CLIENT,
@@ -278,6 +293,7 @@ export const MODULE_ROLES: Record<string, UserRole[]> = {
     UserRole.QC,
     UserRole.VIEWER,
   ],
+  finance: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.ACCOUNTANT],
   workOrders: [
     UserRole.ADMIN,
     UserRole.TENANT_ADMIN,
@@ -306,7 +322,7 @@ export const MODULE_ROLES: Record<string, UserRole[]> = {
     UserRole.VIEWER,
   ],
   shopFloor: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.WORKER, UserRole.OPERATOR],
-  reports: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.PLANNER, UserRole.VIEWER],
+  reports: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.PLANNER, UserRole.ACCOUNTANT, UserRole.VIEWER],
   auditLogs: [UserRole.ADMIN, UserRole.TENANT_ADMIN],
   users: [UserRole.ADMIN, UserRole.TENANT_ADMIN],
   settings: [UserRole.ADMIN, UserRole.TENANT_ADMIN],

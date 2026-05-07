@@ -10,11 +10,12 @@ from pydantic import BaseModel, Field
 
 # ── Material Request Schemas ──────────────────────────────────────────────
 class CreateMaterialRequest(BaseModel):
-    code: str = Field(..., min_length=1, max_length=100, description="Unique material code within tenant")
+    code: Optional[str] = Field(None, min_length=1, max_length=50, description="Manual item code override")
+    item_code: Optional[str] = Field(None, min_length=1, max_length=50, description="Manual item code override")
     name: str = Field(..., min_length=1, max_length=255)
-    material_type: str = Field("raw", pattern="^(raw|finished)$")
+    material_type: str = Field("raw", pattern="^(raw|finished|semi_finished)$")
     description: Optional[str] = Field(None, max_length=2000)
-    category_id: Optional[uuid.UUID] = None
+    category_id: uuid.UUID
     base_unit_id: Optional[uuid.UUID] = None
     reorder_level: Optional[Decimal] = Field(None, ge=0)
     location_id: Optional[uuid.UUID] = None
@@ -27,7 +28,7 @@ class UpdateMaterialRequest(BaseModel):
     description: Optional[str] = Field(None, max_length=2000)
     category_id: Optional[uuid.UUID] = None
     base_unit_id: Optional[uuid.UUID] = None
-    material_type: Optional[str] = Field(None, pattern="^(raw|finished)$")
+    material_type: Optional[str] = Field(None, pattern="^(raw|finished|semi_finished)$")
     reorder_level: Optional[Decimal] = Field(None, ge=0)
     location_id: Optional[uuid.UUID] = None
     is_batch_tracked: Optional[bool] = None
@@ -83,6 +84,8 @@ class MaterialResponse(BaseModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
     code: str
+    item_code: str
+    item_type: str
     name: str
     material_type: str
     description: Optional[str]
@@ -95,6 +98,7 @@ class MaterialResponse(BaseModel):
     location_id: Optional[uuid.UUID]
     is_batch_tracked: bool
     is_serialized: bool
+    code_locked: bool
     inspection_required: bool = False
     inspection_template_id: Optional[uuid.UUID] = None
     is_active: bool

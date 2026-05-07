@@ -180,11 +180,11 @@ export function SupplierPortalKpiCard({
     <article className={cn("erp-portal-kpi-card", toneStyles[tone].card)}>
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">{label}</p>
-          <div className="text-4xl font-semibold tracking-tight text-slate-950">{value}</div>
-          {helper ? <p className="text-sm text-slate-600">{helper}</p> : null}
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-700 sm:tracking-[0.24em]">{label}</p>
+          <div className="text-4xl font-bold tracking-tight text-slate-950">{value}</div>
+          {helper ? <p className="text-sm font-medium leading-relaxed text-slate-700">{helper}</p> : null}
         </div>
-        <div className={cn("rounded-2xl border p-3 shadow-sm", toneStyles[tone].icon)}>
+        <div className={cn("rounded-2xl border p-3 shadow-sm ring-1 ring-white/70", toneStyles[tone].icon)}>
           <Icon className="h-5 w-5" />
         </div>
       </div>

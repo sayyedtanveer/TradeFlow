@@ -13,7 +13,6 @@ export default function DashboardPage() {
     queryFn: reportsService.getDashboard,
   })
 
-  // Basic derived state for low stock alerts from KPI data (mock logic)
   const lowStockKpi = data?.kpis.find((k) => k.label.includes("Low Stock"))
   const lowStockCount = lowStockKpi ? Number(lowStockKpi.value) : 0
 

@@ -3,7 +3,7 @@ import { ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import { useUIStore } from "@/app/store/uiStore"
 import { useTenantStore } from "@/app/store/tenantStore"
 import { usePermissions } from "@/hooks/usePermissions"
-import { NAV_ITEMS, type NavItem } from "@/lib/constants"
+import { getVisibleNavItems, type NavItem } from "@/lib/constants"
 import { normalizeRole } from "@/lib/roles.config"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -15,9 +15,30 @@ export function Sidebar() {
   const location = useLocation()
 
   const normalizedRole = normalizeRole(role)
-  const visibleNavItems = NAV_ITEMS.filter((item: NavItem) =>
-    normalizedRole && item.roles.includes(normalizedRole)
-  )
+  const visibleNavItems = getVisibleNavItems(normalizedRole)
+
+  const isNavItemActive = (item: NavItem) => {
+    if (item.href === "/") return location.pathname === "/"
+    return location.pathname === item.href || location.pathname.startsWith(`${item.href}/`)
+  }
+
+  const getNavAccent = (item: NavItem) => {
+    if (item.href.startsWith("/finance")) return "from-blue-500 to-indigo-600"
+    if (item.href.startsWith("/reports")) return "from-violet-500 to-fuchsia-600"
+    if (item.href.startsWith("/inventory")) return "from-emerald-500 to-green-600"
+    return "from-blue-500 to-indigo-600"
+  }
+
+  const getIconShellClass = (item: NavItem, active: boolean, contextual = false, compact = false) =>
+    cn(
+      "flex shrink-0 items-center justify-center rounded-lg transition-all duration-200 group-hover:scale-105",
+      compact ? "h-8 w-8" : "h-9 w-9",
+      active
+        ? `bg-gradient-to-r ${getNavAccent(item)} text-white shadow-sm`
+        : contextual
+          ? "bg-transparent text-slate-200"
+          : "bg-transparent text-gray-400"
+    )
 
   const closeOnMobile = () => {
     if (typeof window !== "undefined" && window.innerWidth < 768) {
@@ -79,8 +100,59 @@ export function Sidebar() {
 
         <nav className="erp-dark-scrollbar flex-1 space-y-1.5 overflow-y-auto px-3 py-4 pr-2">
           {visibleNavItems.map((item) => {
-            const isActive =
-              location.pathname === item.href || location.pathname.startsWith(`${item.href}/`)
+            const childItems = item.children ?? []
+            const hasChildren = childItems.length > 0
+            const activeChild = childItems.find((child) => isNavItemActive(child))
+            const isActive = isNavItemActive(item) || childItems.some(isNavItemActive)
+            const isDirectActive = isNavItemActive(item) && !activeChild
+            const isContextActive = Boolean(activeChild) || isDirectActive
+
+            if (hasChildren && isSidebarOpen) {
+              return (
+                <div key={item.href} className="space-y-1">
+                  <div
+                    className={cn(
+                      "group flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-all duration-200",
+                      isContextActive
+                        ? "bg-white/5 text-white shadow-sm"
+                        : "text-slate-400 hover:bg-white/5 hover:text-white",
+                      "gap-3"
+                    )}
+                  >
+                    <span className={getIconShellClass(item, isDirectActive, Boolean(activeChild))}>
+                      <item.icon className="h-5 w-5" />
+                    </span>
+                    <span className="truncate">{item.title}</span>
+                    {isContextActive && <ChevronRight className="ml-auto h-4 w-4 text-white/60" />}
+                  </div>
+
+                  <div className="ml-6 space-y-1 border-l border-white/10 pl-3">
+                    {childItems.map((child) => {
+                      const isChildActive = isNavItemActive(child)
+
+                      return (
+                        <Link
+                          key={child.href}
+                          to={child.href}
+                          onClick={closeOnMobile}
+                          className={cn(
+                            "group flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-all duration-200",
+                            isChildActive
+                              ? "bg-white/5 text-white shadow-sm"
+                              : "text-slate-400 hover:bg-white/5 hover:text-white"
+                          )}
+                        >
+                          <span className={getIconShellClass(child, isChildActive, false, true)}>
+                            <child.icon className="h-4 w-4" />
+                          </span>
+                          <span className="truncate">{child.title}</span>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            }
 
             return (
               <Link
@@ -90,22 +162,19 @@ export function Sidebar() {
                 className={cn(
                   "group flex items-center rounded-2xl px-3 py-3 text-sm font-medium transition-all duration-200",
                   isActive
-                    ? "bg-slate-800 text-white shadow-inner"
-                    : "text-slate-400 hover:bg-slate-900 hover:text-white",
+                    ? "bg-white/5 text-white shadow-sm"
+                    : "text-slate-400 hover:bg-white/5 hover:text-white",
                   isSidebarOpen ? "gap-3" : "justify-center px-0"
                 )}
                 title={!isSidebarOpen ? item.title : undefined}
               >
-                <item.icon
-                  className={cn(
-                    "h-5 w-5 shrink-0 transition-transform duration-200 group-hover:scale-105",
-                    isActive ? "text-blue-400" : "text-slate-500 group-hover:text-slate-200"
-                  )}
-                />
+                <span className={getIconShellClass(item, isActive)}>
+                  <item.icon className="h-5 w-5" />
+                </span>
                 {isSidebarOpen && (
                   <>
                     <span className="truncate">{item.title}</span>
-                    {isActive && <ChevronRight className="ml-auto h-4 w-4 text-slate-500" />}
+                    {isActive && <ChevronRight className="ml-auto h-4 w-4 text-white/60" />}
                   </>
                 )}
               </Link>

@@ -24,6 +24,7 @@ from backend.app.domain.product.entities.item_variant import (
 )
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
 from backend.app.domain.shared.exceptions.business_rule_violation import BusinessRuleViolationException
+from backend.app.application.inventory.services.item_code_service import ItemCodeService
 
 
 # ── DTOs ─────────────────────────────────────────────────────────────────────
@@ -33,12 +34,15 @@ class ItemTemplateResult:
     id: str
     tenant_id: str
     code: str
+    item_code: str
+    item_type: str
     name: str
     description: Optional[str]
     category_id: Optional[str]
     base_unit_id: Optional[str]
     attributes: List[Dict[str, Any]]
     status: str  # ProductStatus string value
+    code_locked: bool
     is_active: bool
 
 
@@ -61,19 +65,38 @@ class ItemVariantResult:
 # ── Template Handlers ─────────────────────────────────────────────────────────
 
 class CreateItemTemplateHandler:
-    def __init__(self, template_repo, uow: SQLAlchemyUnitOfWork) -> None:
+    def __init__(self, template_repo, uow: SQLAlchemyUnitOfWork, item_code_service: ItemCodeService | None = None) -> None:
         self._repo = template_repo
         self._uow = uow
+        self._item_code_service = item_code_service
 
     async def handle(self, cmd: CreateItemTemplateCommand) -> ItemTemplateResult:
+        if cmd.category_id is None:
+            raise ValueError("Category is required for item code generation.")
+        code = (
+            await self._item_code_service.validate_manual_code(
+                tenant_id=cmd.tenant_id,
+                code=cmd.code,
+                target="product",
+            )
+            if self._item_code_service is not None and cmd.code
+            else await self._item_code_service.generate(
+                tenant_id=cmd.tenant_id,
+                item_type="finished",
+                category_id=cmd.category_id,
+                target="product",
+            )
+            if self._item_code_service is not None
+            else (cmd.code or "").strip().upper()
+        )
         # Enforce unique code per tenant
-        existing = await self._repo.get_by_code(cmd.code.strip().upper(), cmd.tenant_id)
+        existing = await self._repo.get_by_code(code, cmd.tenant_id)
         if existing:
-            raise ValueError(f"Item template with code '{cmd.code.upper()}' already exists.")
+            raise ValueError(f"Item template with code '{code}' already exists.")
 
         template = ItemTemplate(
             tenant_id=cmd.tenant_id,
-            code=cmd.code,
+            code=code,
             name=cmd.name,
             description=cmd.description,
             category_id=cmd.category_id,
@@ -225,12 +248,15 @@ def _to_template_result(t: ItemTemplate) -> ItemTemplateResult:
         id=str(t.id),
         tenant_id=str(t.tenant_id),
         code=t.code,
+        item_code=t.item_code,
+        item_type=t.item_type,
         name=t.name,
         description=t.description,
         category_id=str(t.category_id) if t.category_id else None,
         base_unit_id=str(t.base_unit_id) if t.base_unit_id else None,
         attributes=t.attributes,
         status=t.status.value,
+        code_locked=t.code_locked,
         is_active=t.is_active,
     )
 

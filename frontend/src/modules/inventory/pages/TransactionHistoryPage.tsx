@@ -14,6 +14,15 @@ export default function TransactionHistoryPage() {
     queryFn: () => materialService.getTransactions({ page: 1, page_size: 200 }),
   })
 
+  const { data: materialsData } = useQuery({
+    queryKey: ["materials", "transaction-history"],
+    queryFn: () => materialService.getMaterials({ page: 1, page_size: 500 }),
+  })
+
+  const materialLookup = useMemo(() => {
+    return new Map((materialsData?.items || []).map((material) => [material.id, material]))
+  }, [materialsData])
+
   // Define columns for TanStack Table
   const columns = useMemo<ColumnDef<InventoryTransaction>[]>(() => [
     {
@@ -38,8 +47,16 @@ export default function TransactionHistoryPage() {
     },
     {
       accessorKey: "material_id",
-      header: "Material ID (UUID)",
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.material_id.split("-")[0]}...</span>,
+      header: "Item",
+      cell: ({ row }) => {
+        const material = materialLookup.get(row.original.material_id)
+        return (
+          <div>
+            <p className="font-medium">{material?.code || "Unknown item"}</p>
+            <p className="text-xs text-muted-foreground">{material?.name || "Material no longer available"}</p>
+          </div>
+        )
+      },
     },
     {
       accessorKey: "quantity",
@@ -52,16 +69,11 @@ export default function TransactionHistoryPage() {
       },
     },
     {
-      accessorKey: "reference_id",
-      header: "Reference",
-      cell: ({ row }) => <span className="text-sm">{row.original.reference_id || "-"}</span>,
-    },
-    {
       accessorKey: "remarks",
       header: "Remarks",
       cell: ({ row }) => <span className="text-sm text-muted-foreground truncate max-w-[200px] inline-block" title={row.original.remarks || ""}>{row.original.remarks || "-"}</span>,
     },
-  ], [])
+  ], [materialLookup])
 
 
   return (

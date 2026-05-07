@@ -3,6 +3,7 @@ import {
   Material, 
   StockInfo, 
   InventoryTransaction, 
+  Batch,
   CreateMaterialInput, 
   UpdateMaterialInput, 
   StockOperationInput,
@@ -69,6 +70,26 @@ export const materialService = {
   }): Promise<InventoryTransaction[]> {
     const { data } = await apiClient.get("/inventory/transactions", { params });
     return data;
+  },
+
+  async getBatches(materialId: string): Promise<Batch[]> {
+    const { data } = await apiClient.get("/inventory/batches", { params: { material_id: materialId } });
+    return (data.items || []).map((batch: Batch) => ({
+      ...batch,
+      quantity: Number(batch.quantity ?? 0),
+      remaining_quantity: Number(batch.remaining_quantity ?? 0),
+      days_until_expiry: batch.days_until_expiry === null ? null : Number(batch.days_until_expiry),
+    }));
+  },
+
+  async getExpiringBatches(days = 30): Promise<Batch[]> {
+    const { data } = await apiClient.get("/inventory/batches/expiring", { params: { days } });
+    return (data.items || []).map((batch: Batch) => ({
+      ...batch,
+      quantity: Number(batch.quantity ?? 0),
+      remaining_quantity: Number(batch.remaining_quantity ?? 0),
+      days_until_expiry: batch.days_until_expiry === null ? null : Number(batch.days_until_expiry),
+    }));
   },
 
   // ── Master Data ─────────────────────────────────────────────────────────

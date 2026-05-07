@@ -44,6 +44,7 @@ def _normalize_key(value: str) -> str:
 class MaterialType(str, Enum):
     RAW = "raw"
     FINISHED = "finished"
+    SEMI_FINISHED = "semi_finished"
 
 
 class Material(BaseEntity):
@@ -80,6 +81,8 @@ class Material(BaseEntity):
             return MaterialType.RAW
         if normalized in {"finished", "finished_good", "finished_goods", "fg"}:
             return MaterialType.FINISHED
+        if normalized in {"semi_finished", "semi-finished", "semifinished", "sf"}:
+            return MaterialType.SEMI_FINISHED
         return MaterialType.RAW
 
     @classmethod
@@ -122,6 +125,7 @@ class Material(BaseEntity):
         location_id: Optional[uuid.UUID] = None,
         is_batch_tracked: bool = False,
         is_serialized: bool = False,
+        code_locked: bool = True,
         inspection_required: bool = False,
         inspection_template_id: Optional[uuid.UUID] = None,
         is_active: bool = True,
@@ -150,6 +154,7 @@ class Material(BaseEntity):
         self._location_id = location_id
         self._is_batch_tracked = is_batch_tracked
         self._is_serialized = is_serialized
+        self._code_locked = code_locked
         self._inspection_required = inspection_required
         self._inspection_template_id = inspection_template_id
         self._is_active = is_active
@@ -158,6 +163,18 @@ class Material(BaseEntity):
     @property
     def code(self) -> str:
         return self._code
+
+    @property
+    def item_code(self) -> str:
+        return self._code
+
+    @property
+    def item_type(self) -> str:
+        if self._material_type == MaterialType.FINISHED:
+            return "FG"
+        if self._material_type == MaterialType.SEMI_FINISHED:
+            return "SF"
+        return "RAW"
 
     @property
     def name(self) -> str:
@@ -242,6 +259,10 @@ class Material(BaseEntity):
     def is_serialized(self, value: bool) -> None:
         self._is_serialized = value
         self._touch()
+
+    @property
+    def code_locked(self) -> bool:
+        return self._code_locked
 
     @property
     def inspection_required(self) -> bool:

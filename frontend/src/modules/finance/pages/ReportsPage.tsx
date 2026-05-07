@@ -1,5 +1,6 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { useSearchParams } from "react-router-dom"
 import { financeService } from "@/services/finance.service"
 import {
   BarChart3, Package, Factory, ShoppingCart, Truck, ClipboardCheck,
@@ -237,7 +238,18 @@ function ReportCard({ section }: { section: ReportSection }) {
 }
 
 export default function ReportsPage() {
-  const [selectedModules, setSelectedModules] = useState<Set<string>>(new Set(["inventory", "sales", "finance"]))
+  const [searchParams] = useSearchParams()
+  const defaultModules = useMemo(() => {
+    const requestedModule = searchParams.get("module")
+    const sectionIds = new Set(REPORT_SECTIONS.map((section) => section.id))
+
+    if (requestedModule && sectionIds.has(requestedModule)) {
+      return new Set([requestedModule])
+    }
+
+    return new Set(["finance", "sales", "inventory", "production", "procurement"])
+  }, [searchParams])
+  const [selectedModules, setSelectedModules] = useState<Set<string>>(defaultModules)
 
   const toggleModule = (id: string) => {
     setSelectedModules((prev) => {

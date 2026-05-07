@@ -100,6 +100,7 @@ from backend.app.interfaces.api.v1.schemas.product_schemas import (
     VariantTemplateCsvResponse,
     ImportError as VariantImportError,
 )
+from backend.app.application.inventory.services.item_code_service import ItemCodeService
 
 router = APIRouter(prefix="/products", tags=["Product Master"])
 
@@ -113,12 +114,15 @@ def _template_from_result(r) -> ItemTemplateResponse:
         id=uuid.UUID(r.id),
         tenant_id=uuid.UUID(r.tenant_id),
         code=r.code,
+        item_code=r.item_code,
+        item_type=r.item_type,
         name=r.name,
         description=r.description,
         category_id=uuid.UUID(r.category_id) if r.category_id else None,
         base_unit_id=uuid.UUID(r.base_unit_id) if r.base_unit_id else None,
         attributes=r.attributes,
         status=r.status,
+        code_locked=r.code_locked,
         is_active=r.is_active,
     )
 
@@ -246,13 +250,17 @@ async def create_template(
     async with container.session_factory() as session:
         repo = ItemTemplateRepository(session)
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = CreateItemTemplateHandler(template_repo=repo, uow=uow)
+        handler = CreateItemTemplateHandler(
+            template_repo=repo,
+            uow=uow,
+            item_code_service=ItemCodeService(session),
+        )
         try:
             result = await handler.handle(
                 CreateItemTemplateCommand(
                     tenant_id=tenant_id,
                     created_by=user_id,
-                    code=body.code,
+                    code=body.item_code or body.code,
                     name=body.name,
                     description=body.description,
                     category_id=body.category_id,

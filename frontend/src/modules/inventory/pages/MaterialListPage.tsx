@@ -20,6 +20,7 @@ export default function MaterialListPage() {
   const { canWrite } = usePermissions()
   
   const materialId = searchParams.get("materialId")
+  const filter = searchParams.get("filter")
   const isDrawerOpen = materialId !== null
   
   const operationMaterialId = searchParams.get("operation")
@@ -113,7 +114,9 @@ export default function MaterialListPage() {
     </>
   )
 
-  const items = materialsData?.items || []
+  const items = (materialsData?.items || []).filter((material) =>
+    filter === "low-stock" ? material.is_low_stock : true
+  )
 
   return (
     <div className="w-full space-y-6">

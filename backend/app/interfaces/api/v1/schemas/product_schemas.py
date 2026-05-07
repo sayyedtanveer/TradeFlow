@@ -16,10 +16,11 @@ class AttributeDefinition(BaseModel):
 
 
 class CreateItemTemplateRequest(BaseModel):
-    code: str = Field(..., min_length=1, max_length=50)
+    code: Optional[str] = Field(None, min_length=1, max_length=50)
+    item_code: Optional[str] = Field(None, min_length=1, max_length=50)
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
-    category_id: Optional[uuid.UUID] = None
+    category_id: uuid.UUID
     base_unit_id: Optional[uuid.UUID] = None
     attributes: List[AttributeDefinition] = Field(default_factory=list)
 
@@ -46,12 +47,15 @@ class ItemTemplateResponse(BaseModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
     code: str
+    item_code: str
+    item_type: str
     name: str
     description: Optional[str]
     category_id: Optional[uuid.UUID]
     base_unit_id: Optional[uuid.UUID]
     attributes: List[Dict[str, Any]]
     status: str = Field(..., description="Product lifecycle status: DRAFT, ACTIVE, INACTIVE, ARCHIVED")
+    code_locked: bool
     is_active: bool
 
     model_config = {"from_attributes": True}

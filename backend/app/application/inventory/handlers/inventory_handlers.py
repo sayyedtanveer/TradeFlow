@@ -23,6 +23,7 @@ from backend.app.infrastructure.persistence.repositories.material_repository imp
 from backend.app.infrastructure.persistence.repositories.transaction_repository import TransactionRepository
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
 from backend.app.infrastructure.persistence.models.inventory_management_models import StockLedgerModel
+from backend.app.application.inventory.services.item_code_service import ItemCodeService
 from datetime import datetime
 from datetime import timezone
 
@@ -32,6 +33,8 @@ class MaterialResult:
     id: uuid.UUID
     tenant_id: uuid.UUID
     code: str
+    item_code: str
+    item_type: str
     name: str
     material_type: str
     description: Optional[str]
@@ -44,6 +47,7 @@ class MaterialResult:
     location_id: Optional[uuid.UUID]
     is_batch_tracked: bool
     is_serialized: bool
+    code_locked: bool
     inspection_required: bool
     inspection_template_id: Optional[uuid.UUID]
     is_active: bool
@@ -54,6 +58,8 @@ def _to_result(m: Material) -> MaterialResult:
         id=m.id,
         tenant_id=m.tenant_id,
         code=m.code,
+        item_code=m.item_code,
+        item_type=m.item_type,
         name=m.name,
         material_type=m.material_type.value if hasattr(m.material_type, 'value') else m.material_type,
         description=m.description,
@@ -66,6 +72,7 @@ def _to_result(m: Material) -> MaterialResult:
         location_id=m.location_id,
         is_batch_tracked=m.is_batch_tracked,
         is_serialized=m.is_serialized,
+        code_locked=m.code_locked,
         inspection_required=m.inspection_required,
         inspection_template_id=m.inspection_template_id,
         is_active=m.is_active,
@@ -75,15 +82,41 @@ def _to_result(m: Material) -> MaterialResult:
 
 # ── Create Material ────────────────────────────────────────────────────────
 class CreateMaterialHandler:
-    def __init__(self, material_repo: MaterialRepository, uow: SQLAlchemyUnitOfWork):
+    def __init__(
+        self,
+        material_repo: MaterialRepository,
+        uow: SQLAlchemyUnitOfWork,
+        item_code_service: ItemCodeService | None = None,
+    ):
         self._repo = material_repo
         self._uow = uow
+        self._item_code_service = item_code_service
 
     async def handle(self, cmd: CreateMaterialCommand) -> MaterialResult:
-        normalized_code = Material.normalize_code(cmd.code)
         normalized_name = Material.normalize_name(cmd.name)
         normalized_type = Material.coerce_material_type(cmd.material_type)
         Material.validate_name_for_type(normalized_name, normalized_type)
+
+        if cmd.category_id is None:
+            raise ValueError("Category is required for item code generation.")
+
+        if self._item_code_service is not None:
+            normalized_code = (
+                await self._item_code_service.validate_manual_code(
+                    tenant_id=cmd.tenant_id,
+                    code=cmd.code,
+                    target="material",
+                )
+                if cmd.code
+                else await self._item_code_service.generate(
+                    tenant_id=cmd.tenant_id,
+                    item_type=normalized_type.value,
+                    category_id=cmd.category_id,
+                    target="material",
+                )
+            )
+        else:
+            normalized_code = Material.normalize_code(cmd.code or "")
 
         if await self._repo.code_exists(normalized_code, cmd.tenant_id):
             raise ValueError(f"Material with code '{normalized_code}' already exists in this tenant.")

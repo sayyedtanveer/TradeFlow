@@ -34,12 +34,18 @@ export default function InventoryDashboard() {
             Real-time stock overview, reservations, and recent movements.
           </p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-3">
           <Button variant="outline" asChild>
             <Link to="/inventory/materials">View Materials</Link>
           </Button>
           <Button variant="outline" asChild>
+            <Link to="/inventory/movements">Stock Movements</Link>
+          </Button>
+          <Button variant="outline" asChild>
             <Link to="/inventory/transactions">View Transactions</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link to="/inventory/batches">Batches</Link>
           </Button>
         </div>
       </div>

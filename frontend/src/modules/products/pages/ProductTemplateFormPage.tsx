@@ -36,7 +36,7 @@ export default function ProductTemplateFormPage() {
     queryKey: ["products", "template", id],
     queryFn: async () => {
       const tpl = await productService.getTemplate(id!)
-      setCode(tpl.code)
+      setCode(tpl.item_code || tpl.code)
       setName(tpl.name)
       setDescription(tpl.description || "")
       setCategoryId(tpl.category_id || "")
@@ -67,9 +67,10 @@ export default function ProductTemplateFormPage() {
   })
 
   const save = () => {
-    if (!code.trim() || !name.trim()) return toast.error("Code and Name are required")
+    if (!name.trim()) return toast.error("Name is required")
+    if (!categoryId) return toast.error("Category is required")
     const payload: any = {
-      code,
+      item_code: code.trim() || null,
       name,
       description,
       attributes: attributes.map((attr) => ({
@@ -78,7 +79,7 @@ export default function ProductTemplateFormPage() {
         values: (attr.values ?? []).map((value) => value.trim()).filter(Boolean),
       })),
     }
-    if (categoryId) payload.category_id = categoryId
+    payload.category_id = categoryId
     if (baseUnitId) payload.base_unit_id = baseUnitId
     if (!isNew) payload.is_active = isActive
     mutation.mutate(payload)
@@ -118,8 +119,8 @@ export default function ProductTemplateFormPage() {
           <h2 className="text-base font-medium border-b pb-2">Basic Information</h2>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Code</Label>
-              <Input value={code} onChange={e => setCode(e.target.value)} disabled={!canEdit || !isNew} placeholder="PROD-001" />
+              <Label>Item Code</Label>
+              <Input value={code} onChange={e => setCode(e.target.value)} disabled={!canEdit || !isNew} placeholder="Auto-generate if blank" />
             </div>
             <div className="space-y-2">
               <Label>Name</Label>

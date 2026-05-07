@@ -14,7 +14,6 @@ import { ColumnDef } from "@tanstack/react-table"
 import { usePermissions } from "@/hooks/usePermissions"
 import { ProductFormDrawer } from "../components/ProductFormDrawer"
 import { useToast } from "@/hooks/use-toast"
-import { formatCurrency } from "@/utils/currency"
 
 export default function ProductListPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -80,14 +79,6 @@ export default function ProductListPage() {
             {isLow && <StatusBadge status="low-stock" label="Low" />}
           </div>
         )
-      },
-    },
-    {
-      accessorKey: "price",
-      header: "Price",
-      cell: ({ row }) => {
-        // Minimal format for currency for now, replace with formatCurrency util later
-        return `$${row.original.price.toFixed(2)}`
       },
     },
     {
@@ -172,7 +163,7 @@ export default function ProductListPage() {
                         <h3 className="font-medium text-base">{product.name}</h3>
                         <p className="text-xs text-muted-foreground font-mono">{product.sku}</p>
                       </div>
-                      <div className="font-semibold bg-primary/10 text-primary px-2 py-1 rounded text-sm">{formatCurrency(product.price)}</div>
+                      <StatusBadge status={product.is_active ? "active" : "inactive"} label={product.is_active ? "Active" : "Inactive"} />
                     </div>
                     <div className="flex justify-between items-end mt-4">
                       <span className="text-sm text-muted-foreground">{product.category}</span>

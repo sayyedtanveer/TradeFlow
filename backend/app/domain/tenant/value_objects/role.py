@@ -19,6 +19,7 @@ class Role(str, Enum):
     QC = "qc"
     PLANNER = "planner"
     SALES = "sales"
+    ACCOUNTANT = "accountant"
     WORKER = "worker"
     CLIENT = "client"
     SUPPLIER = "supplier"

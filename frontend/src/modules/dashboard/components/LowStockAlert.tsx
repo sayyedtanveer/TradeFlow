@@ -21,7 +21,7 @@ export function LowStockAlert({ count }: LowStockAlertProps) {
           </AlertDescription>
         </div>
         <Button variant="destructive" size="sm" asChild className="mt-4 sm:mt-0 w-max shrink-0">
-          <Link to="/inventory/products?filter=low-stock">View Products</Link>
+          <Link to="/inventory/materials?filter=low-stock">View Materials</Link>
         </Button>
       </div>
     </Alert>

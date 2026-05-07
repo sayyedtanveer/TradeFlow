@@ -66,14 +66,16 @@ export default function ClientDashboard() {
             <CardContent className="flex h-full min-h-[136px] flex-col justify-between p-5 pt-5 sm:min-h-[144px] sm:p-6 sm:pt-6">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/72">{item.label}</p>
-                  <p className="mt-2 text-xs text-white/55">{item.helper}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white drop-shadow-sm sm:tracking-[0.24em]">
+                    {item.label}
+                  </p>
+                  <p className="mt-2 text-xs font-medium text-white/85 drop-shadow-sm">{item.helper}</p>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/12 p-2.5 shadow-sm">
-                  <item.icon className="h-4 w-4 text-white" />
+                <div className="rounded-2xl border border-white/25 bg-white/20 p-2.5 shadow-sm backdrop-blur">
+                  <item.icon className="h-4 w-4 text-white drop-shadow-sm" />
                 </div>
               </div>
-              <p className="mt-5 text-2xl font-semibold leading-none text-white sm:text-[2rem]">{item.value}</p>
+              <p className="mt-5 text-2xl font-bold leading-none text-white drop-shadow-sm sm:text-[2rem]">{item.value}</p>
             </CardContent>
           </Card>
         ))}

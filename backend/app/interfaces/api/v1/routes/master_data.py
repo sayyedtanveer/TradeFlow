@@ -16,6 +16,7 @@ from backend.app.infrastructure.persistence.repositories.unit_of_measure_reposit
 from backend.app.domain.inventory.entities.material_category import MaterialCategory
 from backend.app.domain.inventory.entities.location import Location, LocationType
 from backend.app.domain.inventory.entities.unit_of_measure import UnitOfMeasure
+from backend.app.application.inventory.services.item_code_service import normalize_category_prefix
 
 from backend.app.infrastructure.persistence.models.location_model import LocationModel
 from backend.app.interfaces.api.v1.schemas.master_data_schemas import (
@@ -71,6 +72,7 @@ async def create_category(
         category = MaterialCategory(
             tenant_id=tenant_id,
             name=req.name,
+            code_prefix=normalize_category_prefix(req.code_prefix, fallback_name=req.name),
             description=req.description,
             is_active=req.is_active,
         )

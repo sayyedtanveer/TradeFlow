@@ -30,7 +30,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { usePermissions } from "@/hooks/usePermissions"
 import { financeService } from "@/services/finance.service"
 import { useUIStore } from "@/app/store/uiStore"
-import { NAV_ITEMS } from "@/lib/constants"
+import { flattenNavItems, getVisibleNavItems } from "@/lib/constants"
 import { normalizeRole } from "@/lib/roles.config"
 
 export function TopBar() {
@@ -50,7 +50,7 @@ export function TopBar() {
 
   const normalizedRole = normalizeRole(role)
   const visibleNavItems = useMemo(
-    () => NAV_ITEMS.filter((item) => normalizedRole && item.roles.includes(normalizedRole)),
+    () => flattenNavItems(getVisibleNavItems(normalizedRole)),
     [normalizedRole]
   )
 

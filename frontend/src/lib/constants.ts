@@ -1,4 +1,5 @@
 import {
+  Banknote,
   Package,
   ShoppingCart,
   LayoutDashboard,
@@ -7,9 +8,11 @@ import {
   ClipboardList,
   Factory,
   BarChart3,
+  FileText,
   Layers,
   PackageSearch,
   Network,
+  ReceiptText,
   Truck,
   ShieldAlert,
   History,
@@ -22,7 +25,11 @@ export type NavItem = {
   href: string
   icon: LucideIcon
   roles: UserRole[]
+  children?: NavItem[]
 }
+
+const FINANCE_FULL_ACCESS_ROLES = [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.ACCOUNTANT]
+const FINANCE_CUSTOMER_INVOICE_ROLES = [...FINANCE_FULL_ACCESS_ROLES, UserRole.SALES]
 
 export const NAV_ITEMS: NavItem[] = [
   {
@@ -77,7 +84,14 @@ export const NAV_ITEMS: NavItem[] = [
     title: "Capacity & MRP",
     href: "/mrp",
     icon: BarChart3,
-    roles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.OPERATOR],
+    roles: [
+      UserRole.ADMIN,
+      UserRole.TENANT_ADMIN,
+      UserRole.MANAGER,
+      UserRole.PLANNER,
+      UserRole.STOREKEEPER,
+      UserRole.OPERATOR,
+    ],
   },
   {
     title: "Quality & QC",
@@ -90,6 +104,38 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/sales",
     icon: ShoppingCart,
     roles: getRolesForModule("sales"),
+  },
+  {
+    title: "Finance",
+    href: "/finance",
+    icon: Banknote,
+    roles: FINANCE_FULL_ACCESS_ROLES,
+    children: [
+      {
+        title: "Dashboard",
+        href: "/finance",
+        icon: LayoutDashboard,
+        roles: FINANCE_FULL_ACCESS_ROLES,
+      },
+      {
+        title: "Customer Invoices",
+        href: "/finance/invoices",
+        icon: ReceiptText,
+        roles: FINANCE_CUSTOMER_INVOICE_ROLES,
+      },
+      {
+        title: "Supplier Invoices",
+        href: "/finance/supplier-invoices",
+        icon: FileText,
+        roles: FINANCE_FULL_ACCESS_ROLES,
+      },
+      {
+        title: "Settings",
+        href: "/finance/settings",
+        icon: Settings,
+        roles: FINANCE_FULL_ACCESS_ROLES,
+      },
+    ],
   },
   {
     title: "Shop floor",
@@ -129,10 +175,42 @@ export const NAV_ITEMS: NavItem[] = [
   },
 ]
 
+export function getVisibleNavItems(role: UserRole | undefined): NavItem[] {
+  if (!role) return []
+
+  return NAV_ITEMS.reduce<NavItem[]>((items, item) => {
+    const children = item.children?.filter((child) => child.roles.includes(role))
+    const canViewItem = item.roles.includes(role)
+
+    if (canViewItem || children?.length) {
+      items.push({
+        ...item,
+        href: canViewItem ? item.href : children?.[0]?.href ?? item.href,
+        children,
+      })
+    }
+
+    return items
+  }, [])
+}
+
+export function flattenNavItems(items: NavItem[]): NavItem[] {
+  return items.flatMap((item) => [item, ...(item.children ? flattenNavItems(item.children) : [])])
+}
+
 export const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Administrator",
+  TENANT_ADMIN: "Tenant admin",
   MANAGER: "Manager",
+  PLANNER: "Planner",
+  STOREKEEPER: "Storekeeper",
   OPERATOR: "Operator",
+  QC: "Quality",
+  SALES: "Sales",
+  ACCOUNTANT: "Accountant",
+  WORKER: "Worker",
+  CLIENT: "Client",
+  SUPPLIER: "Supplier",
   VIEWER: "Viewer",
 }
 

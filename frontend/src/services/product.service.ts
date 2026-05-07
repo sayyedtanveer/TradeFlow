@@ -8,10 +8,11 @@ import {
 } from "@/types/bom.types";
 
 export interface CreateTemplateInput {
-  code: string;
+  code?: string | null;
+  item_code?: string | null;
   name: string;
   description?: string;
-  category_id?: string;
+  category_id: string;
   base_unit_id?: string;
   attributes: { key: string; label: string; values?: string[] }[];
 }

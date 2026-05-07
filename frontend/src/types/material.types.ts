@@ -2,6 +2,8 @@ export interface Material {
   id: string;
   tenant_id: string;
   code: string;
+  item_code: string;
+  item_type: "RAW" | "FG" | "SF" | string;
   name: string;
   material_type: string;
   description: string | null;
@@ -14,6 +16,7 @@ export interface Material {
   location_id: string | null;
   is_batch_tracked: boolean;
   is_serialized: boolean;
+  code_locked: boolean;
   inspection_required?: boolean;
   inspection_template_id?: string | null;
   is_active: boolean;
@@ -49,10 +52,26 @@ export interface InventoryTransaction {
   created_at: string;
 }
 
+export interface Batch {
+  id: string;
+  tenant_id: string;
+  material_id: string;
+  batch_number: string;
+  quantity: number;
+  remaining_quantity: number;
+  expiry_date: string | null;
+  location_id: string | null;
+  status: string;
+  is_expired: boolean;
+  days_until_expiry: number | null;
+  created_at: string;
+}
+
 // Master Data Types
 export interface Category {
   id: string;
   name: string;
+  code_prefix: string;
   description: string | null;
   is_active: boolean;
 }
@@ -79,11 +98,12 @@ export interface Location {
 
 // Requests
 export interface CreateMaterialInput {
-  code: string;
+  code?: string | null;
+  item_code?: string | null;
   name: string;
-  material_type: "raw" | "finished";
+  material_type: "raw" | "finished" | "semi_finished";
   description?: string | null;
-  category_id?: string | null;
+  category_id: string;
   base_unit_id?: string | null;
   reorder_level?: number | null;
   location_id?: string | null;
@@ -96,7 +116,7 @@ export interface UpdateMaterialInput {
   description?: string | null;
   category_id?: string | null;
   base_unit_id?: string | null;
-  material_type?: "raw" | "finished";
+  material_type?: "raw" | "finished" | "semi_finished";
   reorder_level?: number | null;
   location_id?: string | null;
   is_active?: boolean;

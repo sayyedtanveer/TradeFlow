@@ -33,6 +33,7 @@ class ItemTemplate(BaseEntity):
         base_unit_id: Optional[uuid.UUID] = None,
         attributes: Optional[List[Dict[str, Any]]] = None,
         status: Optional[ProductStatus] = None,
+        code_locked: bool = True,
         is_active: bool = True,
         is_deleted: bool = False,
         deleted_at: Optional[datetime] = None,
@@ -62,6 +63,7 @@ class ItemTemplate(BaseEntity):
         self._category_id = category_id
         self._base_unit_id = base_unit_id
         self._attributes: List[Dict[str, Any]] = attributes or []
+        self._code_locked = code_locked
         # Status: use provided status or ACTIVE if is_active=True, else INACTIVE
         self._status = status or (ProductStatus.ACTIVE if is_active else ProductStatus.INACTIVE)
         # Keep is_active for backward compatibility
@@ -100,6 +102,18 @@ class ItemTemplate(BaseEntity):
     @property
     def code(self) -> str:
         return self._code
+
+    @property
+    def item_code(self) -> str:
+        return self._code
+
+    @property
+    def item_type(self) -> str:
+        return "FG"
+
+    @property
+    def code_locked(self) -> bool:
+        return self._code_locked
 
     @property
     def name(self) -> str:

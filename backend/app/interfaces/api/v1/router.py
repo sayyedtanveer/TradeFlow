@@ -166,7 +166,7 @@ module_registry.register(
 module_registry.register(
     id="deliveries",
     name="Deliveries",
-    route="/deliveries",
+    route="/sales/deliveries",
     dependencies=["sales", "inventory"],
     roles=["ADMIN", "MANAGER", "SALES", "STOREKEEPER"],
     status="active",
@@ -198,7 +198,7 @@ module_registry.register(
     name="Capacity & MRP",
     route="/mrp",
     dependencies=["work-orders", "inventory"],
-    roles=["ADMIN", "MANAGER", "OPERATOR"],
+    roles=["ADMIN", "TENANT_ADMIN", "MANAGER", "PLANNER", "STOREKEEPER", "OPERATOR"],
     status="active",
     icon="BarChart3"
 )

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 # ── Category Schemas ──────────────────────────────────────────────────────
 class CreateCategoryRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
+    code_prefix: Optional[str] = Field(None, min_length=1, max_length=20)
     description: Optional[str] = Field(None, max_length=2000)
     is_active: bool = True
 
@@ -16,6 +17,7 @@ class CategoryResponse(BaseModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
     name: str
+    code_prefix: str
     description: Optional[str]
     is_active: bool
 

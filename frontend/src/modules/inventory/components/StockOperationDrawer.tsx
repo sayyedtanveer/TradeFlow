@@ -20,7 +20,6 @@ const operationSchema = z.object({
   from_location_id: z.string().uuid("Please select a valid location").nullable().optional(),
   to_location_id: z.string().uuid("Please select a valid location").nullable().optional(),
   remarks: z.string().max(500).optional().nullable(),
-  reference_id: z.string().optional().nullable(),
 })
 
 type OperationFormValues = z.infer<typeof operationSchema>
@@ -61,7 +60,6 @@ export function StockOperationDrawer({ materialId, open, onClose }: Props) {
       from_location_id: null,
       to_location_id: null,
       remarks: "",
-      reference_id: "",
     }
   })
 
@@ -75,7 +73,6 @@ export function StockOperationDrawer({ materialId, open, onClose }: Props) {
         from_location_id: null,
         to_location_id: null,
         remarks: "",
-        reference_id: "",
       });
       setActiveTab("in");
     }
@@ -92,7 +89,6 @@ export function StockOperationDrawer({ materialId, open, onClose }: Props) {
         from_location_id: activeTab === "out" ? data.from_location_id : undefined,
         to_location_id: activeTab === "in" ? data.to_location_id : undefined,
         remarks: data.remarks,
-        reference_id: data.reference_id,
       })
     },
     onSuccess: () => {
@@ -263,10 +259,6 @@ export function StockOperationDrawer({ materialId, open, onClose }: Props) {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="reference_id">Reference Number (Optional)</Label>
-                <Input id="reference_id" placeholder="E.g. PO-10294" {...register("reference_id")} />
-              </div>
             </div>
             
             <div className="pt-6 flex gap-3 w-full sm:justify-end">

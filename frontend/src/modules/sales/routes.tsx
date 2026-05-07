@@ -11,6 +11,7 @@ import SalesOrderFormPage from './pages/SalesOrderFormPage';
 import ClientsListPage from './pages/ClientsListPage';
 import ClientFormPage from './pages/ClientFormPage';
 import PriceListsPage from './pages/PriceListsPage';
+import DeliveriesPage from './pages/DeliveriesPage';
 
 export const salesRoutes: RouteObject[] = [
   {
@@ -51,6 +52,10 @@ export const salesRoutes: RouteObject[] = [
       {
         path: 'price-lists',
         element: <PriceListsPage />,
+      },
+      {
+        path: 'deliveries',
+        element: <DeliveriesPage />,
       },
     ],
   },

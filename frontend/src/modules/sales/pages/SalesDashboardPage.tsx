@@ -254,7 +254,7 @@ export default function SalesDashboardPage() {
       </Card>
 
       {/* Quick Links */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate('/sales/orders')}>
           <CardHeader>
             <CardTitle className="text-lg">All Orders</CardTitle>
@@ -277,6 +277,14 @@ export default function SalesDashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-gray-600">Configure pricing and product rates</p>
+          </CardContent>
+        </Card>
+        <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => navigate('/sales/deliveries')}>
+          <CardHeader>
+            <CardTitle className="text-lg">Deliveries</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-gray-600">Ship and complete allocated sales orders</p>
           </CardContent>
         </Card>
       </div>

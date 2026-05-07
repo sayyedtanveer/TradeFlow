@@ -35,6 +35,7 @@ class ItemVariantModel(Base):
 
     # Auto-generated fields
     code: Mapped[str] = mapped_column(String(255), nullable=False)
+    code_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     # Normalized string for uniqueness: "SIZE=SMALL|COLOR=RED"
     variant_key: Mapped[str] = mapped_column(String(500), nullable=False)

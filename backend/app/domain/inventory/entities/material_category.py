@@ -18,6 +18,7 @@ class MaterialCategory(BaseEntity):
         id: Optional[uuid.UUID] = None,
         tenant_id: Optional[uuid.UUID] = None,
         name: str,
+        code_prefix: str = "GEN",
         description: Optional[str] = None,
         is_active: bool = True,
         created_at: Optional[datetime] = None,
@@ -30,6 +31,7 @@ class MaterialCategory(BaseEntity):
             updated_at=updated_at,
         )
         self._name = name
+        self._code_prefix = code_prefix
         self._description = description
         self._is_active = is_active
 
@@ -40,6 +42,15 @@ class MaterialCategory(BaseEntity):
     @name.setter
     def name(self, value: str) -> None:
         self._name = value
+        self._touch()
+
+    @property
+    def code_prefix(self) -> str:
+        return self._code_prefix
+
+    @code_prefix.setter
+    def code_prefix(self, value: str) -> None:
+        self._code_prefix = value
         self._touch()
 
     @property

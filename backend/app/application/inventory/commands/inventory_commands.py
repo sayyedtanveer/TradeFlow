@@ -14,8 +14,8 @@ MISSING = object()
 class CreateMaterialCommand:
     tenant_id: uuid.UUID
     created_by: uuid.UUID
-    code: str
     name: str
+    code: Optional[str] = None
     material_type: str = "raw"
     description: Optional[str] = None
     category_id: Optional[uuid.UUID] = None

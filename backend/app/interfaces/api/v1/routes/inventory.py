@@ -21,6 +21,7 @@ from backend.app.application.inventory.handlers.inventory_handlers import (
     UpdateMaterialHandler,
 )
 from backend.app.application.inventory.handlers.inventory_query_handler import InventoryQueryHandler
+from backend.app.application.inventory.services.item_code_service import ItemCodeService
 from backend.app.application.inventory.queries.inventory_queries import (
     GetMaterialQuery,
     GetStockQuery,
@@ -86,13 +87,17 @@ async def create_material(
     async with container.session_factory() as session:
         material_repo = MaterialRepository(session)
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
-        handler = CreateMaterialHandler(material_repo=material_repo, uow=uow)
+        handler = CreateMaterialHandler(
+            material_repo=material_repo,
+            uow=uow,
+            item_code_service=ItemCodeService(session),
+        )
         try:
             result = await handler.handle(
                 CreateMaterialCommand(
                     tenant_id=tenant_id,
                     created_by=user_id,
-                    code=body.code,
+                    code=body.item_code or body.code,
                     name=body.name,
                     material_type=body.material_type,
                     description=body.description,

@@ -176,10 +176,7 @@ async def list_suggestions(
     container = get_container(request)
     async with container.session_factory() as session:
         svc = MRPService(session)
-        suggestions = svc.get_suggestions(tenant_id)
-
-    if status_filter:
-        suggestions = [s for s in suggestions if s["status"] == status_filter]
+        suggestions = await svc.get_suggestions(tenant_id, status_filter=status_filter)
     return suggestions
 
 
@@ -194,7 +191,7 @@ async def approve_suggestion(
     async with container.session_factory() as session:
         svc = MRPService(session)
         try:
-            result = svc.approve_suggestion(tenant_id, suggestion_id)
+            result = await svc.approve_suggestion(tenant_id, suggestion_id)
         except ValueError as exc:
             return JSONResponse(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -214,7 +211,7 @@ async def reject_suggestion(
     async with container.session_factory() as session:
         svc = MRPService(session)
         try:
-            result = svc.reject_suggestion(tenant_id, suggestion_id)
+            result = await svc.reject_suggestion(tenant_id, suggestion_id)
         except ValueError as exc:
             return JSONResponse(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -233,7 +230,7 @@ async def bulk_approve(
     container = get_container(request)
     async with container.session_factory() as session:
         svc = MRPService(session)
-        result = svc.bulk_approve(tenant_id, body.suggestion_ids)
+        result = await svc.bulk_approve(tenant_id, body.suggestion_ids)
     return result
 
 
