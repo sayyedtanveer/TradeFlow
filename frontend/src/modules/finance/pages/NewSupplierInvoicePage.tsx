@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { financeService } from "@/services/finance.service"
@@ -23,6 +23,8 @@ export default function NewSupplierInvoicePage() {
     },
   })
 
+  const [purchaseOrderQuery, setPurchaseOrderQuery] = useState("")
+
   const [formData, setFormData] = useState({
     supplier_id: "",
     purchase_order_id: "",
@@ -35,6 +37,29 @@ export default function NewSupplierInvoicePage() {
     notes: "",
   })
 
+
+
+  const { data: purchaseOrders = [] } = useQuery({
+    queryKey: ["purchase-orders"],
+    queryFn: async () => {
+      const res = await supplyChainApi.listPurchaseOrders()
+      return res.data
+    },
+  })
+
+  const supplierPurchaseOrders = useMemo(() => {
+    if (!formData.supplier_id) return purchaseOrders
+    return purchaseOrders.filter((po) => po.supplier_id === formData.supplier_id)
+  }, [purchaseOrders, formData.supplier_id])
+
+  const purchaseOrderOptions = useMemo(() =>
+    supplierPurchaseOrders.map((po) => ({
+      id: po.id,
+      label: `${po.po_number} · ${po.status} · ₹${po.total_amount.toLocaleString()}`,
+      poNumber: po.po_number,
+    })),
+  [supplierPurchaseOrders])
+
   // Auto-calc grand total
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
@@ -45,6 +70,9 @@ export default function NewSupplierInvoicePage() {
         next.grand_total = next.subtotal + next.tax_amount
         return next
       })
+    } else if (name === "supplier_id") {
+      setPurchaseOrderQuery("")
+      setFormData((prev) => ({ ...prev, supplier_id: value, purchase_order_id: "" }))
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }))
     }
@@ -134,11 +162,29 @@ export default function NewSupplierInvoicePage() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Purchase Order (optional)</label>
                 <Input
-                  name="purchase_order_id"
-                  placeholder="Search/select purchase order number or paste ID"
-                  value={formData.purchase_order_id}
-                  onChange={handleChange}
+                  list="supplier-po-options"
+                  placeholder={formData.supplier_id ? "Search by PO number" : "Select supplier first"}
+                  value={purchaseOrderQuery}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    setPurchaseOrderQuery(value)
+                    const exact = purchaseOrderOptions.find((option) => option.poNumber === value || option.label === value)
+                    setFormData((prev) => ({ ...prev, purchase_order_id: exact?.id ?? "" }))
+                  }}
+                  disabled={!formData.supplier_id}
                 />
+                <datalist id="supplier-po-options">
+                  {purchaseOrderOptions.map((option) => (
+                    <option key={option.id} value={option.poNumber}>
+                      {option.label}
+                    </option>
+                  ))}
+                </datalist>
+                {formData.purchase_order_id ? (
+                  <p className="text-xs text-slate-500">Linked PO ID: {formData.purchase_order_id}</p>
+                ) : (
+                  <p className="text-xs text-slate-500">Pick a supplier PO to avoid raw UUID entry.</p>
+                )}
               </div>
             </div>
 
