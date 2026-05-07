@@ -44,7 +44,7 @@ export default function SubcontractListPage() {
 
   const create = async () => {
     if (!supplierId || !productId.trim()) {
-      toast({ title: "Supplier and product (variant) UUID required", variant: "destructive" })
+      toast({ title: "Supplier and product variant are required", variant: "destructive" })
       return
     }
     try {
@@ -97,8 +97,8 @@ export default function SubcontractListPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Finished product (variant UUID)</Label>
-                <Input value={productId} onChange={(e) => setProductId(e.target.value)} placeholder="item_variants.id" />
+                <Label>Finished product variant</Label>
+                <Input value={productId} onChange={(e) => setProductId(e.target.value)} placeholder="Search/select variant ID or item code" />
               </div>
               <div className="space-y-2">
                 <Label>Quantity</Label>

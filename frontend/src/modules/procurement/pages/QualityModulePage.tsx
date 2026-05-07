@@ -294,8 +294,8 @@ export default function QualityModulePage() {
         <TabsContent value="inspect" className="space-y-4 border rounded-lg p-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Reference ID (e.g. PO line UUID)</Label>
-              <Input value={refId} onChange={(e) => setRefId(e.target.value)} placeholder="uuid" />
+              <Label>Reference (PO line / document ref)</Label>
+              <Input value={refId} onChange={(e) => setRefId(e.target.value)} placeholder="Reference number or ID" />
             </div>
             <div className="space-y-2">
               <Label>Material</Label>
@@ -413,7 +413,7 @@ export default function QualityModulePage() {
             <h3 className="font-medium">Create NCR</h3>
             <div className="space-y-2">
               <Label>Inspection ID</Label>
-              <Input value={ncrInspectionId} onChange={(e) => setNcrInspectionId(e.target.value)} placeholder="uuid" />
+              <Input value={ncrInspectionId} onChange={(e) => setNcrInspectionId(e.target.value)} placeholder="Reference number or ID" />
             </div>
             <div className="space-y-2">
               <Label>Type</Label>

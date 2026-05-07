@@ -312,17 +312,17 @@ export default function SalesOrderDetailPage() {
               <h4 className="font-semibold mb-4 text-gray-800">Add Line Item</h4>
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
                 <div className="col-span-2">
-                  <label className="text-sm font-medium text-gray-700 block mb-1">Product Variant ID *</label>
+                  <label className="text-sm font-medium text-gray-700 block mb-1">Product Variant *</label>
                   <Input 
-                    placeholder="UUID of Variant"
+                    placeholder="Search/select variant by item code"
                     value={newLine.product_id}
                     onChange={(e) => setNewLine({ ...newLine, product_id: e.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1">UOM ID *</label>
+                  <label className="text-sm font-medium text-gray-700 block mb-1">Unit of Measure *</label>
                   <Input 
-                    placeholder="UUID of UOM"
+                    placeholder="Select UOM"
                     value={newLine.uom_id}
                     onChange={(e) => setNewLine({ ...newLine, uom_id: e.target.value })}
                   />
