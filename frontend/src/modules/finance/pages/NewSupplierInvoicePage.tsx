@@ -132,10 +132,10 @@ export default function NewSupplierInvoicePage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Purchase Order ID</label>
+                <label className="text-sm font-medium">Purchase Order (optional)</label>
                 <Input
                   name="purchase_order_id"
-                  placeholder="Optional PO ID UUID"
+                  placeholder="Search/select purchase order number or paste ID"
                   value={formData.purchase_order_id}
                   onChange={handleChange}
                 />
