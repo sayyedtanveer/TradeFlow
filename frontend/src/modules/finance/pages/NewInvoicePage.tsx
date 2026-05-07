@@ -1,11 +1,13 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, useQuery } from "@tanstack/react-query"
 import { financeService } from "@/services/finance.service"
+import { ordersApi } from "@/services/sales.service"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/hooks/use-toast"
 import { ArrowLeft, FileText, CheckCircle2 } from "lucide-react"
 
@@ -16,6 +18,24 @@ export default function NewInvoicePage() {
     notes: "",
     terms: "Net 30",
   })
+  const [salesOrderSearch, setSalesOrderSearch] = useState("")
+
+  const salesOrdersQuery = useQuery({
+    queryKey: ["sales-orders-for-invoice"],
+    queryFn: () => ordersApi.list(200, 0),
+    staleTime: 60_000,
+  })
+
+  const salesOrderOptions = useMemo(() => {
+    const query = salesOrderSearch.trim().toLowerCase()
+    return (salesOrdersQuery.data?.items || []).filter((order) => {
+      if (!query) return true
+      return (
+        order.order_number.toLowerCase().includes(query) ||
+        (order.client_name || "").toLowerCase().includes(query)
+      )
+    })
+  }, [salesOrdersQuery.data?.items, salesOrderSearch])
 
   const createMutation = useMutation({
     mutationFn: financeService.createInvoiceFromSO,
@@ -71,13 +91,27 @@ export default function NewInvoicePage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Sales Order ID / Number</label>
+              <label className="text-sm font-medium">Sales Order</label>
               <Input
-                placeholder="e.g. SO-2024-001 (UUID expected by backend)"
-                value={formData.sales_order_id}
-                onChange={(e) => setFormData({ ...formData, sales_order_id: e.target.value })}
-                required
+                placeholder="Search by sales order number or client"
+                value={salesOrderSearch}
+                onChange={(e) => setSalesOrderSearch(e.target.value)}
               />
+              <Select
+                value={formData.sales_order_id}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, sales_order_id: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={salesOrdersQuery.isLoading ? "Loading sales orders..." : "Select sales order"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {salesOrderOptions.map((order) => (
+                    <SelectItem key={order.id} value={order.id}>
+                      {order.order_number} · {order.client_name || "No client"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             
             <div className="space-y-2">
