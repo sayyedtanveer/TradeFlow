@@ -348,9 +348,12 @@ export type SupplierDashboard = {
 
 export type SupplierQuotation = {
   id: string
+  quotation_number: string
   supplier_id: string
   purchase_order_id?: string | null
   material_id: string
+  material_code: string
+  material_name: string
   quantity: number
   unit_price: number
   valid_until?: string | null

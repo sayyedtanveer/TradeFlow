@@ -20,6 +20,14 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_user_id,
 )
 from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
+from backend.app.application.inventory.handlers.storekeeper_handler import StorekeeperHandler
+from backend.app.application.inventory.commands.storekeeper_commands import (
+    IssueMaterialCommand,
+    PartialIssueCommand,
+    RejectIssueCommand,
+    ReturnMaterialCommand,
+)
+from backend.app.application.inventory.services.inventory_traceability_service import InventoryTraceabilityService
 
 router = APIRouter(prefix="/inventory", tags=["Inventory Extended"])
 
@@ -256,3 +264,194 @@ async def get_realtime_stock(
                 available_stock=float(m.current_stock - m.reserved_stock)
             ))
         return results
+
+
+# ── Phase 3: Storekeeper Operational Flow ───────────────────────────────────
+
+@router.get("/storekeeper/issue-queue")
+async def get_issue_queue(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get pending material issue queue for storekeeper dashboard."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
+        service = StorekeeperService(session)
+        queue = await service.get_issue_queue(tenant_id=tenant_id)
+        return queue
+
+
+@router.get("/storekeeper/shortage-queue")
+async def get_shortage_queue(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get shortage queue for storekeeper dashboard."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
+        service = StorekeeperService(session)
+        queue = await service.get_shortage_queue(tenant_id=tenant_id)
+        return queue
+
+
+@router.get("/storekeeper/partially-issued")
+async def get_partially_issued_wo(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get partially issued WOs for storekeeper dashboard."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
+        service = StorekeeperService(session)
+        queue = await service.get_partially_issued_wo(tenant_id=tenant_id)
+        return queue
+
+
+@router.post("/storekeeper/issue")
+async def issue_material(
+    body: IssueMaterialCommand,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Issue material to work order."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = StorekeeperHandler(session)
+        await handler.handle_issue_material(body)
+        await session.commit()
+        return {"status": "success"}
+
+
+@router.post("/storekeeper/partial-issue")
+async def partial_issue_material(
+    body: PartialIssueCommand,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Partially issue material to work order."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = StorekeeperHandler(session)
+        await handler.handle_partial_issue(body)
+        await session.commit()
+        return {"status": "success"}
+
+
+@router.post("/storekeeper/reject")
+async def reject_issue(
+    body: RejectIssueCommand,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Reject material issue request."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = StorekeeperHandler(session)
+        await handler.handle_reject_issue(body)
+        await session.commit()
+        return {"status": "success"}
+
+
+@router.post("/storekeeper/return")
+async def return_material(
+    body: ReturnMaterialCommand,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Return issued material back to inventory."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = StorekeeperHandler(session)
+        await handler.handle_return_material(body)
+        await session.commit()
+        return {"status": "success"}
+
+
+# ── Phase 10: Inventory Traceability ───────────────────────────────────────
+
+@router.get("/traceability/material/{material_id}")
+async def get_material_traceability(
+    material_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get full traceability history for a material."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        service = InventoryTraceabilityService(session)
+        traceability = await service.get_material_traceability(
+            tenant_id=tenant_id,
+            material_id=material_id,
+        )
+        return {"items": traceability}
+
+
+@router.get("/traceability/ledger")
+async def get_stock_ledger(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    material_id: Optional[uuid.UUID] = Query(None),
+    location_id: Optional[uuid.UUID] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """Get stock ledger entries."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        service = InventoryTraceabilityService(session)
+        ledger = await service.get_stock_ledger(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            location_id=location_id,
+            limit=limit,
+        )
+        return {"items": ledger}
+
+
+@router.get("/traceability/transaction/{transaction_id}")
+async def get_transaction_audit_trail(
+    transaction_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get full audit trail for a specific transaction."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        service = InventoryTraceabilityService(session)
+        audit_trail = await service.get_transaction_audit_trail(
+            tenant_id=tenant_id,
+            transaction_id=transaction_id,
+        )
+        if not audit_trail:
+            return JSONResponse(status_code=404, content={"error": "Transaction not found"})
+        return audit_trail
+
+
+@router.get("/traceability/lifecycle/{material_id}")
+async def trace_material_lifecycle(
+    material_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Trace material lifecycle from receipt to consumption."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        service = InventoryTraceabilityService(session)
+        lifecycle = await service.trace_material_lifecycle(
+            tenant_id=tenant_id,
+            material_id=material_id,
+        )
+        return lifecycle
+

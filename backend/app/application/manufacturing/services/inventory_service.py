@@ -24,6 +24,7 @@ from backend.app.infrastructure.persistence.models.inventory_management_models i
 from backend.app.infrastructure.persistence.models.location_model import LocationModel
 from backend.app.infrastructure.persistence.models.stock_level_model import StockLevelModel
 from backend.app.domain.manufacturing.exceptions import InsufficientStockError
+from backend.app.domain.inventory.entities.material_shortage import MaterialShortage, ShortageStatus
 
 # Locations usable for internal manufacturing issue (not subcontractor / quarantine)
 _INTERNAL_ISSUE_LOCATION_TYPES: frozenset[str] = frozenset(
@@ -884,4 +885,356 @@ class InventoryService:
             created_by=created_by,
             remarks="Receive finished goods from subcontractor",
             to_location_id=warehouse_location_id,
+        )
+
+    # ── Phase 2: Inventory Reservation System Extensions ───────────────────────
+
+    async def reserve_for_work_order(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+        quantity: Decimal,
+        work_order_id: uuid.UUID,
+        unit_id: Optional[uuid.UUID] = None,
+        created_by: uuid.UUID,
+    ) -> tuple[Decimal, Decimal]:
+        """Reserve stock for work order with partial reservation handling.
+
+        Returns: (reserved_qty, shortage_qty)
+        """
+        model = await self._lock_material(tenant_id, material_id)
+        available = await self._available_for_locked_material(model)
+
+        reserve_qty = min(quantity, available)
+        shortage_qty = max(Decimal("0"), quantity - reserve_qty)
+
+        if reserve_qty > 0:
+            model.reserved_stock = float(Decimal(str(model.reserved_stock)) + reserve_qty)
+            await self._log_transaction(
+                tenant_id=tenant_id,
+                material_id=material_id,
+                transaction_type="reserve",
+                quantity=reserve_qty,
+                unit_id=unit_id,
+                reference_type="work_order",
+                reference_id=work_order_id,
+                created_by=created_by,
+                remarks=f"Reserved for WO {work_order_id}",
+            )
+
+        return reserve_qty, shortage_qty
+
+    async def create_shortage_record(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        work_order_id: uuid.UUID,
+        material_id: uuid.UUID,
+        required_quantity: Decimal,
+        shortage_quantity: Decimal,
+        created_by: uuid.UUID,
+    ) -> None:
+        """Create a material shortage record."""
+        from backend.app.infrastructure.persistence.models.material_shortage_model import MaterialShortageModel
+
+        available_qty = required_quantity - shortage_quantity
+
+        shortage = MaterialShortageModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            work_order_id=work_order_id,
+            material_id=material_id,
+            required_quantity=float(required_quantity),
+            available_quantity=float(available_qty),
+            shortage_quantity=float(shortage_quantity),
+            status="open",
+            created_by=created_by,
+        )
+        self._session.add(shortage)
+
+    async def get_shortages_for_work_order(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        work_order_id: uuid.UUID,
+    ) -> list[MaterialShortage]:
+        """Get all shortage records for a work order."""
+        from backend.app.infrastructure.persistence.models.material_shortage_model import MaterialShortageModel
+
+        stmt = select(MaterialShortageModel).where(
+            MaterialShortageModel.tenant_id == tenant_id,
+            MaterialShortageModel.work_order_id == work_order_id,
+            MaterialShortageModel.status.in_(["open", "partial"]),
+        )
+        result = await self._session.execute(stmt)
+        models = result.scalars().all()
+
+        shortages = []
+        for model in models:
+            shortages.append(
+                MaterialShortage(
+                    id=model.id,
+                    tenant_id=model.tenant_id,
+                    work_order_id=model.work_order_id,
+                    material_id=model.material_id,
+                    required_quantity=Decimal(str(model.required_quantity)),
+                    available_quantity=Decimal(str(model.available_quantity)),
+                    shortage_quantity=Decimal(str(model.shortage_quantity)),
+                    status=ShortageStatus(model.status),
+                    created_at=model.created_at,
+                    updated_at=model.updated_at,
+                )
+            )
+        return shortages
+
+    async def get_pending_issues(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+    ) -> list[dict]:
+        """Get pending material issue queue for storekeeper dashboard."""
+        from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderModel
+        from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderMaterialModel
+
+        # Get WOs in MATERIAL_RESERVED or MATERIAL_ISSUED state
+        stmt = (
+            select(WorkOrderModel)
+            .where(
+                WorkOrderModel.tenant_id == tenant_id,
+                WorkOrderModel.status.in_(["MATERIAL_RESERVED", "MATERIAL_ISSUED"]),
+                WorkOrderModel.is_deleted.is_(False),
+            )
+            .order_by(WorkOrderModel.due_date)
+        )
+        result = await self._session.execute(stmt)
+        wos = result.scalars().all()
+
+        pending_issues = []
+        for wo in wos:
+            # Get material requirements for this WO
+            mat_stmt = select(WorkOrderMaterialModel).where(
+                WorkOrderMaterialModel.work_order_id == wo.id
+            )
+            mat_result = await self._session.execute(mat_stmt)
+            materials = mat_result.scalars().all()
+
+            for mat in materials:
+                remaining = Decimal(str(mat.required_quantity)) - Decimal(str(mat.issued_quantity))
+                if remaining > 0:
+                    pending_issues.append({
+                        "work_order_id": wo.id,
+                        "wo_number": wo.wo_number,
+                        "material_id": mat.material_id,
+                        "required_quantity": mat.required_quantity,
+                        "issued_quantity": mat.issued_quantity,
+                        "remaining_quantity": float(remaining),
+                        "due_date": wo.due_date,
+                        "status": wo.status,
+                    })
+
+        return pending_issues
+
+    # ── Production Inventory Methods ─────────────────────────────────────────────
+
+    async def consume_stock(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+        quantity: Decimal,
+        work_order_id: uuid.UUID,
+        unit_id: Optional[uuid.UUID] = None,
+        created_by: uuid.UUID,
+    ) -> None:
+        """Consume stock during production (ISSUED → CONSUMED).
+        
+        Used when worker records production - tracks material consumption.
+        """
+        model = await self._lock_material(tenant_id, material_id)
+        
+        # Reduce current stock
+        current = Decimal(str(model.current_stock))
+        if current < quantity:
+            raise InsufficientStockError(
+                f"Cannot consume {quantity}: only {current} available"
+            )
+        model.current_stock = float(current - quantity)
+        model.updated_at = datetime.now(timezone.utc)
+        
+        await self._log_transaction(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            transaction_type="CONSUME",
+            quantity=quantity,
+            unit_id=unit_id,
+            reference_type="work_order",
+            reference_id=work_order_id,
+            created_by=created_by,
+            remarks=f"Production consumption for WO {work_order_id}",
+        )
+        
+        await self._log_ledger(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            location_id=None,
+            transaction_type="PRODUCTION_CONSUMPTION",
+            quantity_change=-quantity,
+            reference_type="work_order",
+            reference_id=work_order_id,
+        )
+
+    async def receive_fg(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        product_id: uuid.UUID,
+        quantity: Decimal,
+        work_order_id: uuid.UUID,
+        unit_id: Optional[uuid.UUID] = None,
+        created_by: uuid.UUID,
+        to_location_id: Optional[uuid.UUID] = None,
+    ) -> None:
+        """Receive finished goods after QC approval (QC_APPROVED → FG_RECEIVED).
+        
+        Inventory impact: Increases FG stock.
+        """
+        # Use product_id instead of material_id for FG
+        model = await self._lock_material(tenant_id, product_id)
+        loc = to_location_id or await self._default_warehouse_location(tenant_id)
+        
+        if loc:
+            await self._add_bucket_quantity(
+                tenant_id=tenant_id,
+                material_id=product_id,
+                location_id=loc,
+                stock_status=_ST_AVAILABLE,
+                quantity=quantity,
+            )
+            await self._sync_material_total_from_buckets(model)
+        else:
+            model.current_stock = float(Decimal(str(model.current_stock)) + quantity)
+        
+        await self._log_transaction(
+            tenant_id=tenant_id,
+            material_id=product_id,
+            transaction_type="FG_RECEIPT",
+            quantity=quantity,
+            unit_id=unit_id,
+            reference_type="work_order",
+            reference_id=work_order_id,
+            created_by=created_by,
+            remarks=f"FG receipt for WO {work_order_id}",
+            to_location_id=loc,
+        )
+        
+        await self._log_ledger(
+            tenant_id=tenant_id,
+            material_id=product_id,
+            location_id=loc,
+            transaction_type="FG_RECEIPT",
+            quantity_change=quantity,
+            reference_type="work_order",
+            reference_id=work_order_id,
+        )
+
+    async def reject_stock(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+        quantity: Decimal,
+        work_order_id: uuid.UUID,
+        unit_id: Optional[uuid.UUID] = None,
+        created_by: uuid.UUID,
+        reason: Optional[str] = None,
+    ) -> None:
+        """Reject stock (CONSUMED → REJECTED or ISSUED → REJECTED).
+        
+        Used for scrap/rejection during production or QC.
+        """
+        model = await self._lock_material(tenant_id, material_id)
+        
+        # Reduce current stock (scrap is removed from available stock)
+        current = Decimal(str(model.current_stock))
+        if current < quantity:
+            raise InsufficientStockError(
+                f"Cannot reject {quantity}: only {current} available"
+            )
+        model.current_stock = float(current - quantity)
+        model.updated_at = datetime.now(timezone.utc)
+        
+        await self._log_transaction(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            transaction_type="REJECT",
+            quantity=quantity,
+            unit_id=unit_id,
+            reference_type="work_order",
+            reference_id=work_order_id,
+            created_by=created_by,
+            remarks=reason or f"Stock rejection for WO {work_order_id}",
+        )
+        
+        await self._log_ledger(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            location_id=None,
+            transaction_type="REJECTION",
+            quantity_change=-quantity,
+            reference_type="work_order",
+            reference_id=work_order_id,
+        )
+
+    async def return_stock(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+        quantity: Decimal,
+        work_order_id: uuid.UUID,
+        unit_id: Optional[uuid.UUID] = None,
+        created_by: uuid.UUID,
+    ) -> None:
+        """Return issued stock back to available (ISSUED → RESERVED → AVAILABLE).
+        
+        Used when material is returned from work order.
+        """
+        model = await self._lock_material(tenant_id, material_id)
+        loc = await self._default_warehouse_location(tenant_id)
+        
+        # Add stock back to available
+        if loc:
+            await self._add_bucket_quantity(
+                tenant_id=tenant_id,
+                material_id=material_id,
+                location_id=loc,
+                stock_status=_ST_AVAILABLE,
+                quantity=quantity,
+            )
+            await self._sync_material_total_from_buckets(model)
+        else:
+            model.current_stock = float(Decimal(str(model.current_stock)) + quantity)
+        
+        await self._log_transaction(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            transaction_type="RETURN",
+            quantity=quantity,
+            unit_id=unit_id,
+            reference_type="work_order",
+            reference_id=work_order_id,
+            created_by=created_by,
+            remarks=f"Material return for WO {work_order_id}",
+            to_location_id=loc,
+        )
+        
+        await self._log_ledger(
+            tenant_id=tenant_id,
+            material_id=material_id,
+            location_id=loc,
+            transaction_type="RETURN",
+            quantity_change=quantity,
+            reference_type="work_order",
+            reference_id=work_order_id,
         )

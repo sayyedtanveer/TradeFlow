@@ -18,6 +18,8 @@ export interface WorkOrderSummary {
 export interface WorkOrderMaterial {
   id: string;
   material_id: string;
+  material_code: string;
+  material_name: string;
   unit_id: string;
   required_quantity: number;
   issued_quantity: number;
@@ -26,6 +28,7 @@ export interface WorkOrderMaterial {
 export interface JobCard {
   id: string;
   operation_id: string;
+  operation_name: string;
   sequence: number;
   status: 'PENDING' | 'IN_PROGRESS' | 'DONE';
   assigned_to: string | null;

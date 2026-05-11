@@ -5,6 +5,7 @@ import uuid
 from fastapi import Depends, HTTPException, status
 
 from backend.app.interfaces.api.v1.dependencies.auth import get_current_user_payload
+from backend.app.infrastructure.security.jwt_claim_validator import parse_client_claim
 
 
 async def require_client_role(
@@ -21,16 +22,11 @@ async def require_client_role(
 async def require_client_id(
     payload: dict = Depends(require_client_role),
 ) -> uuid.UUID:
-    cid = payload.get("cid")
+    """Safely parse client_id from JWT payload using centralized validator."""
+    cid = parse_client_claim(payload)
     if not cid:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Client portal: user must be linked to a client",
         )
-    try:
-        return uuid.UUID(str(cid))
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid client id in token",
-        ) from exc
+    return cid

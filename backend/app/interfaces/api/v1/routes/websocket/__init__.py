@@ -10,6 +10,10 @@ from fastapi.exceptions import WebSocketException as FastAPIWebSocketException
 
 from backend.app.config import get_settings
 from backend.app.infrastructure.security.jwt_handler import JWTHandler
+from backend.app.infrastructure.security.jwt_claim_validator import (
+    parse_user_claim,
+    parse_tenant_claim,
+)
 from backend.app.infrastructure.websocket import ConnectionManager, ConnectionContext
 from backend.app.infrastructure.logging.logger import get_logger
 
@@ -71,8 +75,8 @@ async def websocket_notifications(
         
         payload = await verify_ws_token(token, jwt_handler)
 
-        user_id = uuid.UUID(payload.get("sub"))
-        tenant_id = uuid.UUID(payload.get("tid"))
+        user_id = parse_user_claim(payload)
+        tenant_id = parse_tenant_claim(payload)
 
         # Accept connection
         await websocket.accept()

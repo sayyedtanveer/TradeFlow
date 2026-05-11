@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { financeService } from "@/services/finance.service"
+import { documentService } from "@/services/document.service"
 import { toast } from "@/hooks/use-toast"
 
 const STATUS_STYLES: Record<string, string> = {
@@ -37,6 +38,7 @@ export default function InvoiceDetailPage() {
   const [paymentMethod, setPaymentMethod] = useState("BANK_TRANSFER")
   const [referenceNumber, setReferenceNumber] = useState("")
   const [paymentNotes, setPaymentNotes] = useState("")
+  const [documentLoading, setDocumentLoading] = useState(false)
 
   const { data: invoice, isLoading, isError } = useQuery({
     queryKey: ["finance-invoice", invoiceId],
@@ -111,6 +113,44 @@ export default function InvoiceDetailPage() {
     },
   })
 
+  const handleDownloadPDF = async () => {
+    if (!invoiceId || documentLoading) return
+    setDocumentLoading(true)
+    try {
+      const document = await documentService.generateDocument('invoice', invoiceId)
+      await documentService.downloadDocumentByUrl(document.id, `INV-${invoice?.invoice_number}.pdf`)
+    } catch (e: any) {
+      toast({
+        title: "Failed to generate PDF",
+        variant: "destructive",
+      })
+    } finally {
+      setDocumentLoading(false)
+    }
+  }
+
+  const handlePrintPDF = async () => {
+    if (!invoiceId || documentLoading) return
+    setDocumentLoading(true)
+    try {
+      const document = await documentService.generateDocument('invoice', invoiceId)
+      const previewUrl = await documentService.previewDocument(document.id)
+      const printWindow = window.open(previewUrl, '_blank')
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print()
+        }
+      }
+    } catch (e: any) {
+      toast({
+        title: "Failed to generate PDF for printing",
+        variant: "destructive",
+      })
+    } finally {
+      setDocumentLoading(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="p-6 md:p-8">
@@ -167,10 +207,20 @@ export default function InvoiceDetailPage() {
           <Button
             variant="outline"
             className="w-full sm:w-auto"
-            onClick={() => financeService.downloadInvoicePdf(invoice.id, invoice.invoice_number)}
+            onClick={handlePrintPDF}
+            disabled={documentLoading}
+          >
+            <FileText className="mr-2 h-4 w-4" />
+            {documentLoading ? '…' : 'Print'}
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={handleDownloadPDF}
+            disabled={documentLoading}
           >
             <Download className="mr-2 h-4 w-4" />
-            Download PDF
+            {documentLoading ? '…' : 'Download PDF'}
           </Button>
           {canSend && (
             <Button

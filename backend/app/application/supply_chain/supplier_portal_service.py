@@ -549,9 +549,12 @@ class SupplierPortalService:
     def _quotation_to_dict(q: SupplierQuotationModel) -> dict[str, Any]:
         return {
             "id": str(q.id),
+            "quotation_number": getattr(q, 'quotation_number', ''),
             "supplier_id": str(q.supplier_id),
             "purchase_order_id": str(q.purchase_order_id) if q.purchase_order_id else None,
             "material_id": str(q.material_id),
+            "material_code": q.material.code if q.material else "",
+            "material_name": q.material.name if q.material else "",
             "quantity": float(q.quantity or 0),
             "unit_price": float(q.unit_price or 0),
             "valid_until": q.valid_until.isoformat() if q.valid_until else None,

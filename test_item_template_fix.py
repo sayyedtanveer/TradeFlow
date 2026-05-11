@@ -18,22 +18,22 @@ async def test_query():
             template = result.scalar_one_or_none()
             
             if template:
-                print(f"\n✓ Query successful!")
+                print(f"\n[OK] Query successful!")
                 print(f"  ID: {template.id}")
                 print(f"  Code: {template.code}")
                 print(f"  Name: {template.name}")
                 print(f"  Status: {template.status}")
                 print(f"  Is Active: {template.is_active}")
             else:
-                print("✓ Query successful (no templates exist)")
+                print("[OK] Query successful (no templates exist)")
             
             # Now test count query (like the original error)
             count_result = await session.execute(select(ItemTemplateModel))
             templates = count_result.scalars().all()
-            print(f"\n✓ Count query successful: {len(templates)} templates found")
+            print(f"\n[OK] Count query successful: {len(templates)} templates found")
             
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"[ERROR] {e}")
         import traceback
         traceback.print_exc()
     finally:

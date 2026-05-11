@@ -9,6 +9,24 @@ from httpx import AsyncClient
 pytestmark = pytest.mark.anyio
 
 
+async def _create_category(
+    async_client: AsyncClient,
+    token_headers: dict,
+    *,
+    prefix: str,
+) -> str:
+    response = await async_client.post(
+        "/api/v1/inventory/master-data/categories",
+        json={
+            "name": f"{prefix} Category",
+            "code_prefix": prefix[:10],
+        },
+        headers=token_headers,
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
 async def _create_template(
     async_client: AsyncClient,
     token_headers: dict,
@@ -16,11 +34,13 @@ async def _create_template(
     code: str,
     attributes: list[dict] | None = None,
 ) -> dict:
+    category_id = await _create_category(async_client, token_headers, prefix=code.replace("-", "")[:10])
     response = await async_client.post(
         "/api/v1/products/templates",
         json={
             "code": code,
             "name": f"{code} Product",
+            "category_id": category_id,
             "attributes": attributes or [],
         },
         headers=token_headers,

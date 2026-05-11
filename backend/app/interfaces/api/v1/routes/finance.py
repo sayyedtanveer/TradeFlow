@@ -13,10 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.application.finance.finance_service import FinanceService
 from backend.app.application.finance.reporting_service import ReportingService
 from backend.app.interfaces.api.v1.dependencies.auth import (
-    get_current_role,
+    get_container,
     get_current_tenant_id,
     get_current_user_id,
     get_current_user_payload,
+)
+from backend.app.infrastructure.security.jwt_claim_validator import (
+    parse_client_claim,
+    parse_supplier_claim,
 )
 from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 
@@ -211,23 +215,13 @@ def _serialize_supplier_payment(payment) -> dict:
 
 
 def _client_id_from_payload(payload: dict) -> Optional[uuid.UUID]:
-    raw = payload.get("cid")
-    if not raw:
-        return None
-    try:
-        return uuid.UUID(str(raw))
-    except ValueError:
-        return None
+    """Safely parse client_id from JWT payload using centralized validator."""
+    return parse_client_claim(payload)
 
 
 def _supplier_id_from_payload(payload: dict) -> Optional[uuid.UUID]:
-    raw = payload.get("sid")
-    if not raw:
-        return None
-    try:
-        return uuid.UUID(str(raw))
-    except ValueError:
-        return None
+    """Safely parse supplier_id from JWT payload using centralized validator."""
+    return parse_supplier_claim(payload)
 
 
 @router.post(

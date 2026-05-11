@@ -31,6 +31,10 @@ from backend.app.interfaces.api.v1.routes.rbac_admin import router as rbac_admin
 from backend.app.interfaces.api.v1.routes.users import router as users_router
 from backend.app.interfaces.api.v1.routes.dashboards import router as dashboards_router
 from backend.app.interfaces.api.v1.routes.audit_logs import router as audit_logs_router
+from backend.app.interfaces.api.v1.routes.documents import router as documents_router
+from backend.app.interfaces.api.v1.routes.quality_control import router as quality_control_router
+from backend.app.interfaces.api.v1.routes.storekeeper import router as storekeeper_router
+from backend.app.interfaces.api.v1.routes.worker import router as worker_router
 
 api_v1_router = APIRouter()
 
@@ -60,6 +64,10 @@ api_v1_router.include_router(reports_router)
 api_v1_router.include_router(notifications_router)
 api_v1_router.include_router(client_portal_router)
 api_v1_router.include_router(mrp_router)
+api_v1_router.include_router(documents_router)
+api_v1_router.include_router(quality_control_router)
+api_v1_router.include_router(storekeeper_router)
+api_v1_router.include_router(worker_router)
 
 
 # --- Dynamic Module Registration ---

@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "react-router-dom"
-import { useForm } from "react-hook-form"
+import { useForm, type SubmitHandler } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -15,7 +15,15 @@ import { ArrowLeft, Save } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const productSchema = z.object({
+  // legacy/required field for existing create/update flows
   sku: z.string().min(3, "SKU must be at least 3 characters"),
+
+  // Phase 2: item code system (optional override)
+  item_code: z.string().min(1).max(50).optional(),
+  item_type: z.enum(["raw", "finished", "semi_finished"]).optional(),
+  code_locked: z.boolean(),
+
+  // core
   name: z.string().min(2, "Name is required"),
   description: z.string().optional(),
   category_id: z.string().uuid("Please select a valid category").nullable().optional(),
@@ -43,19 +51,28 @@ export default function ProductFormPage() {
 
   const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
-    values: product ? {
-      sku: product.sku,
-      name: product.name,
-      description: product.description || "",
-      category_id: product.category === "Uncategorized" ? null : product.category,
-      reorder_point: product.reorder_point,
-    } : {
-      sku: "",
-      name: "",
-      description: "",
-      category_id: null,
-      reorder_point: 10,
-    }
+    values: product
+      ? {
+          sku: product.sku,
+          name: product.name,
+          description: product.description || "",
+          category_id: product.category === "Uncategorized" ? null : product.category,
+          reorder_point: product.reorder_point,
+          // Phase 2 defaults (legacy API may not send these yet)
+          code_locked: true,
+          item_code: (product as any).item_code ?? undefined,
+          item_type: ((product as any).item_type as any) ?? undefined,
+        }
+      : {
+          sku: "",
+          name: "",
+          description: "",
+          category_id: null,
+          reorder_point: 10,
+          code_locked: true,
+          item_code: undefined,
+          item_type: undefined,
+        },
   })
 
   const saveMutation = useMutation({
@@ -72,7 +89,7 @@ export default function ProductFormPage() {
     }
   })
 
-  const onSubmit = (data: ProductFormValues) => {
+  const onSubmit: SubmitHandler<ProductFormValues> = (data) => {
     saveMutation.mutate(data)
   }
 
@@ -110,7 +127,43 @@ export default function ProductFormPage() {
             <Input id="sku" placeholder="E.g. RW-001" {...register("sku")} />
             {errors.sku && <p className="text-xs text-destructive">{errors.sku.message}</p>}
           </div>
+
           <div className="space-y-2">
+            <Label htmlFor="item_code">Item Code (override)</Label>
+            <Input id="item_code" placeholder="Auto-generated if empty" {...register("item_code")} />
+            {errors.item_code && <p className="text-xs text-destructive">{errors.item_code.message}</p>}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="item_type">Item Type</Label>
+            <Select value={watch("item_type") || "finished"} onValueChange={(val) => setValue("item_type", val as any, { shouldValidate: true })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select item type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="raw">RAW (RM)</SelectItem>
+                <SelectItem value="finished">FG (FG)</SelectItem>
+                <SelectItem value="semi_finished">SF (SF)</SelectItem>
+              </SelectContent>
+            </Select>
+            {errors.item_type && <p className="text-xs text-destructive">{errors.item_type.message}</p>}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="code_locked">Code Lock</Label>
+            <Select value={watch("code_locked") ? "true" : "false"} onValueChange={(val) => setValue("code_locked", val === "true", { shouldValidate: true })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Lock after creation" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="true">Locked</SelectItem>
+                <SelectItem value="false">Unlocked</SelectItem>
+              </SelectContent>
+            </Select>
+            {errors.code_locked && <p className="text-xs text-destructive">{errors.code_locked.message}</p>}
+          </div>
+
+          <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="name">Product Name</Label>
             <Input id="name" placeholder="E.g. Raw Material A" {...register("name")} />
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
@@ -135,7 +188,7 @@ export default function ProductFormPage() {
               <SelectContent>
                 {categories?.map((category) => (
                   <SelectItem key={category.id} value={category.id}>
-                    {category.name}
+                    {category.name} ({category.code_prefix})
                   </SelectItem>
                 ))}
               </SelectContent>

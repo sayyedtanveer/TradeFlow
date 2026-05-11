@@ -61,7 +61,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                         )
 
                     payload = jwt_handler.decode_token(token)
-                    tenant_id = tenant_id or payload.get("tid")
+                    # Prefer JWT tid claim over X-Tenant-ID header for security
+                    tenant_id = payload.get("tid") or tenant_id
                     logger.info(
                         "Decoded JWT payload tid=%s role=%s sid=%s sub=%s",
                         payload.get("tid"),

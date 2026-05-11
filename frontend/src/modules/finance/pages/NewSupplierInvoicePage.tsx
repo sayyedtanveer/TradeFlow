@@ -181,9 +181,9 @@ export default function NewSupplierInvoicePage() {
                   ))}
                 </datalist>
                 {formData.purchase_order_id ? (
-                  <p className="text-xs text-slate-500">Linked PO ID: {formData.purchase_order_id}</p>
+                  <p className="text-xs text-slate-500">Purchase order selected</p>
                 ) : (
-                  <p className="text-xs text-slate-500">Pick a supplier PO to avoid raw UUID entry.</p>
+                  <p className="text-xs text-slate-500">Pick a supplier PO to link the invoice.</p>
                 )}
               </div>
             </div>

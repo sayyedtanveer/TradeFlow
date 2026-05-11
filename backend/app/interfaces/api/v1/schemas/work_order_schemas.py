@@ -74,6 +74,7 @@ class CompleteJobCardRequest(BaseModel):
 class JobCardResponse(BaseModel):
     id: uuid.UUID
     operation_id: uuid.UUID
+    operation_name: str
     sequence: int
     status: str
     assigned_to: Optional[uuid.UUID]
@@ -87,6 +88,8 @@ class JobCardResponse(BaseModel):
 class WorkOrderMaterialResponse(BaseModel):
     id: uuid.UUID
     material_id: uuid.UUID
+    material_code: str
+    material_name: str
     unit_id: Optional[uuid.UUID]
     required_quantity: Decimal
     issued_quantity: Decimal

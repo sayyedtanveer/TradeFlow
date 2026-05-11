@@ -13,7 +13,8 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_tenant_id,
     get_current_role,
 )
-from backend.app.application.finance.notification_service import NotificationService
+from backend.app.application.finance.notification_service import NotificationService as FinanceNotificationService
+from backend.app.application.notification.services.notification_service import NotificationService
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
@@ -34,7 +35,7 @@ async def get_notifications(
     session: AsyncSession = Depends(_get_db_session),
 ):
     """Get notifications for the current user."""
-    svc = NotificationService(session)
+    svc = FinanceNotificationService(session)
     result = await svc.get_for_user(tenant_id, user_id, unread_only, page, page_size)
     return {
         **result,
@@ -62,7 +63,7 @@ async def mark_notification_read(
     session: AsyncSession = Depends(_get_db_session),
 ):
     """Mark a single notification as read."""
-    svc = NotificationService(session)
+    svc = FinanceNotificationService(session)
     count = await svc.mark_read(tenant_id, user_id, notification_id)
     return {"marked_read": count}
 
@@ -74,6 +75,58 @@ async def mark_all_read(
     session: AsyncSession = Depends(_get_db_session),
 ):
     """Mark all notifications as read for current user."""
-    svc = NotificationService(session)
+    svc = FinanceNotificationService(session)
     count = await svc.mark_read(tenant_id, user_id)
     return {"marked_read": count}
+
+
+# ── Phase 9: Operational Notifications ─────────────────────────────────
+
+@router.get("/operational")
+async def get_operational_notifications(
+    unread_only: bool = Query(False),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Get operational notifications for the current user."""
+    svc = NotificationService(session)
+    notifications = await svc.get_user_notifications(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        unread_only=unread_only,
+    )
+    return {"items": notifications}
+
+
+@router.post("/operational/{notification_id}/read")
+async def mark_operational_notification_read(
+    notification_id: uuid.UUID,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Mark an operational notification as read."""
+    svc = NotificationService(session)
+    await svc.mark_as_read(
+        tenant_id=tenant_id,
+        notification_id=notification_id,
+        user_id=user_id,
+    )
+    return {"status": "success"}
+
+
+@router.post("/operational/mark-all-read")
+async def mark_all_operational_read(
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Mark all operational notifications as read."""
+    svc = NotificationService(session)
+    await svc.mark_all_as_read(
+        tenant_id=tenant_id,
+        user_id=user_id,
+    )
+    return {"status": "success"}
+

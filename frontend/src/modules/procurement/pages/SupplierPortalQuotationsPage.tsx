@@ -296,9 +296,9 @@ export default function SupplierPortalQuotationsPage() {
               cell: (quotation) => (
                 <div>
                   <Link to={`/supplier-portal/quotations/${quotation.id}`} className="font-mono text-xs text-blue-700 hover:underline">
-                    {quotation.id}
+                    {quotation.quotation_number}
                   </Link>
-                  <p className="mt-1 text-xs text-slate-500">{quotation.material_id}</p>
+                  <p className="mt-1 text-xs text-slate-500">{quotation.material_code} — {quotation.material_name}</p>
                 </div>
               ),
             },

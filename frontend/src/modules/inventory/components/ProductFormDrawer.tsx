@@ -15,12 +15,14 @@ import { Drawer } from "@/components/shared/Drawer"
 import { useEffect } from "react"
 
 const productSchema = z.object({
+  item_code: z.string().trim().max(50).optional(),
   sku: z.string().min(3, "SKU must be at least 3 characters"),
   name: z.string().min(2, "Name is required"),
   description: z.string().optional(),
   category_id: z.string().uuid("Please select a valid category").nullable().optional(),
   base_unit_id: z.string().uuid("Please select a valid unit").nullable().optional(),
   reorder_point: z.coerce.number().min(0),
+  code_locked: z.boolean().optional(),
 })
 
 type ProductFormValues = z.infer<typeof productSchema>
@@ -57,12 +59,14 @@ export function ProductFormDrawer({ productId, open, onClose }: Props) {
   const { register, handleSubmit, formState: { errors }, setValue, watch, reset } = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
     defaultValues: {
+      item_code: "",
       sku: "",
       name: "",
       description: "",
       category_id: null,
       base_unit_id: null,
       reorder_point: 10,
+      code_locked: false,
     }
   })
 
@@ -70,21 +74,25 @@ export function ProductFormDrawer({ productId, open, onClose }: Props) {
   useEffect(() => {
     if (product) {
       reset({
+        item_code: product.item_code || "",
         sku: product.sku,
         name: product.name,
         description: product.description || "",
         category_id: product.category === "Uncategorized" ? null : product.category,
         base_unit_id: null,
         reorder_point: product.reorder_point,
+        code_locked: product.code_locked || false,
       })
     } else if (productId === "new") {
       reset({
+        item_code: "",
         sku: "",
         name: "",
         description: "",
         category_id: null,
         base_unit_id: null,
         reorder_point: 10,
+        code_locked: false,
       })
     }
   }, [product, productId, reset])
@@ -120,8 +128,22 @@ export function ProductFormDrawer({ productId, open, onClose }: Props) {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 pb-8">
           <div className="space-y-4">
             <div className="space-y-2">
+              <Label htmlFor="item_code">Item Code</Label>
+              <Input 
+                id="item_code" 
+                placeholder="E.g. RM-GEN-0001 (auto-generated if empty)" 
+                {...register("item_code")} 
+                autoFocus 
+                disabled={watch("code_locked")}
+              />
+              <p className="text-xs text-muted-foreground">
+                Format: TYPE-CATEGORY-SEQUENCE (e.g., RM-GEN-0001). Leave empty for auto-generation.
+              </p>
+              {errors.item_code && <p className="text-xs text-destructive">{errors.item_code.message}</p>}
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="sku">SKU / Barcode</Label>
-              <Input id="sku" placeholder="E.g. RW-001" {...register("sku")} autoFocus />
+              <Input id="sku" placeholder="E.g. RW-001" {...register("sku")} />
               {errors.sku && <p className="text-xs text-destructive">{errors.sku.message}</p>}
             </div>
             <div className="space-y-2">

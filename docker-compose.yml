@@ -39,6 +39,7 @@ services:
     volumes:
       - .:/app
       - uploads_data:/app/uploads
+      - documents_data:/app/storage/documents
     env_file:
       - .env
     environment:
@@ -56,3 +57,4 @@ volumes:
   postgres_data:
   redis_data:
   uploads_data:
+  documents_data:

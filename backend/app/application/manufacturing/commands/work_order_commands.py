@@ -79,3 +79,32 @@ class CompleteJobCardCommand(BaseModel):
     work_order_id: uuid.UUID
     job_card_id: uuid.UUID
     remarks: Optional[str] = None
+
+
+class QCApproveCommand(BaseModel):
+    tenant_id: uuid.UUID
+    work_order_id: uuid.UUID
+    approved_by: uuid.UUID
+    remarks: Optional[str] = None
+
+
+class QCRejectCommand(BaseModel):
+    tenant_id: uuid.UUID
+    work_order_id: uuid.UUID
+    rejected_by: uuid.UUID
+    reason: str
+    send_to_rework: bool = False
+
+
+class QCSendToReworkCommand(BaseModel):
+    tenant_id: uuid.UUID
+    work_order_id: uuid.UUID
+    sent_by: uuid.UUID
+    remarks: Optional[str] = None
+
+
+class FGReceiveCommand(BaseModel):
+    tenant_id: uuid.UUID
+    work_order_id: uuid.UUID
+    received_by: uuid.UUID
+    remarks: Optional[str] = None

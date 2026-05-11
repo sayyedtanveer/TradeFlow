@@ -1,14 +1,27 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
-from typing import Optional
+from datetime import datetime, date
+from typing import Optional, TYPE_CHECKING
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Numeric, String, Text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.infrastructure.persistence.database import Base
+
+if TYPE_CHECKING:
+    from backend.app.infrastructure.persistence.models.material_model import MaterialModel
 
 
 class InspectionTemplateModel(Base):
@@ -96,6 +109,7 @@ class SupplierQuotationModel(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
     )
+    quotation_number: Mapped[str] = mapped_column(String(40), nullable=False)
     supplier_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("suppliers.id", ondelete="CASCADE"), nullable=False
     )
@@ -120,3 +134,5 @@ class SupplierQuotationModel(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+    material: Mapped["MaterialModel"] = relationship("MaterialModel", lazy="joined")

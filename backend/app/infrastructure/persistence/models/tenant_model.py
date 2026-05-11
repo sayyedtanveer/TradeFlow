@@ -28,6 +28,16 @@ class TenantModel(Base):
     currency_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     currency_symbol: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
 
+    # Document branding fields
+    company_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    logo_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    gst_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    footer_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    signature_image_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False

@@ -21,6 +21,10 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
     Does NOT enforce authentication — that's the auth dependency's job.
     Only extracts and stores tenant_id for logging and context purposes.
+    
+    Security: JWT tid claim takes precedence over X-Tenant-ID header to prevent
+    tenant spoofing. X-Tenant-ID header is only used for machine-to-machine calls
+    where JWT is not present.
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
@@ -29,10 +33,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         tenant_id: str | None = None
 
-        # 1. Try X-Tenant-ID header (useful for machine-to-machine calls)
-        tenant_id = request.headers.get("X-Tenant-ID")
-
-        # 2. Try to decode from JWT (best-effort, no raise on failure)
+        # 1. Try to decode from JWT (preferred source of truth)
         payload: dict | None = None
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
@@ -40,10 +41,14 @@ class TenantMiddleware(BaseHTTPMiddleware):
             try:
                 container = request.app.state.container
                 payload = container.jwt_handler.decode_token(token)
-                # prefer header tenant_id but fallback to token tid
-                tenant_id = tenant_id or payload.get("tid")
+                # Use JWT tid claim as primary source
+                tenant_id = payload.get("tid")
             except Exception:
                 pass  # Will fail properly in auth dependency
+
+        # 2. Fall back to X-Tenant-ID header (only for machine-to-machine calls)
+        if not tenant_id:
+            tenant_id = request.headers.get("X-Tenant-ID")
 
         # If we decoded a token, expose common identity fields on request.state
         if payload:

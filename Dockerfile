@@ -1,12 +1,23 @@
 FROM python:3.11-slim
 
-# System deps
+# System deps including WeasyPrint dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
     curl \
-    && rm -rf /var/lib/apt/lists/*
-
+    libcairo2 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libffi-dev \
+    shared-mime-info \
+    fonts-dejavu \
+    libharfbuzz0b \
+    libfribidi0 \
+    libjpeg-dev \
+    libopenjp2-7-dev \
+    && rm -rf /vand storage ar/lib/aiest/lists/*
+s /app/storage/document
 WORKDIR /app
 
 # Install Python deps first (better layer caching)

@@ -80,6 +80,41 @@ Once running, visit:
 
 ---
 
+## PDF Generation
+
+The ERP uses **WeasyPrint** for enterprise document generation (Work Orders, POs, Invoices, QC Reports, Delivery Challans).
+
+### Quick Setup
+
+```bash
+# Docker (recommended - WeasyPrint dependencies pre-installed)
+docker-compose up --build
+
+# Test PDF generation
+curl http://localhost:8000/api/v1/documents/test/pdf
+```
+
+### Local Development
+
+**Windows**: PDF generation requires GTK libraries. Backend will start with PDF features disabled gracefully. Use Docker for full functionality.
+
+**Linux/Mac**: Install WeasyPrint dependencies:
+```bash
+# Ubuntu/Debian
+sudo apt-get install libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi-dev shared-mime-info fonts-dejavu
+
+# macOS
+brew install cairo pango gdk-pixbuf libffi
+```
+
+### Render.com Compatibility
+
+The Dockerfile includes all WeasyPrint dependencies. Deployment works out-of-the-box on Render.com without manual configuration.
+
+**For detailed architecture, troubleshooting, and storage structure, see [docs/pdf-generation.md](docs/pdf-generation.md).**
+
+---
+
 ## Key Endpoints (Phase 0)
 
 | Method | Path | Description |

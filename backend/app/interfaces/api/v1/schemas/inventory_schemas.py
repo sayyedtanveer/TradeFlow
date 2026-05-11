@@ -15,7 +15,7 @@ class CreateMaterialRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     material_type: str = Field("raw", pattern="^(raw|finished|semi_finished)$")
     description: Optional[str] = Field(None, max_length=2000)
-    category_id: uuid.UUID
+    category_id: Optional[uuid.UUID] = None
     base_unit_id: Optional[uuid.UUID] = None
     reorder_level: Optional[Decimal] = Field(None, ge=0)
     location_id: Optional[uuid.UUID] = None

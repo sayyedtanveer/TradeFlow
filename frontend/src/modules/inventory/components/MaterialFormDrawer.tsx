@@ -42,7 +42,11 @@ const normalizeMaterialName = (value: string) =>
   value.trim().replace(/\s+/g, " ").toLowerCase()
 
 const materialSchema = z.object({
+  // legacy backend may still accept `code`; Phase 2 prefers `item_code`
+  item_code: z.string().trim().max(50).optional(),
+  // legacy (backward compat)
   code: z.string().trim().max(50).optional(),
+
   name: z.string().trim().min(1, "Name is required").max(255),
   material_type: z.enum(["raw", "finished", "semi_finished"]),
   base_unit_id: z.string().uuid("Please select a valid unit").nullable().optional(),
@@ -50,10 +54,15 @@ const materialSchema = z.object({
   category_id: z.string().uuid("Please select a valid category"),
   reorder_level: z.coerce.number().min(0).optional().nullable(),
   location_id: z.string().uuid("Please select a valid location").nullable().optional(),
+
   is_batch_tracked: z.boolean().default(false).optional(),
   is_serialized: z.boolean().default(false).optional(),
+
   inspection_required: z.boolean().optional(),
   inspection_template_id: z.string().uuid().nullable().optional(),
+
+  // Phase 2: lock after creation (default true)
+  code_locked: z.boolean().default(true).optional(),
 }).superRefine(({ name, material_type }, ctx) => {
   const normalized = normalizeMaterialName(name)
   if (material_type === "raw" && GENERIC_RAW_NAMES.has(normalized)) {
@@ -135,7 +144,9 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
   useEffect(() => {
     if (material) {
       reset({
-        code: material.item_code || material.code,
+        // prefer item_code; keep code for backward compat
+        item_code: (material as any).item_code ?? material.code,
+        code: material.code,
         name: material.name,
         material_type: (material.material_type as "raw" | "finished" | "semi_finished") || "raw",
         base_unit_id: material.base_unit_id || null,
@@ -147,9 +158,11 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
         is_serialized: material.is_serialized ?? false,
         inspection_required: material.inspection_required ?? false,
         inspection_template_id: material.inspection_template_id || null,
+        code_locked: material.code_locked ?? true,
       })
     } else if (materialId === "new") {
       reset({
+        item_code: "",
         code: "",
         name: "",
         material_type: "raw",
@@ -162,6 +175,7 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
         is_serialized: false,
         inspection_required: false,
         inspection_template_id: null,
+        code_locked: true,
       })
     }
   }, [material, materialId, reset])
@@ -176,15 +190,22 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
           base_unit_id: data.base_unit_id,
           material_type: data.material_type,
           reorder_level: data.reorder_level,
+
           location_id: data.location_id,
           is_batch_tracked: data.is_batch_tracked,
           is_serialized: data.is_serialized,
+
           inspection_required: data.inspection_required,
           inspection_template_id: data.inspection_template_id ?? null,
+
+          // Phase 2
+          item_code: data.item_code ?? data.code ?? undefined,
+          code_locked: data.code_locked ?? undefined,
         })
       } else {
         return await materialService.createMaterial({
-          item_code: data.code || null,
+          item_code: data.item_code ?? data.code ?? null,
+          code_locked: data.code_locked ?? true,
           name: data.name,
           material_type: data.material_type,
           base_unit_id: data.base_unit_id,

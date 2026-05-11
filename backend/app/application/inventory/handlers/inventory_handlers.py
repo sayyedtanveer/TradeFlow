@@ -97,7 +97,56 @@ class CreateMaterialHandler:
         normalized_type = Material.coerce_material_type(cmd.material_type)
         Material.validate_name_for_type(normalized_name, normalized_type)
 
+        # Backward-compat for existing flows/tests: if category_id is omitted,
+        # default to tenant-scoped "Uncategorized".
         if cmd.category_id is None:
+            from sqlalchemy import select
+            from backend.app.infrastructure.persistence.models.material_category_model import MaterialCategoryModel
+
+            uncategorized = await self._uow.session.scalar(
+                select(MaterialCategoryModel.id).where(
+                    MaterialCategoryModel.tenant_id == cmd.tenant_id,
+                    MaterialCategoryModel.is_deleted.is_(False),
+                    MaterialCategoryModel.name == "Uncategorized",
+                )
+            )
+            if uncategorized is None:
+                # Ensure backward-compat for tests/older flows where category_id is omitted.
+                # Create a tenant-scoped "Uncategorized" category if it doesn't exist.
+                now = datetime.now(timezone.utc)
+                category = MaterialCategoryModel(
+                    id=uuid.uuid4(),
+                    tenant_id=cmd.tenant_id,
+                    name="Uncategorized",
+                    code_prefix="GEN",
+                    description=None,
+                    is_active=True,
+                    is_deleted=False,
+                    created_at=now,
+                    updated_at=now,
+                )
+                self._uow.session.add(category)
+                await self._uow.session.flush()
+                uncategorized = category.id
+
+            cmd = CreateMaterialCommand(
+                tenant_id=cmd.tenant_id,
+                created_by=cmd.created_by,
+                code=cmd.code,
+                name=cmd.name,
+                material_type=cmd.material_type,
+                description=cmd.description,
+                category_id=uncategorized,
+                base_unit_id=cmd.base_unit_id,
+                reorder_level=cmd.reorder_level,
+                location_id=cmd.location_id,
+                is_batch_tracked=cmd.is_batch_tracked,
+                is_serialized=cmd.is_serialized,
+            )
+
+        # at this point category_id must be non-null
+        category_id = cmd.category_id
+        if category_id is None:
             raise ValueError("Category is required for item code generation.")
 
         if self._item_code_service is not None:
@@ -111,7 +160,7 @@ class CreateMaterialHandler:
                 else await self._item_code_service.generate(
                     tenant_id=cmd.tenant_id,
                     item_type=normalized_type.value,
-                    category_id=cmd.category_id,
+                    category_id=category_id,
                     target="material",
                 )
             )

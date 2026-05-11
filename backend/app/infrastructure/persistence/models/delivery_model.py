@@ -28,6 +28,7 @@ class DeliveryOrderModel(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="DRAFT")
     carrier: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     tracking_number: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    packed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     shipped_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

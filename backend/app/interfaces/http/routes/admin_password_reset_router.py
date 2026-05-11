@@ -16,9 +16,9 @@ import secrets
 import string
 
 from backend.app.core.dependencies import get_db_session
+from backend.app.interfaces.api.v1.dependencies.auth import get_current_user_id, get_current_tenant_id
 from backend.app.infrastructure.persistence.models.user_model import User
 from backend.app.infrastructure.security.password_hasher import BcryptPasswordHasher
-from backend.app.infrastructure.security.jwt_handler import verify_token
 
 
 router = APIRouter(prefix="/password", tags=["admin-password"])
@@ -50,7 +50,8 @@ def generate_temp_password() -> str:
 async def reset_user_password(
     request: PasswordResetRequest,
     session: AsyncSession = Depends(get_db_session),
-    current_user: dict = Depends(verify_token),  # Must be admin
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+    current_tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ):
     """
     Reset a user's password (Admin only).
@@ -70,15 +71,8 @@ async def reset_user_password(
     - temporary_password: Only returned if generate_temp=true
     """
     
-    # Verify current user is admin
-    if current_user.get("role") != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can reset passwords"
-        )
-
-    # Find user
-    stmt = select(User).where(User.email == request.email)
+    # Find user by email in same tenant
+    stmt = select(User).where(User.email == request.email, User.tenant_id == current_tenant_id)
     result = await session.execute(stmt)
     user_to_reset = result.scalar_one_or_none()
 
@@ -122,7 +116,7 @@ async def reset_user_password(
 
 @router.post("/generate-temp-password", response_model=dict)
 async def get_temp_password(
-    current_user: dict = Depends(verify_token),
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """
     Generate a secure temporary password (for copying/displaying to user).
@@ -131,13 +125,6 @@ async def get_temp_password(
     - temp_password: A 16-character secure password
     - expires_in: Suggested expiry time (for UI display only)
     """
-    
-    # Verify current user is admin
-    if current_user.get("role") != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can access this"
-        )
     
     return {
         "temp_password": generate_temp_password(),

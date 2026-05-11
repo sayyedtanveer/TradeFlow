@@ -118,6 +118,18 @@ class ErrorLogger:
             # Determine status code and error code
             status_code, error_code = self._map_exception_to_status_and_code(exception)
 
+            # For 5xx, print full traceback to logs to make debugging possible in dev/tests
+            if status_code >= 500:
+                logger.error(
+                    "INTERNAL_ERROR captured",
+                    extra={
+                        "trace_id": trace_id,
+                        "error_type": type(exception).__name__,
+                        "error_message": str(exception),
+                        "stack_trace": stack_trace,
+                    },
+                )
+
             # Build error log model
             error_log = ErrorLogModel(
                 id=uuid.uuid4(),
@@ -216,7 +228,14 @@ class ErrorLogger:
                 return None, False
 
             # Read body (can only be read once)
-            body = await request.body()
+            try:
+                body = await request.body()
+            except Exception as exc:
+                # If some middleware/handler already consumed the stream,
+                # do not treat it as an error here.
+                if "Stream consumed" in str(exc):
+                    return None, False
+                raise
             
             if not body:
                 return None, False

@@ -34,4 +34,6 @@ export interface Product {
   price: number
   is_active: boolean
   stock_quantity?: number // From aggregate queries
+  item_code?: string // Phase 2: Enterprise item code system
+  code_locked?: boolean // Phase 2: Item code locked after creation
 }

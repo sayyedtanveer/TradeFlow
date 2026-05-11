@@ -22,7 +22,11 @@ from backend.app.application.manufacturing.commands.work_order_commands import (
     CompleteWorkOrderCommand, CloseWorkOrderCommand,
     StartJobCardCommand, CompleteJobCardCommand,
 )
+from backend.app.application.manufacturing.commands.worker_commands import (
+    StartOperationCommand, PauseOperationCommand, CompleteOperationCommand, ReportWastageCommand,
+)
 from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
+from backend.app.application.manufacturing.handlers.worker_handler import WorkerHandler
 from backend.app.application.manufacturing.services.material_availability_service import (
     MaterialAvailabilityService,
 )
@@ -297,7 +301,22 @@ async def list_job_cards(
         )
         result = await session.execute(stmt)
         rows = result.scalars().all()
-        return [JobCardResponse.model_validate(r) for r in rows]
+        
+        # Build response with operation_name from relationship
+        job_cards_data = []
+        for jc in rows:
+            job_cards_data.append({
+                "id": str(jc.id),
+                "operation_id": str(jc.operation_id),
+                "operation_name": jc.operation.name if jc.operation else "",
+                "sequence": jc.sequence,
+                "status": jc.status,
+                "assigned_to": str(jc.assigned_to) if jc.assigned_to else None,
+                "started_at": jc.started_at.isoformat() if jc.started_at else None,
+                "completed_at": jc.completed_at.isoformat() if jc.completed_at else None,
+                "remarks": jc.remarks,
+            })
+        return job_cards_data
 
 
 @router.patch("/{work_order_id}/job-cards/{job_card_id}/start", status_code=status.HTTP_200_OK, dependencies=[Depends(require_permission("manufacturing:write"))])
@@ -382,3 +401,251 @@ async def complete_job_card(
             return {"status": "DONE"}
         except ValueError as e:
             return await _error_response(e)
+
+
+# ── Phase 4: Worker Operational Flow ───────────────────────────────────────
+
+@router.get("/worker/queue")
+async def get_worker_queue(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get assigned work orders and operations for worker dashboard."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from backend.app.application.manufacturing.services.production_execution_service import ProductionExecutionService
+        service = ProductionExecutionService(session)
+        queue = await service.get_worker_queue(tenant_id=tenant_id, user_id=user_id)
+        return queue
+
+
+@router.post("/{work_order_id}/job-cards/{job_card_id}/start-operation", status_code=status.HTTP_200_OK)
+async def start_operation(
+    work_order_id: uuid.UUID,
+    job_card_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Start a job card operation."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = WorkerHandler(session)
+        cmd = StartOperationCommand(
+            tenant_id=tenant_id,
+            work_order_id=work_order_id,
+            job_card_id=job_card_id,
+            assigned_to=user_id,
+        )
+        await handler.handle_start_operation(cmd)
+        await session.commit()
+        return {"status": "IN_PROGRESS"}
+
+
+@router.post("/{work_order_id}/job-cards/{job_card_id}/pause-operation", status_code=status.HTTP_200_OK)
+async def pause_operation(
+    work_order_id: uuid.UUID,
+    job_card_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Pause a job card operation."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = WorkerHandler(session)
+        cmd = PauseOperationCommand(
+            tenant_id=tenant_id,
+            work_order_id=work_order_id,
+            job_card_id=job_card_id,
+        )
+        await handler.handle_pause_operation(cmd)
+        await session.commit()
+        return {"status": "PAUSED"}
+
+
+@router.post("/{work_order_id}/job-cards/{job_card_id}/complete-operation", status_code=status.HTTP_200_OK)
+async def complete_operation(
+    work_order_id: uuid.UUID,
+    job_card_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Complete a job card operation."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = WorkerHandler(session)
+        cmd = CompleteOperationCommand(
+            tenant_id=tenant_id,
+            work_order_id=work_order_id,
+            job_card_id=job_card_id,
+        )
+        await handler.handle_complete_operation(cmd)
+        await session.commit()
+        return {"status": "DONE"}
+
+
+@router.post("/{work_order_id}/report-wastage", status_code=status.HTTP_200_OK)
+async def report_wastage(
+    work_order_id: uuid.UUID,
+    body: dict,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Report scrap/wastage during production."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = WorkerHandler(session)
+        cmd = ReportWastageCommand(
+            tenant_id=tenant_id,
+            work_order_id=work_order_id,
+            scrap_quantity=Decimal(str(body.get("scrap_quantity", 0))),
+            recorded_by=user_id,
+            notes=body.get("notes"),
+        )
+        await handler.handle_report_wastage(cmd)
+        await session.commit()
+        return {"status": "success"}
+
+
+# ── Phase 5: QC Operational Flow ─────────────────────────────────────────
+
+@router.get("/qc/inspection-queue")
+async def get_inspection_queue(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get QC inspection queue for QC dashboard."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from backend.app.application.quality.services.qc_service import QCService
+        service = QCService(session)
+        queue = await service.get_inspection_queue(tenant_id=tenant_id)
+        return queue
+
+
+@router.get("/qc/rejected-queue")
+async def get_rejected_queue(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get rejected batches for QC dashboard."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from backend.app.application.quality.services.qc_service import QCService
+        service = QCService(session)
+        queue = await service.get_rejected_queue(tenant_id=tenant_id)
+        return queue
+
+
+@router.get("/qc/rework-queue")
+async def get_rework_queue(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get rework queue for QC dashboard."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from backend.app.application.quality.services.qc_service import QCService
+        service = QCService(session)
+        queue = await service.get_rework_queue(tenant_id=tenant_id)
+        return queue
+
+
+@router.post("/{work_order_id}/qc/approve", status_code=status.HTTP_200_OK)
+async def qc_approve(
+    work_order_id: uuid.UUID,
+    body: dict,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Approve QC inspection."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = WorkOrderHandler(session)
+        cmd = QCApproveCommand(
+            tenant_id=tenant_id,
+            work_order_id=work_order_id,
+            approved_by=user_id,
+            remarks=body.get("remarks"),
+        )
+        await handler.handle_qc_approve(cmd)
+        await session.commit()
+        return {"status": "QC_APPROVED"}
+
+
+@router.post("/{work_order_id}/qc/reject", status_code=status.HTTP_200_OK)
+async def qc_reject(
+    work_order_id: uuid.UUID,
+    body: dict,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Reject QC inspection."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = WorkOrderHandler(session)
+        cmd = QCRejectCommand(
+            tenant_id=tenant_id,
+            work_order_id=work_order_id,
+            rejected_by=user_id,
+            reason=body.get("reason", ""),
+            send_to_rework=body.get("send_to_rework", False),
+        )
+        await handler.handle_qc_reject(cmd)
+        await session.commit()
+        return {"status": "QC_REJECTED"}
+
+
+@router.post("/{work_order_id}/qc/send-to-rework", status_code=status.HTTP_200_OK)
+async def qc_send_to_rework(
+    work_order_id: uuid.UUID,
+    body: dict,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Send rejected WO to rework."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = WorkOrderHandler(session)
+        cmd = QCSendToReworkCommand(
+            tenant_id=tenant_id,
+            work_order_id=work_order_id,
+            sent_by=user_id,
+            remarks=body.get("remarks"),
+        )
+        await handler.handle_qc_send_to_rework(cmd)
+        await session.commit()
+        return {"status": "REWORK"}
+
+
+@router.post("/{work_order_id}/fg-receive", status_code=status.HTTP_200_OK)
+async def fg_receive(
+    work_order_id: uuid.UUID,
+    body: dict,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Receive finished goods after QC approval."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        handler = WorkOrderHandler(session)
+        cmd = FGReceiveCommand(
+            tenant_id=tenant_id,
+            work_order_id=work_order_id,
+            received_by=user_id,
+            remarks=body.get("remarks"),
+        )
+        await handler.handle_fg_receive(cmd)
+        await session.commit()
+        return {"status": "FG_RECEIVED"}
+
+

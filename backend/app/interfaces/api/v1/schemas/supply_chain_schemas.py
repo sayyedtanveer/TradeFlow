@@ -153,6 +153,25 @@ class SupplierQuotationCreate(BaseModel):
     rfq_id: Optional[uuid.UUID] = None
 
 
+class SupplierQuotationResponse(BaseModel):
+    id: uuid.UUID
+    quotation_number: str
+    supplier_id: uuid.UUID
+    purchase_order_id: Optional[uuid.UUID]
+    material_id: uuid.UUID
+    material_code: str
+    material_name: str
+    quantity: Decimal
+    unit_price: Decimal
+    valid_until: Optional[date]
+    status: str
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
 class MaterialRequestCreate(BaseModel):
     item_id: uuid.UUID
     item_type: str = Field(..., pattern="^(material|component|product)$")

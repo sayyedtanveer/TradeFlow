@@ -47,6 +47,7 @@ from backend.app.infrastructure.persistence.models import (  # noqa: F401
     subcontract_model,
     finance_models,
     inventory_management_models,
+    document_model,
 )
 
 # Import error logging models for Alembic autogenerate

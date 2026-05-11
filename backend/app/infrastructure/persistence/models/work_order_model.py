@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 import enum
 from datetime import date, datetime, timezone
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean, Date, DateTime, Enum as SAEnum, ForeignKey, Index,
@@ -13,6 +13,11 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.infrastructure.persistence.database import Base
+
+# Type hints for forward references
+if TYPE_CHECKING:
+    from backend.app.infrastructure.persistence.models.material_model import MaterialModel
+    from backend.app.infrastructure.persistence.models.operation_model import OperationModel
 
 
 class WorkOrderStatus(str, enum.Enum):
@@ -118,6 +123,7 @@ class WorkOrderMaterialModel(Base):
     issued_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
 
     work_order: Mapped["WorkOrderModel"] = relationship("WorkOrderModel", back_populates="materials")
+    material: Mapped["MaterialModel"] = relationship("MaterialModel", lazy="joined")
 
 
 class JobCardModel(Base):
@@ -139,6 +145,7 @@ class JobCardModel(Base):
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     work_order: Mapped["WorkOrderModel"] = relationship("WorkOrderModel", back_populates="job_cards")
+    operation: Mapped["OperationModel"] = relationship("OperationModel", lazy="joined")
 
 
 class ProductionRecordModel(Base):

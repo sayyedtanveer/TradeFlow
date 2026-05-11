@@ -19,10 +19,47 @@ from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
-sys.path.insert(0, str(Path.cwd() / "backend"))
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from backend.app.config import settings
 from backend.app.infrastructure.persistence.database import Base
+
+# Import every mapped model before reading Base.metadata. Without this the
+# checker can report a false clean result while tables/columns are missing.
+from backend.app.infrastructure.persistence.models import (  # noqa: F401
+    tenant_model,
+    user_model,
+    audit_log_model,
+    material_model,
+    inventory_transaction_model,
+    material_category_model,
+    unit_of_measure_model,
+    uom_conversion_model,
+    location_model,
+    batch_model,
+    serial_number_model,
+    item_template_model,
+    item_variant_model,
+    item_code_sequence_model,
+    bom_model,
+    workstation_model,
+    operation_model,
+    bom_operation_model,
+    work_order_model,
+    sales_models,
+    quality_model,
+    purchase_order_model,
+    grn_model,
+    supplier_model,
+    po_sequence_model,
+    material_request_model,
+    mrp_model,
+    subcontract_model,
+    finance_models,
+    inventory_management_models,
+)
+from backend.app.infrastructure.logging.models import ErrorLogModel  # noqa: F401
 
 
 async def get_orm_columns(table) -> dict:
@@ -71,8 +108,19 @@ async def check_schema():
         orm_cols = {}
         for column in table.columns:
             orm_cols[column.name] = column
-        
+
         db_cols = await get_db_columns(engine, table_name)
+
+        if not db_cols:
+            mismatches.append({
+                'table': table_name,
+                'column': None,
+                'type': None,
+                'nullable': None,
+                'default': None,
+                'action': 'CREATE_TABLE',
+            })
+            continue
         
         # Find missing columns
         for col_name, col_obj in orm_cols.items():
@@ -97,8 +145,17 @@ async def check_schema():
 async def fix_schema(mismatches: List[dict]) -> None:
     """Apply fixes for schema mismatches."""
     engine = create_async_engine(settings.database_url, echo=False)
-    
+
+    if any(m['action'] == 'CREATE_TABLE' for m in mismatches):
+        print("Creating missing tables with ORM metadata...")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
     for mismatch in mismatches:
+        if mismatch['action'] == 'CREATE_TABLE':
+            print(f"  [OK] Ensured table {mismatch['table']}")
+            continue
+
         table = mismatch['table']
         column = mismatch['column']
         col_type = mismatch['type']

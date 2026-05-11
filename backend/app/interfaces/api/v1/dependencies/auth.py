@@ -8,6 +8,13 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from backend.app.domain.tenant.value_objects.role import Role
 from backend.app.infrastructure.context.request_context import set_request_context
+from backend.app.infrastructure.security.jwt_claim_validator import (
+    parse_user_claim,
+    parse_tenant_claim,
+    parse_role_claim,
+    parse_supplier_claim,
+    parse_client_claim,
+)
 
 security = HTTPBearer(auto_error=False)
 
@@ -73,16 +80,19 @@ async def get_current_user_payload(
 async def get_current_user_id(
     payload: dict = Depends(get_current_user_payload),
 ) -> uuid.UUID:
-    return uuid.UUID(payload["sub"])
+    """Safely parse user_id from JWT payload using centralized validator."""
+    return parse_user_claim(payload)
 
 
 async def get_current_tenant_id(
     payload: dict = Depends(get_current_user_payload),
 ) -> uuid.UUID:
-    return uuid.UUID(payload["tid"])
+    """Safely parse tenant_id from JWT payload using centralized validator."""
+    return parse_tenant_claim(payload)
 
 
 async def get_current_role(
     payload: dict = Depends(get_current_user_payload),
 ) -> str:
-    return payload.get("role", "viewer")
+    """Safely parse role from JWT payload using centralized validator."""
+    return parse_role_claim(payload)

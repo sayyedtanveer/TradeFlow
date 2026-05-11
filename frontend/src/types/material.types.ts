@@ -109,6 +109,9 @@ export interface CreateMaterialInput {
   location_id?: string | null;
   is_batch_tracked?: boolean;
   is_serialized?: boolean;
+
+  // Phase 2 item-code locking
+  code_locked?: boolean;
 }
 
 export interface UpdateMaterialInput {
@@ -124,6 +127,10 @@ export interface UpdateMaterialInput {
   is_serialized?: boolean;
   inspection_required?: boolean;
   inspection_template_id?: string | null;
+
+  // Phase 2 item-code locking + override (backend may enforce rules)
+  item_code?: string | null;
+  code_locked?: boolean;
 }
 
 export interface StockOperationInput {

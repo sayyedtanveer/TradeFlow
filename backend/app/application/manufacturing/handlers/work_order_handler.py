@@ -19,9 +19,11 @@ from backend.app.application.manufacturing.commands.work_order_commands import (
     IssueMaterialCommand, RecordProductionCommand,
     CompleteWorkOrderCommand, CloseWorkOrderCommand,
     StartJobCardCommand, CompleteJobCardCommand,
+    QCApproveCommand, QCRejectCommand, QCSendToReworkCommand, FGReceiveCommand,
 )
 from backend.app.application.manufacturing.services.inventory_service import InventoryService
 from backend.app.application.manufacturing.services.wo_number_service import WONumberService
+from backend.app.application.inventory.services.inventory_reservation_service import InventoryReservationService
 from backend.app.domain.manufacturing.entities.work_order import WorkOrder, WorkOrderStatus, WorkOrderPriority
 from backend.app.domain.manufacturing.exceptions import BOMNotFoundError
 from backend.app.domain.manufacturing.events.work_order_events import (
@@ -40,6 +42,7 @@ class WorkOrderHandler:
         self._session = session
         self._uow = uow  # Optional: UnitOfWork for emitting domain events
         self._inventory = InventoryService(session)
+        self._reservation = InventoryReservationService(session)
         self._wo_number = WONumberService(session)
 
     def with_uow(self, uow):
@@ -127,8 +130,10 @@ class WorkOrderHandler:
         wo.status = entity.status
         wo.updated_at = datetime.now(timezone.utc)
 
+        # Transition to MATERIAL_PENDING and trigger material planning
+        wo.status = WorkOrderStatus.MATERIAL_PENDING
         await self._plan_materials_for_release(wo)
-        
+
         # Emit event for dashboard notifications
         self._emit_event(WorkOrderReleased(
             aggregate_id=wo.id,
@@ -178,25 +183,28 @@ class WorkOrderHandler:
             )
             reserve_qty = min(remaining_qty, available_qty)
             if reserve_qty > 0:
-                await self._inventory.reserve_stock(
+                # Use new reservation service with partial reservation handling
+                reserved_qty, shortage_qty, shortage_record_id = await self._reservation.reserve_for_work_order(
                     tenant_id=wo.tenant_id,
-                    material_id=material.id,
-                    quantity=reserve_qty,
                     work_order_id=wo.id,
+                    material_id=material.id,
+                    required_quantity=remaining_qty,
                     unit_id=requirement.unit_id,
                     created_by=wo.created_by,
                 )
+            else:
+                shortage_qty = remaining_qty
 
-            shortage_qty = remaining_qty - reserve_qty
-            if shortage_qty <= 0:
-                continue
-
+            # Check for net shortage after considering incoming POs
             incoming_qty = await self._open_po_quantity(wo.tenant_id, material.id)
             net_shortage_qty = shortage_qty - incoming_qty
             if net_shortage_qty > 0:
                 shortage_lines.append((requirement, material, net_shortage_qty))
 
+        # If no shortages and reservations successful, transition to MATERIAL_RESERVED
         if not shortage_lines:
+            wo.status = WorkOrderStatus.MATERIAL_RESERVED
+            wo.updated_at = datetime.now(timezone.utc)
             return
 
         for requirement, material, shortage_qty in shortage_lines:
@@ -361,7 +369,11 @@ class WorkOrderHandler:
         entity.start()
         wo.status = entity.status
         wo.updated_at = datetime.now(timezone.utc)
-        
+
+        # Transition to IN_PRODUCTION (from MATERIAL_ISSUED)
+        wo.status = WorkOrderStatus.IN_PRODUCTION
+        wo.updated_at = datetime.now(timezone.utc)
+
         # Emit event for dashboard notifications
         self._emit_event(WorkOrderStarted(
             aggregate_id=wo.id,
@@ -377,8 +389,8 @@ class WorkOrderHandler:
         wo = await self._get_wo(cmd.work_order_id, cmd.tenant_id)
         entity = self._to_entity(wo)
 
-        # Must be RELEASED or IN_PROGRESS
-        if entity.status not in (WorkOrderStatus.RELEASED, WorkOrderStatus.IN_PROGRESS):
+        # Must be MATERIAL_RESERVED or MATERIAL_ISSUED (for partial issues)
+        if entity.status not in (WorkOrderStatus.MATERIAL_RESERVED, WorkOrderStatus.MATERIAL_ISSUED):
             from backend.app.domain.manufacturing.entities.work_order import InvalidStatusTransitionError
             raise InvalidStatusTransitionError(
                 f"Cannot issue material with WO in status {entity.status}"
@@ -411,6 +423,25 @@ class WorkOrderHandler:
         )
 
         req.issued_quantity = float(Decimal(str(req.issued_quantity)) + cmd.quantity)
+
+        # Check if all materials are now issued, transition to MATERIAL_ISSUED if not already
+        all_materials_stmt = select(WorkOrderMaterialModel).where(
+            WorkOrderMaterialModel.work_order_id == cmd.work_order_id
+        )
+        all_materials_result = await self._session.execute(all_materials_stmt)
+        all_materials = all_materials_result.scalars().all()
+
+        all_issued = all(
+            Decimal(str(m.issued_quantity)) >= Decimal(str(m.required_quantity))
+            for m in all_materials
+        )
+
+        if all_issued and entity.status == WorkOrderStatus.MATERIAL_RESERVED:
+            wo.status = WorkOrderStatus.MATERIAL_ISSUED
+            wo.updated_at = datetime.now(timezone.utc)
+        elif entity.status == WorkOrderStatus.MATERIAL_RESERVED:
+            wo.status = WorkOrderStatus.MATERIAL_ISSUED
+            wo.updated_at = datetime.now(timezone.utc)
 
     # ── Record Production ────────────────────────────────────────────────────────
 
@@ -555,7 +586,11 @@ class WorkOrderHandler:
         entity.complete()  # raises MaterialNotIssuedError if produced_qty == 0
         wo.status = entity.status
         wo.updated_at = datetime.now(timezone.utc)
-        
+
+        # Transition to QC_PENDING instead of COMPLETED
+        wo.status = WorkOrderStatus.QC_PENDING
+        wo.updated_at = datetime.now(timezone.utc)
+
         # Emit event for dashboard notifications
         self._emit_event(WorkOrderCompleted(
             aggregate_id=wo.id,
@@ -639,7 +674,7 @@ class WorkOrderHandler:
         entity.close()
         wo.status = entity.status
         wo.updated_at = datetime.now(timezone.utc)
-        
+
         # Emit event for dashboard notifications
         self._emit_event(WorkOrderClosed(
             aggregate_id=wo.id,
@@ -648,6 +683,63 @@ class WorkOrderHandler:
             wo_id=str(wo.id),
             wo_number=wo.wo_number,
         ))
+
+    # ── QC Operations ─────────────────────────────────────────────────────────────
+
+    async def handle_qc_approve(self, cmd: QCApproveCommand) -> None:
+        """Approve QC inspection and transition to FG_RECEIVED."""
+        wo = await self._get_wo(cmd.work_order_id, cmd.tenant_id)
+        entity = self._to_entity(wo)
+
+        if entity.status != WorkOrderStatus.QC_PENDING:
+            from backend.app.domain.manufacturing.entities.work_order import InvalidStatusTransitionError
+            raise InvalidStatusTransitionError(
+                f"Cannot approve QC: WO must be in QC_PENDING status, current: {entity.status}"
+            )
+
+        wo.status = WorkOrderStatus.QC_APPROVED
+        wo.updated_at = datetime.now(timezone.utc)
+
+    async def handle_qc_reject(self, cmd: QCRejectCommand) -> None:
+        """Reject QC inspection and transition to REWORK or REJECTED."""
+        wo = await self._get_wo(cmd.work_order_id, cmd.tenant_id)
+        entity = self._to_entity(wo)
+
+        if entity.status != WorkOrderStatus.QC_PENDING:
+            from backend.app.domain.manufacturing.entities.work_order import InvalidStatusTransitionError
+            raise InvalidStatusTransitionError(
+                f"Cannot reject QC: WO must be in QC_PENDING status, current: {entity.status}"
+            )
+
+        if cmd.send_to_rework:
+            wo.status = WorkOrderStatus.REWORK
+        else:
+            wo.status = WorkOrderStatus.REJECTED
+        wo.updated_at = datetime.now(timezone.utc)
+
+    async def handle_qc_send_to_rework(self, cmd: QCSendToReworkCommand) -> None:
+        """Send rejected WO to rework."""
+        wo = await self._get_wo(cmd.work_order_id, cmd.tenant_id)
+        entity = self._to_entity(wo)
+
+        if entity.status != WorkOrderStatus.REJECTED:
+            from backend.app.domain.manufacturing.entities.work_order import InvalidStatusTransitionError
+            raise InvalidStatusTransitionError(
+                f"Cannot send to rework: WO must be in REJECTED status, current: {entity.status}"
+            )
+
+        wo.status = WorkOrderStatus.REWORK
+        wo.updated_at = datetime.now(timezone.utc)
+
+    async def handle_fg_receive(self, cmd: FGReceiveCommand) -> None:
+        """Receive finished goods after QC approval and transition to COMPLETED."""
+        wo = await self._get_wo(cmd.work_order_id, cmd.tenant_id)
+        entity = self._to_entity(wo)
+
+        entity.require_qc_approved()
+
+        wo.status = WorkOrderStatus.FG_RECEIVED
+        wo.updated_at = datetime.now(timezone.utc)
 
     # ── Job Card ─────────────────────────────────────────────────────────────────
 

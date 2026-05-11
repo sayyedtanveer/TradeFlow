@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { supplyChainApi, type PurchaseOrder } from "@/services/supply-chain.service"
 import { materialService } from "@/services/material.service"
+import { documentService } from "@/services/document.service"
 import type { Material } from "@/types/material.types"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -12,6 +13,7 @@ export default function PurchaseOrderDetailPage() {
   const { toast } = useToast()
   const [po, setPo] = useState<PurchaseOrder | null>(null)
   const [matMap, setMatMap] = useState<Record<string, string>>({})
+  const [documentLoading, setDocumentLoading] = useState(false)
 
   const load = async () => {
     if (!poId) return
@@ -51,6 +53,38 @@ export default function PurchaseOrderDetailPage() {
     }
   }
 
+  const handleDownloadPDF = async () => {
+    if (!poId || documentLoading) return
+    setDocumentLoading(true)
+    try {
+      const document = await documentService.generateDocument('purchase_order', poId)
+      await documentService.downloadDocumentByUrl(document.id, `PO-${po?.po_number}.pdf`)
+    } catch (e: any) {
+      toast({ title: "Failed to generate PDF", variant: "destructive" })
+    } finally {
+      setDocumentLoading(false)
+    }
+  }
+
+  const handlePrintPDF = async () => {
+    if (!poId || documentLoading) return
+    setDocumentLoading(true)
+    try {
+      const document = await documentService.generateDocument('purchase_order', poId)
+      const previewUrl = await documentService.previewDocument(document.id)
+      const printWindow = window.open(previewUrl, '_blank')
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print()
+        }
+      }
+    } catch (e: any) {
+      toast({ title: "Failed to generate PDF for printing", variant: "destructive" })
+    } finally {
+      setDocumentLoading(false)
+    }
+  }
+
   if (!po) return <p className="text-muted-foreground">Loading…</p>
 
   const canSend = po.status === "draft"
@@ -71,6 +105,20 @@ export default function PurchaseOrderDetailPage() {
           {po.notes && <p className="text-sm mt-1">{po.notes}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={handlePrintPDF}
+            disabled={documentLoading}
+          >
+            {documentLoading ? '…' : 'Print'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleDownloadPDF}
+            disabled={documentLoading}
+          >
+            {documentLoading ? '…' : 'Download PDF'}
+          </Button>
           {canSend && (
             <Button onClick={send}>
               Send to supplier

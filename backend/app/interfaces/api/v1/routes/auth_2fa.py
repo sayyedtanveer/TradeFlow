@@ -17,6 +17,10 @@ from backend.app.infrastructure.persistence.repositories.user_repository import 
 from backend.app.infrastructure.persistence.repositories.user_device_repository import UserDeviceRepository
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
 from backend.app.infrastructure.security.totp_service import TOTPService
+from backend.app.infrastructure.security.jwt_claim_validator import (
+    parse_user_claim,
+    parse_tenant_claim,
+)
 from backend.app.interfaces.api.v1.dependencies.auth import (
     get_container,
     get_current_user_payload,
@@ -53,14 +57,8 @@ async def enable_2fa(
     Next step: User scans QR or enters secret, then calls /verify-setup
     """
     container = get_container(request)
-    user_id_str = payload.get("sub", "")
-    tenant_id_str = payload.get("tid", "")
-
-    try:
-        user_id = uuid.UUID(user_id_str)
-        tenant_id = uuid.UUID(tenant_id_str)
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token claims")
+    user_id = parse_user_claim(payload)
+    tenant_id = parse_tenant_claim(payload)
 
     async with container.session_factory() as session:
         user_repo = UserRepository(session)
@@ -116,14 +114,8 @@ async def verify_2fa_setup(
     Backup codes are stored in database.
     """
     container = get_container(request)
-    user_id_str = payload.get("sub", "")
-    tenant_id_str = payload.get("tid", "")
-
-    try:
-        user_id = uuid.UUID(user_id_str)
-        tenant_id = uuid.UUID(tenant_id_str)
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token claims")
+    user_id = parse_user_claim(payload)
+    tenant_id = parse_tenant_claim(payload)
 
     async with container.session_factory() as session:
         user_repo = UserRepository(session)
@@ -180,14 +172,8 @@ async def disable_2fa(
     Requires user's password for security (similar to account deletion).
     """
     container = get_container(request)
-    user_id_str = payload.get("sub", "")
-    tenant_id_str = payload.get("tid", "")
-
-    try:
-        user_id = uuid.UUID(user_id_str)
-        tenant_id = uuid.UUID(tenant_id_str)
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token claims")
+    user_id = parse_user_claim(payload)
+    tenant_id = parse_tenant_claim(payload)
 
     async with container.session_factory() as session:
         user_repo = UserRepository(session)
@@ -230,12 +216,7 @@ async def get_backup_codes(
     User can regenerate codes by disabling and re-enabling 2FA.
     """
     container = get_container(request)
-    user_id_str = payload.get("sub", "")
-
-    try:
-        user_id = uuid.UUID(user_id_str)
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    user_id = parse_user_claim(payload)
 
     async with container.session_factory() as session:
         user_repo = UserRepository(session)
@@ -266,8 +247,6 @@ async def login_with_2fa(
     - TOTP code (6 digits)
     - Backup code (format: XXXX-XXXX)
     - Nothing if 2FA not enabled (falls back to password-only)
-
-    With remember_device=True, device gets 30-day bypass for 2FA prompt.
     """
     container = get_container(request)
 
@@ -319,7 +298,11 @@ async def login_with_2fa(
             "tid": str(tenant_id),
             "role": user.role,
         }
-        access_token = container.jwt_handler.encode(token_data)
+        access_token = container.jwt_handler.create_access_token(
+            user_id=token_data["sub"],
+            tenant_id=token_data["tid"],
+            role=token_data["role"],
+        )
 
         # Handle device trust if requested
         if body.remember_device:

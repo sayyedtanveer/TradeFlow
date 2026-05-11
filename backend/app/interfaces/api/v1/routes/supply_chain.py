@@ -42,26 +42,18 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
 from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.interfaces.api.v1.dependencies.supplier_portal import require_supplier_id
 from backend.app.interfaces.api.v1.schemas.supply_chain_schemas import (
-    GoodsReceiptRequest,
-    GRNCreate,
-    GRNResponse,
-    GRNLineCreate,
-    MaterialRequestCreate,
-    MaterialRequestResponse,
-    MaterialRequestUpdate,
-    NCRCreateRequest,
-    PurchaseOrderCreate,
-    QualityInspectRequest,
-    SubcontractIssueRequest,
-    SubcontractOrderCreate,
-    SubcontractReceiveRequest,
-    SupplierCreate,
+    SupplierCreate, SupplierUpdate, SupplierResponse, SupplierProfileUpdate,
+    SupplierShipmentNoticeLine, SupplierShipmentNoticeCreate,
     SupplierInvoiceSubmit,
-    SupplierProfileUpdate,
-    SupplierQuotationCreate,
-    SupplierResponse,
-    SupplierShipmentNoticeCreate,
-    SupplierUpdate,
+    POLineIn, PurchaseOrderCreate,
+    ReceiveLineItem, GoodsReceiptRequest,
+    QualityInspectRequest, NCRCreateRequest,
+    SubcontractOrderCreate, SubcontractIssueRequest, SubcontractReceiveRequest,
+    SupplierQuotationCreate, SupplierQuotationResponse,
+    MaterialRequestCreate, MaterialRequestUpdate, MaterialRequestResponse,
+    RFQLineIn, RFQCreate, RFQAwardRequest,
+    InvoiceDisputeCreate, InvoiceDisputeResolve,
+    GRNLineCreate, GRNCreate, GRNLineResponse, GRNResponse,
 )
 
 router = APIRouter(tags=["Supply Chain"])

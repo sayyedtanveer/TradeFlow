@@ -477,10 +477,26 @@ async def qc_dashboard(
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ):
-    """Quality dashboard with pending inspections and NCR counts."""
+    """Operational QC dashboard with actionable queues.
+    
+    Shows:
+    - Inspection queue (WOs in QC_PENDING awaiting inspection)
+    - Rejected queue (WOs in QC_REJECTED awaiting disposition)
+    - Rework queue (WOs in REWORK awaiting re-inspection)
+    - Inspection statistics
+    """
     container = get_container(request)
     since = datetime.now(timezone.utc) - timedelta(days=30)
     async with container.session_factory() as session:
+        from backend.app.application.quality.services.qc_service import QCService
+        qc_service = QCService(session)
+        
+        # Get operational queues
+        inspection_queue = await qc_service.get_inspection_queue(tenant_id=tenant_id)
+        rejected_queue = await qc_service.get_rejected_queue(tenant_id=tenant_id)
+        rework_queue = await qc_service.get_rework_queue(tenant_id=tenant_id)
+        
+        # Inspection statistics
         inspection_result = await session.execute(
             select(QualityInspectionModel.result, func.count(QualityInspectionModel.id))
             .where(QualityInspectionModel.tenant_id == tenant_id)
@@ -497,9 +513,27 @@ async def qc_dashboard(
     return {
         "dashboard_type": "qc",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "pending_inspections": int(inspections_by_result.get("pending", 0) + inspections_by_result.get("PENDING", 0)),
-        "ncrs_this_month": int(ncrs_this_month or 0),
-        "inspections": inspections_by_result,
+        "queues": {
+            "inspection": {
+                "count": len(inspection_queue),
+                "items": inspection_queue[:10],  # Top 10
+            },
+            "rejected": {
+                "count": len(rejected_queue),
+                "items": rejected_queue[:10],
+            },
+            "rework": {
+                "count": len(rework_queue),
+                "items": rework_queue[:10],
+            },
+        },
+        "stats": {
+            "pending_inspections": len(inspection_queue),
+            "awaiting_disposition": len(rejected_queue),
+            "in_rework": len(rework_queue),
+            "ncrs_this_month": int(ncrs_this_month or 0),
+            "inspections_by_result": inspections_by_result,
+        },
     }
 
 
@@ -588,19 +622,38 @@ async def storekeeper_dashboard(
             )
         )
     
+        # Get operational queues using StorekeeperService
+        from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
+        sk_service = StorekeeperService(session)
+        issue_queue = await sk_service.get_issue_queue(tenant_id=tenant_id)
+        shortage_queue = await sk_service.get_shortage_queue(tenant_id=tenant_id)
+        partially_issued = await sk_service.get_partially_issued_wo(tenant_id=tenant_id)
+    
     return {
         "dashboard_type": "storekeeper",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "grn_pending": pending_grns,
-        "low_stock_alerts": {
-            "count": len(low_stock_items),
-            "items": low_stock_items,
+        "queues": {
+            "material_issues": {
+                "count": len(issue_queue),
+                "items": issue_queue[:10],
+            },
+            "shortages": {
+                "count": len(shortage_queue),
+                "items": shortage_queue[:10],
+            },
+            "partially_issued": {
+                "count": len(partially_issued),
+                "items": partially_issued[:10],
+            },
         },
-        "inventory": {
-            "total_value": float(inv_value),
-            "total_quantity": float(total_stock),
+        "stats": {
+            "grn_pending": pending_grns,
+            "low_stock_count": len(low_stock_items),
+            "low_stock_items": low_stock_items,
+            "inventory_value": float(inv_value),
+            "inventory_quantity": float(total_stock),
+            "open_purchase_orders": int(open_pos or 0),
         },
-        "open_purchase_orders": int(open_pos or 0),
     }
 
 
@@ -677,13 +730,32 @@ async def worker_dashboard(
             for row in recent_result
         ]
     
+        # Get operational queue using ProductionExecutionService
+        from backend.app.application.manufacturing.services.production_execution_service import ProductionExecutionService
+        prod_service = ProductionExecutionService(session)
+        # Note: worker queue requires user_id; we'll get all WOs in MATERIAL_ISSUED/IN_PRODUCTION
+        worker_queue = await prod_service.get_worker_queue(
+            tenant_id=tenant_id,
+            user_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),  # Get all assignable
+        )
+    
     return {
         "dashboard_type": "worker",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "work_orders": wo_by_status,
-        "ready_to_start": ready_to_start,
-        "in_progress": in_progress,
-        "recent_work_orders": recent_wos,
+        "queues": {
+            "assigned_operations": {
+                "count": len(worker_queue),
+                "items": worker_queue[:10],
+            },
+        },
+        "stats": {
+            "work_orders_by_status": wo_by_status,
+            "ready_to_start": ready_to_start,
+            "in_progress": in_progress,
+            "awaiting_production": wo_by_status.get("MATERIAL_ISSUED", 0),
+            "qc_pending": wo_by_status.get("QC_PENDING", 0),
+            "recent_work_orders": recent_wos,
+        },
     }
 
 
