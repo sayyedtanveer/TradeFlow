@@ -8,13 +8,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from backend.app.domain.tenant.value_objects.role import Role
 from backend.app.infrastructure.context.request_context import set_request_context
-from backend.app.infrastructure.security.jwt_claim_validator import (
-    parse_user_claim,
-    parse_tenant_claim,
-    parse_role_claim,
-    parse_supplier_claim,
-    parse_client_claim,
-)
 
 security = HTTPBearer(auto_error=False)
 
@@ -28,7 +21,11 @@ async def get_current_user_payload(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ):
     """Extract and validate JWT; return decoded payload dict."""
+    from backend.app.infrastructure.logging.logger import get_logger
+    logger = get_logger(__name__)
+    
     if not credentials:
+        logger.warning("No credentials provided in request")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
@@ -37,7 +34,9 @@ async def get_current_user_payload(
     container = get_container(request)
     try:
         payload = container.jwt_handler.decode_token(credentials.credentials)
-    except Exception:
+        logger.debug("JWT decoded successfully in get_current_user_payload", extra={"role": payload.get("role"), "tid": payload.get("tid")})
+    except Exception as e:
+        logger.error(f"JWT decode failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
@@ -80,19 +79,66 @@ async def get_current_user_payload(
 async def get_current_user_id(
     payload: dict = Depends(get_current_user_payload),
 ) -> uuid.UUID:
-    """Safely parse user_id from JWT payload using centralized validator."""
-    return parse_user_claim(payload)
+    """Parse user_id from JWT payload with fallback for compatibility."""
+    from backend.app.infrastructure.logging.logger import get_logger
+    logger = get_logger(__name__)
+    
+    sub = payload.get("sub")
+    if not sub:
+        logger.warning("Missing sub claim in JWT", extra={"payload_keys": list(payload.keys())})
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token: missing user_id (sub) claim"
+        )
+    
+    try:
+        return uuid.UUID(str(sub))
+    except (ValueError, AttributeError, TypeError) as exc:
+        logger.error("Invalid sub claim format", extra={"sub": sub, "error": str(exc)})
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token: user_id (sub) is not a valid UUID"
+        ) from exc
 
 
 async def get_current_tenant_id(
     payload: dict = Depends(get_current_user_payload),
 ) -> uuid.UUID:
-    """Safely parse tenant_id from JWT payload using centralized validator."""
-    return parse_tenant_claim(payload)
+    """Parse tenant_id from JWT payload with fallback for compatibility."""
+    from backend.app.infrastructure.logging.logger import get_logger
+    logger = get_logger(__name__)
+    
+    tid = payload.get("tid")
+    if not tid:
+        logger.warning("Missing tid claim in JWT", extra={"payload_keys": list(payload.keys())})
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token: missing tenant_id (tid) claim"
+        )
+    
+    try:
+        return uuid.UUID(str(tid))
+    except (ValueError, AttributeError, TypeError) as exc:
+        logger.error("Invalid tid claim format", extra={"tid": tid, "error": str(exc)})
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token: tenant_id (tid) is not a valid UUID"
+        ) from exc
 
 
 async def get_current_role(
     payload: dict = Depends(get_current_user_payload),
 ) -> str:
-    """Safely parse role from JWT payload using centralized validator."""
-    return parse_role_claim(payload)
+    """Parse role from JWT payload with fallback for compatibility."""
+    from backend.app.infrastructure.logging.logger import get_logger
+    logger = get_logger(__name__)
+    
+    role = payload.get("role")
+    if not role or not isinstance(role, str):
+        logger.warning("Missing or invalid role claim", extra={"role": role, "role_type": type(role).__name__})
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token: missing or invalid role claim"
+        )
+    
+    return role

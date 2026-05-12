@@ -14,6 +14,7 @@ from backend.app.application.finance.finance_service import FinanceService
 from backend.app.application.finance.reporting_service import ReportingService
 from backend.app.interfaces.api.v1.dependencies.auth import (
     get_container,
+    get_current_role,
     get_current_tenant_id,
     get_current_user_id,
     get_current_user_payload,

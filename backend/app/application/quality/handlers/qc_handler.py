@@ -30,7 +30,7 @@ from backend.app.infrastructure.persistence.models.quality_model import (
     QualityInspectionModel,
     InspectionDetailModel,
 )
-from backend.app.infrastructure.persistence.models.manufacturing_model import WorkOrderModel
+from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderModel
 
 
 class QCHandler:

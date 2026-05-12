@@ -5,10 +5,16 @@ import uuid
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.interfaces.api.v1.dependencies import get_db_session, get_current_tenant_id, get_current_user_id
+from backend.app.interfaces.api.v1.dependencies.auth import get_current_tenant_id, get_current_user_id
+
+
+async def _get_db_session(request: Request):
+    factory = request.app.state.container.session_factory
+    async with factory() as session:
+        yield session
 from backend.app.application.manufacturing.services.production_execution_service import ProductionExecutionService
 from backend.app.application.manufacturing.handlers.worker_handler import WorkerHandler
 from backend.app.application.manufacturing.commands.worker_commands import (
@@ -37,7 +43,7 @@ router = APIRouter(prefix="/worker", tags=["Worker"])
 async def get_worker_queue(
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     user_id: uuid.UUID = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(_get_db_session),
 ):
     """Get assigned work orders and operations for worker dashboard."""
     production_service = ProductionExecutionService(session)
@@ -52,7 +58,7 @@ async def start_operation(
     body: StartOperationRequest,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     assigned_to: uuid.UUID = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(_get_db_session),
 ):
     """Start a job card operation.
     
@@ -76,7 +82,7 @@ async def start_operation(
 async def pause_operation(
     body: PauseOperationRequest,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(_get_db_session),
 ):
     """Pause a job card operation."""
     command = PauseOperationCommand(
@@ -96,7 +102,7 @@ async def pause_operation(
 async def complete_operation(
     body: CompleteOperationRequest,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(_get_db_session),
 ):
     """Complete a job card operation."""
     command = CompleteOperationCommand(
@@ -118,7 +124,7 @@ async def report_wastage(
     body: ReportWastageRequest,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     recorded_by: uuid.UUID = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(_get_db_session),
 ):
     """Report scrap/wastage during production.
     
@@ -144,7 +150,7 @@ async def record_production(
     body: RecordProductionRequest,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     recorded_by: uuid.UUID = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(_get_db_session),
 ):
     """Record production quantity.
     

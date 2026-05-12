@@ -88,8 +88,8 @@ class JobCardResponse(BaseModel):
 class WorkOrderMaterialResponse(BaseModel):
     id: uuid.UUID
     material_id: uuid.UUID
-    material_code: str
-    material_name: str
+    material_code: Optional[str] = None
+    material_name: Optional[str] = None
     unit_id: Optional[uuid.UUID]
     required_quantity: Decimal
     issued_quantity: Decimal

@@ -99,6 +99,7 @@ async def _build_work_order_context(
                 "material_name": material.material.name if material.material else material.material_id,
                 "required_qty": float(material.required_quantity or 0),
                 "issued_qty": float(material.issued_quantity or 0),
+                "unit": material.unit.name if material.unit else "",
             })
     
     # Build operations list
@@ -109,6 +110,7 @@ async def _build_work_order_context(
                 "sequence": jc.sequence,
                 "operation_name": jc.operation.name if jc.operation else f"Operation {jc.sequence}",
                 "status": jc.status,
+                "work_center": jc.operation.work_center if jc.operation else "",
             })
     
     # Build template context
@@ -118,6 +120,7 @@ async def _build_work_order_context(
             "company_name": tenant.company_name or tenant.name,
             "logo_url": tenant.logo_url or "",
             "gst_number": tenant.gst_number or "",
+            "pan_number": tenant.pan_number or "",
             "address": tenant.address or "",
             "phone": tenant.phone or "",
             "email": tenant.email or "",
@@ -126,12 +129,14 @@ async def _build_work_order_context(
         "work_order": {
             "wo_number": wo.wo_number,
             "date": wo.created_at.strftime("%Y-%m-%d") if wo.created_at else "",
+            "sales_order_number": wo.sales_order.order_number if wo.sales_order else "",
             "client": wo.client.name if wo.client else "N/A",
             "product": wo.product.name if wo.product else "N/A",
             "quantity": float(wo.planned_quantity or 0),
             "priority": wo.priority,
             "due_date": wo.due_date.strftime("%Y-%m-%d") if wo.due_date else "",
             "status": wo.status,
+            "notes": wo.notes or "",
         },
         "materials": materials,
         "operations": operations,
@@ -157,6 +162,7 @@ async def _build_work_order_context(
                 "signature_image_url": "",
             },
         },
+        "generated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
     }
     
     return context
@@ -205,6 +211,7 @@ async def _build_purchase_order_context(
                 "item_code": line.material.code if line.material else "",
                 "name": line.material.name if line.material else line.description,
                 "quantity": float(line.quantity or 0),
+                "unit": line.unit.name if line.unit else "",
                 "unit_price": float(line.unit_price or 0),
                 "line_total": float((line.quantity or 0) * (line.unit_price or 0)),
             })
@@ -216,6 +223,7 @@ async def _build_purchase_order_context(
             "company_name": tenant.company_name or tenant.name,
             "logo_url": tenant.logo_url or "",
             "gst_number": tenant.gst_number or "",
+            "pan_number": tenant.pan_number or "",
             "address": tenant.address or "",
             "phone": tenant.phone or "",
             "email": tenant.email or "",
@@ -226,8 +234,10 @@ async def _build_purchase_order_context(
             "order_date": po.created_at.strftime("%Y-%m-%d") if po.created_at else "",
             "expected_delivery": po.expected_delivery.strftime("%Y-%m-%d") if po.expected_delivery else "",
             "supplier": po.supplier.name if po.supplier else "N/A",
+            "supplier_gst": po.supplier.gst_number if po.supplier else "",
             "status": po.status,
             "terms": po.terms or "",
+            "notes": po.notes or "",
         },
         "items": items,
         "tax_breakdown": {
@@ -248,6 +258,7 @@ async def _build_purchase_order_context(
                 "signature_image_url": "",
             },
         },
+        "generated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
     }
     
     return context
@@ -296,6 +307,7 @@ async def _build_invoice_context(
                 "item_code": line.material.code if line.material else "",
                 "name": line.material.name if line.material else line.description,
                 "quantity": float(line.quantity or 0),
+                "unit": line.unit.name if line.unit else "",
                 "unit_price": float(line.unit_price or 0),
                 "line_total": float((line.quantity or 0) * (line.unit_price or 0)),
             })
@@ -307,6 +319,7 @@ async def _build_invoice_context(
             "company_name": tenant.company_name or tenant.name,
             "logo_url": tenant.logo_url or "",
             "gst_number": tenant.gst_number or "",
+            "pan_number": tenant.pan_number or "",
             "address": tenant.address or "",
             "phone": tenant.phone or "",
             "email": tenant.email or "",
@@ -333,9 +346,10 @@ async def _build_invoice_context(
             "balance_due": float(invoice.grand_total or 0) - float(invoice.paid_amount or 0),
         },
         "payment_details": {
-            "bank_name": "",
-            "account_number": "",
-            "ifsc_code": "",
+            "bank_name": tenant.bank_name or "",
+            "account_number": tenant.bank_account_number or "",
+            "ifsc_code": tenant.bank_ifsc_code or "",
+            "upi_id": tenant.upi_id or "",
         },
         "signatures": {
             "finance": {
@@ -349,6 +363,7 @@ async def _build_invoice_context(
                 "signature_image_url": "",
             },
         },
+        "generated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
     }
     
     return context
@@ -387,6 +402,7 @@ async def _build_delivery_challan_context(
                 "item_code": line.material.code if line.material else "",
                 "name": line.material.name if line.material else line.description,
                 "ordered_qty": float(line.ordered_quantity or 0),
+                "unit": line.unit.name if line.unit else "",
                 "delivered_qty": float(line.delivered_quantity or 0),
             })
     
@@ -396,6 +412,7 @@ async def _build_delivery_challan_context(
             "company_name": tenant.company_name or tenant.name,
             "logo_url": tenant.logo_url or "",
             "gst_number": tenant.gst_number or "",
+            "pan_number": tenant.pan_number or "",
             "address": tenant.address or "",
             "phone": tenant.phone or "",
             "email": tenant.email or "",
@@ -409,6 +426,9 @@ async def _build_delivery_challan_context(
             "delivery_address": delivery.shipping_address or "",
             "invoice_number": delivery.invoice.invoice_number if delivery.invoice else "",
             "status": delivery.status,
+            "transporter_name": delivery.transporter_name or "",
+            "vehicle_number": delivery.vehicle_number or "",
+            "lr_number": delivery.lr_number or "",
             "notes": delivery.notes or "",
         },
         "items": items,
@@ -421,6 +441,7 @@ async def _build_delivery_challan_context(
             "transporter": {"name": "", "timestamp": "", "signature_image_url": ""},
             "receiver": {"name": "", "timestamp": "", "signature_image_url": ""},
         },
+        "generated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
     }
     
     return context
@@ -464,6 +485,7 @@ async def _build_qc_report_context(
             "tolerance_min": float(detail.tolerance_min) if detail.tolerance_min else None,
             "tolerance_max": float(detail.tolerance_max) if detail.tolerance_max else None,
             "measured_value": detail.measured_value,
+            "unit": detail.unit or "",
             "is_passed": detail.is_passed,
         })
     
@@ -473,6 +495,7 @@ async def _build_qc_report_context(
             "company_name": tenant.company_name or tenant.name,
             "logo_url": tenant.logo_url or "",
             "gst_number": tenant.gst_number or "",
+            "pan_number": tenant.pan_number or "",
             "address": tenant.address or "",
             "phone": tenant.phone or "",
             "email": tenant.email or "",
@@ -502,6 +525,7 @@ async def _build_qc_report_context(
             "qc_manager": {"name": "", "timestamp": "", "signature_image_url": ""},
             "production_manager": {"name": "", "timestamp": "", "signature_image_url": ""},
         },
+        "generated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
     }
     
     return context
@@ -805,6 +829,23 @@ async def generate_document(
                 generated_by=user_id,
                 force_regenerate=body.force_regenerate,
             )
+            
+            # Send notification about document generation
+            notification_service = container.notification_service
+            entity_number = template_context.get("work_order", {}).get("wo_number") or \
+                           template_context.get("purchase_order", {}).get("po_number") or \
+                           template_context.get("invoice", {}).get("invoice_number") or \
+                           str(entity_id)
+            await notification_service.notify_document_generated(
+                tenant_id=tenant_id,
+                document_id=document.id,
+                document_type=document_type,
+                entity_type=document_type,
+                entity_id=entity_id,
+                entity_number=entity_number,
+                user_id=user_id,
+            )
+            
             return DocumentResponse.model_validate(document)
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -843,6 +884,70 @@ async def download_document(
             )
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{document_type}/{entity_id}/html")
+async def get_document_html(
+    document_type: str,
+    entity_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Get document HTML content for viewing/printing in browser.
+
+    This endpoint is useful when PDF generation is not available (e.g., WeasyPrint missing).
+    Users can view the HTML in browser and use browser's print functionality.
+
+    Args:
+        document_type: Type of document (work_order, purchase_order, etc.)
+        entity_id: Entity UUID the document is for
+        request: FastAPI Request
+        tenant_id: Current tenant UUID
+
+    Returns:
+        HTML content as text/html response
+    """
+    from backend.app.infrastructure.container import get_container
+    container = get_container(request)
+
+    async with container.session_factory() as session:
+        document_service, _ = _get_document_services(request, session)
+
+        try:
+            # Build template context based on document type
+            if document_type == "work_order":
+                template_context = await _build_work_order_context(session, tenant_id, entity_id)
+            elif document_type == "purchase_order":
+                template_context = await _build_purchase_order_context(session, tenant_id, entity_id)
+            elif document_type == "invoice":
+                template_context = await _build_invoice_context(session, tenant_id, entity_id)
+            elif document_type == "delivery_challan":
+                template_context = await _build_delivery_challan_context(session, tenant_id, entity_id)
+            elif document_type == "qc_report":
+                template_context = await _build_qc_report_context(session, tenant_id, entity_id)
+            elif document_type == "material_issue_slip":
+                template_context = await _build_material_issue_slip_context(session, tenant_id, entity_id)
+            elif document_type == "fg_receipt_note":
+                template_context = await _build_fg_receipt_note_context(session, tenant_id, entity_id)
+            else:
+                raise HTTPException(status_code=400, detail=f"Unknown document type: {document_type}")
+
+            # Render HTML template
+            template_service = container.template_service
+            template_path = template_service.get_template_path(document_type)
+            html_content = template_service.render_template(template_path, template_context)
+
+            return Response(
+                content=html_content,
+                media_type="text/html",
+                headers={
+                    "Content-Disposition": f"inline; filename=document_{document_type}_{entity_id}.html"
+                }
+            )
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 

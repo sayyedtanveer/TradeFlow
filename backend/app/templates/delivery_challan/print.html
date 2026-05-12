@@ -11,6 +11,12 @@
             {{ tenant.address or '' }}<br>
             {{ tenant.phone or '' }} | {{ tenant.email or '' }}
         </div>
+        {% if tenant.gst_number %}
+        <div class="company-gst">GST: {{ tenant.gst_number }}</div>
+        {% endif %}
+        {% if tenant.pan_number %}
+        <div class="company-pan">PAN: {{ tenant.pan_number }}</div>
+        {% endif %}
     </div>
 </div>
 
@@ -50,6 +56,7 @@
             <th>Item Code</th>
             <th>Description</th>
             <th>Ordered Qty</th>
+            <th>Unit</th>
             <th>Delivered Qty</th>
             <th>Balance</th>
         </tr>
@@ -60,6 +67,7 @@
             <td>{{ item.item_code or '-' }}</td>
             <td>{{ item.name }}</td>
             <td>{{ item.ordered_qty }}</td>
+            <td>{{ item.unit or '-' }}</td>
             <td>{{ item.delivered_qty }}</td>
             <td>{{ item.ordered_qty - item.delivered_qty }}</td>
         </tr>
@@ -67,10 +75,21 @@
     </tbody>
 </table>
 
-<div class="section-title">Delivery Notes</div>
-<div style="margin-bottom: 20px; font-size: 10pt;">
-    {{ delivery_challan.notes or 'No additional notes.' }}
+<div class="section-title">Transport Details</div>
+<div class="notes-content">
+    {% if delivery_challan.transporter_name %}
+    <div><strong>Transporter:</strong> {{ delivery_challan.transporter_name }}</div>
+    {% endif %}
+    {% if delivery_challan.vehicle_number %}
+    <div><strong>Vehicle Number:</strong> {{ delivery_challan.vehicle_number }}</div>
+    {% endif %}
+    {% if delivery_challan.lr_number %}
+    <div><strong>LR Number:</strong> {{ delivery_challan.lr_number }}</div>
+    {% endif %}
 </div>
+
+<div class="section-title">Delivery Notes</div>
+<div class="notes-content">{{ delivery_challan.notes or 'No additional notes.' }}</div>
 
 <div class="signatures">
     {% if signatures.storekeeper %}
@@ -105,5 +124,14 @@
         <div class="signature-date">{{ signatures.receiver.timestamp }}</div>
     </div>
     {% endif %}
+</div>
+
+<div class="footer">
+    <div class="footer-text">
+        This is a computer-generated document. No signature required unless specified.
+    </div>
+    <div class="footer-text">
+        Generated on: {{ generated_at }}
+    </div>
 </div>
 {% endblock %}

@@ -5,10 +5,16 @@ import uuid
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.interfaces.api.v1.dependencies import get_db_session, get_current_tenant_id, get_current_user_id
+from backend.app.interfaces.api.v1.dependencies.auth import get_current_tenant_id, get_current_user_id
+
+
+async def _get_db_session(request: Request):
+    factory = request.app.state.container.session_factory
+    async with factory() as session:
+        yield session
 from backend.app.application.quality.services.qc_service import QCService
 from backend.app.application.quality.handlers.qc_handler import QCHandler
 from backend.app.application.quality.commands.qc_commands import (
@@ -36,7 +42,7 @@ router = APIRouter(prefix="/quality-control", tags=["Quality Control"])
 @router.get("/inspection-queue", response_model=list[InspectionQueueResponse])
 async def get_inspection_queue(
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(_get_db_session),
 ):
     """Get QC inspection queue for QC dashboard.
     
@@ -50,7 +56,7 @@ async def get_inspection_queue(
 @router.get("/rejected-queue", response_model=list[RejectedQueueResponse])
 async def get_rejected_queue(
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(_get_db_session),
 ):
     """Get rejected batches for QC dashboard.
     
@@ -64,7 +70,7 @@ async def get_rejected_queue(
 @router.get("/rework-queue", response_model=list[ReworkQueueResponse])
 async def get_rework_queue(
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(_get_db_session),
 ):
     """Get rework queue for QC dashboard.
     
@@ -82,7 +88,7 @@ async def approve_inspection(
     body: ApproveInspectionRequest,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     inspector_id: uuid.UUID = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(_get_db_session),
 ):
     """Approve QC inspection.
     
@@ -110,7 +116,7 @@ async def reject_inspection(
     body: RejectInspectionRequest,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     inspector_id: uuid.UUID = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(_get_db_session),
 ):
     """Reject QC inspection.
     
@@ -141,7 +147,7 @@ async def send_to_rework(
     body: SendToReworkRequest,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     inspector_id: uuid.UUID = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(_get_db_session),
 ):
     """Send rejected batch to rework.
     
@@ -168,7 +174,7 @@ async def scrap_batch(
     body: ScrapBatchRequest,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     inspector_id: uuid.UUID = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(_get_db_session),
 ):
     """Scrap rejected batch.
     

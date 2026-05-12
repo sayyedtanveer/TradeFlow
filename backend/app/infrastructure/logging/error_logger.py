@@ -332,12 +332,13 @@ class ErrorLogger:
     ) -> tuple[int, ErrorCode]:
         """
         Map exception type to HTTP status code and ErrorCode enum.
-        
+
         Supports common exception types:
-        - ValueError → 400 (VALIDATION_ERROR)
-        - KeyError, AttributeError → 400 (VALIDATION_ERROR)
+        - ValueError → 400 (VALIDATION_ERROR) unless auth-related
+        - KeyError → 400 (VALIDATION_ERROR) unless auth-related
+        - AttributeError → 400 (VALIDATION_ERROR) unless auth-related
         - PermissionError → 403 (FORBIDDEN)
-        - FileNotFoundError, KeyError (for 404 context) → 404 (NOT_FOUND)
+        - FileNotFoundError → 404 (NOT_FOUND)
         - HTTPException with status_code → use that status code
         - All others → 500 (INTERNAL_ERROR)
         """
@@ -360,8 +361,16 @@ class ErrorLogger:
             else:
                 return status_code, ErrorCode.INTERNAL_ERROR
 
-        # Check exception type
+        # Check exception type and message
         exc_type = type(exception).__name__
+        exc_msg = str(exception).lower()
+
+        # Auth-related keywords in exception type or message
+        auth_keywords = ["auth", "jwt", "token", "credential", "sub", "tid", "role", "tenant", "user", "claim", "uuid"]
+        is_auth_related = any(keyword in exc_type.lower() or keyword in exc_msg for keyword in auth_keywords)
+
+        if is_auth_related:
+            return 401, ErrorCode.AUTH_FAILED
 
         if isinstance(exception, ValueError):
             return 400, ErrorCode.VALIDATION_ERROR
@@ -373,10 +382,6 @@ class ErrorLogger:
             return 403, ErrorCode.FORBIDDEN
         elif isinstance(exception, FileNotFoundError):
             return 404, ErrorCode.NOT_FOUND
-
-        # For auth-related exceptions (check name pattern)
-        if "auth" in exc_type.lower():
-            return 401, ErrorCode.AUTH_FAILED
 
         # Default: unhandled exception
         return 500, ErrorCode.INTERNAL_ERROR

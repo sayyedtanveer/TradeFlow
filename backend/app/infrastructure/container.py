@@ -17,6 +17,7 @@ from backend.app.infrastructure.audit.audit_service import AuditService
 from backend.app.infrastructure.external.email_service import IEmailService, StubEmailService
 from backend.app.infrastructure.logging.error_logger import ErrorLogger
 from backend.app.infrastructure.logging.repository import ErrorLogRepository
+from backend.app.application.notifications.notification_service import NotificationService
 
 
 @dataclass
@@ -59,6 +60,9 @@ class Container:
 
     # ── External ──────────────────────────────────────────────────────────
     email_service: IEmailService
+
+    # ── Notifications ──────────────────────────────────────────────────────
+    notification_service: NotificationService
 
     @classmethod
     def create(cls, settings: Settings) -> "Container":
@@ -103,6 +107,9 @@ class Container:
         # External
         email_service = StubEmailService()
 
+        # Notifications
+        notification_service = NotificationService(connection_manager=connection_manager)
+
         return cls(
             db_engine=engine,
             session_factory=session_factory,
@@ -117,6 +124,7 @@ class Container:
             error_log_repository=error_log_repository,
             error_logger=error_logger,
             email_service=email_service,
+            notification_service=notification_service,
         )
 
     def get_session(self) -> async_sessionmaker[AsyncSession]:

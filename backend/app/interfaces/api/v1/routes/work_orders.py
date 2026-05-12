@@ -21,6 +21,7 @@ from backend.app.application.manufacturing.commands.work_order_commands import (
     IssueMaterialCommand, RecordProductionCommand,
     CompleteWorkOrderCommand, CloseWorkOrderCommand,
     StartJobCardCommand, CompleteJobCardCommand,
+    QCApproveCommand, QCRejectCommand, QCSendToReworkCommand, FGReceiveCommand,
 )
 from backend.app.application.manufacturing.commands.worker_commands import (
     StartOperationCommand, PauseOperationCommand, CompleteOperationCommand, ReportWastageCommand,
@@ -168,9 +169,10 @@ async def get_work_order(
 async def release_work_order(
     work_order_id: uuid.UUID,
     request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ):
     container = get_container(request)
+    # tenant_id is available in request.state.tenant_id from auth dependency
+    tenant_id = request.state.tenant_id
     async with container.session_factory() as session:
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
         handler = WorkOrderHandler(session).with_uow(uow)
@@ -186,9 +188,10 @@ async def release_work_order(
 async def start_work_order(
     work_order_id: uuid.UUID,
     request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ):
     container = get_container(request)
+    # tenant_id is available in request.state.tenant_id from auth dependency
+    tenant_id = request.state.tenant_id
     async with container.session_factory() as session:
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
         handler = WorkOrderHandler(session).with_uow(uow)
@@ -250,9 +253,10 @@ async def record_production(
 async def complete_work_order(
     work_order_id: uuid.UUID,
     request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ):
     container = get_container(request)
+    # tenant_id is available in request.state.tenant_id from auth dependency
+    tenant_id = request.state.tenant_id
     async with container.session_factory() as session:
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
         handler = WorkOrderHandler(session).with_uow(uow)
@@ -268,9 +272,10 @@ async def complete_work_order(
 async def close_work_order(
     work_order_id: uuid.UUID,
     request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ):
     container = get_container(request)
+    # tenant_id is available in request.state.tenant_id from auth dependency
+    tenant_id = request.state.tenant_id
     async with container.session_factory() as session:
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
         handler = WorkOrderHandler(session).with_uow(uow)
@@ -647,5 +652,7 @@ async def fg_receive(
         await handler.handle_fg_receive(cmd)
         await session.commit()
         return {"status": "FG_RECEIVED"}
+
+
 
 

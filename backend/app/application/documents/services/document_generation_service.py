@@ -47,7 +47,7 @@ class DocumentGenerationService:
         force_regenerate: bool = False,
     ) -> Document:
         """Generate a document PDF with versioning.
-        
+
         Args:
             tenant_id: Tenant UUID
             document_type: Type of document (work_order, purchase_order, etc.)
@@ -55,7 +55,7 @@ class DocumentGenerationService:
             template_context: Context data for template rendering
             generated_by: User UUID who is generating the document
             force_regenerate: If True, create new version even if latest exists
-            
+
         Returns:
             Generated document entity
         """
@@ -77,16 +77,28 @@ class DocumentGenerationService:
         template_path = self.template_service.get_template_path(document_type)
         html_content = self.template_service.render_template(template_path, template_context)
 
-        # Generate PDF
-        pdf_bytes = self.pdf_service.generate_pdf_from_html(html_content)
+        # Generate PDF if WeasyPrint is available
+        file_path = None
+        if self.pdf_service.available:
+            try:
+                pdf_bytes = self.pdf_service.generate_pdf_from_html(html_content)
 
-        # Generate file path
-        file_path = self.storage_service.generate_file_path(
-            tenant_id, document_type, entity_id, version_number
-        )
+                # Generate file path
+                file_path = self.storage_service.generate_file_path(
+                    tenant_id, document_type, entity_id, version_number
+                )
 
-        # Save PDF to storage
-        self.storage_service.save_pdf(pdf_bytes, file_path)
+                # Save PDF to storage
+                self.storage_service.save_pdf(pdf_bytes, file_path)
+            except RuntimeError as e:
+                # PDF generation failed, but we'll still save the document metadata
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"PDF generation failed: {e}. Document metadata saved without PDF file.")
+        else:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning("WeasyPrint not available. Document metadata saved without PDF file.")
 
         # Create document entity
         document = Document(

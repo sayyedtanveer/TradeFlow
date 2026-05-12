@@ -24,6 +24,7 @@ from backend.app.application.manufacturing.commands.work_order_commands import (
 from backend.app.application.manufacturing.services.inventory_service import InventoryService
 from backend.app.application.manufacturing.services.wo_number_service import WONumberService
 from backend.app.application.inventory.services.inventory_reservation_service import InventoryReservationService
+from backend.app.application.manufacturing.services.workflow_orchestration_service import WorkflowOrchestrationService
 from backend.app.domain.manufacturing.entities.work_order import WorkOrder, WorkOrderStatus, WorkOrderPriority
 from backend.app.domain.manufacturing.exceptions import BOMNotFoundError
 from backend.app.domain.manufacturing.events.work_order_events import (
@@ -44,6 +45,7 @@ class WorkOrderHandler:
         self._inventory = InventoryService(session)
         self._reservation = InventoryReservationService(session)
         self._wo_number = WONumberService(session)
+        self._workflow = WorkflowOrchestrationService(session)
 
     def with_uow(self, uow):
         """Fluent setter for UnitOfWork (for event emission)."""
@@ -119,6 +121,10 @@ class WorkOrderHandler:
 
         # Keep the freshly snapshotted materials visible for same-transaction release planning.
         await self._session.flush()
+
+        # 6. Auto-trigger MRP to generate procurement suggestions
+        await self._trigger_mrp(tenant_id=cmd.tenant_id)
+
         return wo.id
 
     # ── Release ─────────────────────────────────────────────────────────────────
@@ -318,6 +324,23 @@ class WorkOrderHandler:
             )
         )
         return Decimal(str(result.scalar_one() or 0))
+
+    async def _trigger_mrp(self, tenant_id: uuid.UUID) -> None:
+        """Auto-trigger MRP to generate procurement suggestions on WO creation."""
+        try:
+            from backend.app.application.supply_chain.mrp_service import MRPService
+            mrp_service = MRPService(self._session)
+            await mrp_service.run(tenant_id=tenant_id)
+            logger.info(
+                "MRP auto-triggered on WO creation",
+                extra={"tenant_id": str(tenant_id)}
+            )
+        except Exception as e:
+            # Log but don't fail WO creation if MRP fails
+            logger.warning(
+                f"MRP auto-trigger failed on WO creation: {e}",
+                extra={"tenant_id": str(tenant_id)}
+            )
 
     async def _choose_supplier_for_material(self, tenant_id: uuid.UUID, material_id: uuid.UUID):
         from backend.app.infrastructure.persistence.models.supplier_model import (
@@ -687,7 +710,7 @@ class WorkOrderHandler:
     # ── QC Operations ─────────────────────────────────────────────────────────────
 
     async def handle_qc_approve(self, cmd: QCApproveCommand) -> None:
-        """Approve QC inspection and transition to FG_RECEIVED."""
+        """Approve QC inspection and transition to FG_RECEIVED with automatic FG stock increase."""
         wo = await self._get_wo(cmd.work_order_id, cmd.tenant_id)
         entity = self._to_entity(wo)
 
@@ -699,6 +722,16 @@ class WorkOrderHandler:
 
         wo.status = WorkOrderStatus.QC_APPROVED
         wo.updated_at = datetime.now(timezone.utc)
+
+        # Automatically increase FG stock after QC approval
+        # This is done via WorkflowOrchestrationService to ensure consistency
+        from backend.app.application.manufacturing.services.workflow_orchestration_service import WorkflowOrchestrationService
+        workflow_service = WorkflowOrchestrationService(self._session)
+        await workflow_service.on_qc_approved(
+            tenant_id=cmd.tenant_id,
+            work_order_id=cmd.work_order_id,
+            received_by=cmd.approved_by,
+        )
 
     async def handle_qc_reject(self, cmd: QCRejectCommand) -> None:
         """Reject QC inspection and transition to REWORK or REJECTED."""
@@ -740,6 +773,22 @@ class WorkOrderHandler:
 
         wo.status = WorkOrderStatus.FG_RECEIVED
         wo.updated_at = datetime.now(timezone.utc)
+
+        # Call workflow orchestration to update sales order to READY_FOR_DISPATCH
+        try:
+            await self._workflow.on_work_order_completed(
+                tenant_id=cmd.tenant_id,
+                work_order_id=cmd.work_order_id,
+            )
+            logger.info(
+                "Workflow orchestration called after FG receive",
+                extra={"work_order_id": str(cmd.work_order_id)}
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to call workflow orchestration after FG receive",
+                extra={"work_order_id": str(cmd.work_order_id), "error": str(e)}
+            )
 
     # ── Job Card ─────────────────────────────────────────────────────────────────
 

@@ -35,6 +35,7 @@ from backend.app.interfaces.api.v1.routes.documents import router as documents_r
 from backend.app.interfaces.api.v1.routes.quality_control import router as quality_control_router
 from backend.app.interfaces.api.v1.routes.storekeeper import router as storekeeper_router
 from backend.app.interfaces.api.v1.routes.worker import router as worker_router
+from backend.app.interfaces.api.v1.routes.workflow import router as workflow_router
 
 api_v1_router = APIRouter()
 
@@ -68,6 +69,7 @@ api_v1_router.include_router(documents_router)
 api_v1_router.include_router(quality_control_router)
 api_v1_router.include_router(storekeeper_router)
 api_v1_router.include_router(worker_router)
+api_v1_router.include_router(workflow_router)
 
 
 # --- Dynamic Module Registration ---

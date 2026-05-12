@@ -29,9 +29,9 @@ async def get_dispatch_queue(
     """Get dispatch queue for delivery dashboard."""
     container = get_container(request)
     async with container.session_factory() as session:
-        from backend.app.application.delivery.services.delivery_dashboard_service import DeliveryDashboardService
-        service = DeliveryDashboardService(session)
-        queue = await service.get_dispatch_queue(tenant_id=tenant_id)
+        from backend.app.application.delivery.services.delivery_service import DeliveryService
+        service = DeliveryService(session)
+        queue = await service._get_dispatch_queue(tenant_id)
         return queue
 
 
@@ -44,9 +44,9 @@ async def get_in_transit_queue(
     """Get in-transit shipments for delivery dashboard."""
     container = get_container(request)
     async with container.session_factory() as session:
-        from backend.app.application.delivery.services.delivery_dashboard_service import DeliveryDashboardService
-        service = DeliveryDashboardService(session)
-        queue = await service.get_in_transit_queue(tenant_id=tenant_id)
+        from backend.app.application.delivery.services.delivery_service import DeliveryService
+        service = DeliveryService(session)
+        queue = await service._get_in_transit_queue(tenant_id)
         return queue
 
 
@@ -59,10 +59,25 @@ async def get_delivered_queue(
     """Get delivered orders for delivery dashboard."""
     container = get_container(request)
     async with container.session_factory() as session:
-        from backend.app.application.delivery.services.delivery_dashboard_service import DeliveryDashboardService
-        service = DeliveryDashboardService(session)
-        queue = await service.get_delivered_queue(tenant_id=tenant_id)
+        from backend.app.application.delivery.services.delivery_service import DeliveryService
+        service = DeliveryService(session)
+        queue = await service._get_completed_queue(tenant_id)
         return queue
+
+
+@router.get("/dashboard")
+async def get_delivery_dashboard(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get comprehensive delivery dashboard with all queues and metrics."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from backend.app.application.delivery.services.delivery_service import DeliveryService
+        service = DeliveryService(session)
+        dashboard = await service.get_delivery_dashboard(tenant_id=tenant_id, user_id=user_id)
+        return dashboard
 
 
 @router.post("/create-dispatch", status_code=status.HTTP_200_OK)
@@ -72,20 +87,19 @@ async def create_dispatch(
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Create dispatch for delivery order."""
+    """Create dispatch for delivery order with workflow integration."""
     container = get_container(request)
     async with container.session_factory() as session:
-        handler = DeliveryDashboardHandler(session)
-        cmd = CreateDispatchCommand(
+        from backend.app.application.delivery.services.delivery_service import DeliveryService
+        service = DeliveryService(session)
+        result = await service.dispatch_order(
             tenant_id=tenant_id,
             delivery_order_id=body.delivery_order_id,
-            shipped_by=user_id,
             tracking_number=body.tracking_number,
-            remarks=body.remarks,
+            dispatched_by=user_id,
         )
-        await handler.handle_create_dispatch(cmd)
         await session.commit()
-        return {"status": "IN_TRANSIT"}
+        return result
 
 
 @router.post("/pack", status_code=status.HTTP_200_OK)
@@ -140,16 +154,16 @@ async def confirm_delivery(
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Confirm delivery of order."""
+    """Confirm delivery of order with workflow integration."""
     container = get_container(request)
     async with container.session_factory() as session:
-        handler = DeliveryDashboardHandler(session)
-        cmd = ConfirmDeliveryCommand(
+        from backend.app.application.delivery.services.delivery_service import DeliveryService
+        service = DeliveryService(session)
+        result = await service.confirm_delivery(
             tenant_id=tenant_id,
             delivery_order_id=body.delivery_order_id,
-            confirmed_by=user_id,
             delivery_notes=body.delivery_notes,
+            confirmed_by=user_id,
         )
-        await handler.handle_confirm_delivery(cmd)
         await session.commit()
-        return {"status": "DELIVERED"}
+        return result

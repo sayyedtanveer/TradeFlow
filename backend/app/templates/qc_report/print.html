@@ -11,6 +11,12 @@
             {{ tenant.address or '' }}<br>
             {{ tenant.phone or '' }} | {{ tenant.email or '' }}
         </div>
+        {% if tenant.gst_number %}
+        <div class="company-gst">GST: {{ tenant.gst_number }}</div>
+        {% endif %}
+        {% if tenant.pan_number %}
+        <div class="company-pan">PAN: {{ tenant.pan_number }}</div>
+        {% endif %}
     </div>
 </div>
 
@@ -49,6 +55,7 @@
             <th>Tolerance Min</th>
             <th>Tolerance Max</th>
             <th>Measured Value</th>
+            <th>Unit</th>
             <th>Result</th>
         </tr>
     </thead>
@@ -60,6 +67,7 @@
             <td>{{ param.tolerance_min or '-' }}</td>
             <td>{{ param.tolerance_max or '-' }}</td>
             <td>{{ param.measured_value or '-' }}</td>
+            <td>{{ param.unit or '-' }}</td>
             <td>
                 {% if param.is_passed %}
                 <span class="status-badge status-passed">PASS</span>
@@ -74,14 +82,12 @@
 
 {% if qc_report.remarks %}
 <div class="section-title">Remarks</div>
-<div style="margin-bottom: 20px; font-size: 10pt;">
-    {{ qc_report.remarks }}
-</div>
+<div class="notes-content">{{ qc_report.remarks }}</div>
 {% endif %}
 
 {% if ncr %}
 <div class="section-title" style="color: #dc2626;">Non-Conformance Report</div>
-<div style="margin-bottom: 20px; font-size: 10pt;">
+<div class="notes-content">
     <div><strong>Type:</strong> {{ ncr.ncr_type }}</div>
     <div><strong>Reason:</strong> {{ ncr.reason or '-' }}</div>
     <div><strong>Action Taken:</strong> {{ ncr.action_taken or '-' }}</div>
@@ -121,6 +127,15 @@
         <div class="signature-date">{{ signatures.production_manager.timestamp }}</div>
     </div>
     {% endif %}
+</div>
+
+<div class="footer">
+    <div class="footer-text">
+        This is a computer-generated document. No signature required unless specified.
+    </div>
+    <div class="footer-text">
+        Generated on: {{ generated_at }}
+    </div>
 </div>
 
 <style>
