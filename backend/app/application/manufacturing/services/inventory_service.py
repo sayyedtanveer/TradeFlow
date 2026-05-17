@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +30,18 @@ from backend.app.domain.inventory.entities.material_shortage import MaterialShor
 
 # Locations usable for internal manufacturing issue (not subcontractor / quarantine)
 _INTERNAL_ISSUE_LOCATION_TYPES: frozenset[str] = frozenset(
-    {"warehouse", "rack", "bin", "production"}
+    {"warehouse", "zone", "rack", "bin", "production"}
+)
+
+_BLOCKED_BATCH_STATUSES: frozenset[str] = frozenset(
+    {
+        "EXPIRED",
+        "QUARANTINED",
+        "QC_HOLD",
+        "PICKING_HOLD",
+        "DAMAGE_HOLD",
+        "INVESTIGATION_HOLD",
+    }
 )
 
 _ST_AVAILABLE = "available"
@@ -382,13 +393,15 @@ class InventoryService:
             BatchModel.tenant_id == tenant_id,
             BatchModel.material_id == material_id,
             BatchModel.is_deleted.is_(False),
-            BatchModel.status.notin_(("EXPIRED", "expired", "QUARANTINED", "quarantined")),
+            func.upper(BatchModel.status).notin_(_BLOCKED_BATCH_STATUSES),
         )
         if batch_id is not None:
             stmt = stmt.where(BatchModel.id == batch_id)
         stmt = stmt.order_by(
             BatchModel.expiry_date.is_(None),
             BatchModel.expiry_date.asc(),
+            BatchModel.location_id.is_(None),
+            BatchModel.location_id.asc(),
             BatchModel.created_at.asc(),
             BatchModel.id.asc(),
         ).with_for_update()
@@ -427,7 +440,7 @@ class InventoryService:
 
     def _update_batch_status(self, batch: BatchModel) -> None:
         status = str(batch.status or "").upper()
-        if status in {"EXPIRED", "QUARANTINED"}:
+        if status in _BLOCKED_BATCH_STATUSES:
             return
 
         remaining = Decimal(str(batch.remaining_quantity if batch.remaining_quantity is not None else batch.quantity))
@@ -1541,7 +1554,7 @@ class InventoryService:
             material_id=material_id,
             transaction_type="transfer",
             quantity=quantity,
-            unit_id=model.base_unit_id,
+            unit_id=cast(Optional[uuid.UUID], model.base_unit_id),
             reference_type="quality_inspection",
             reference_id=inspection_id,
             created_by=created_by,
@@ -1577,7 +1590,7 @@ class InventoryService:
             material_id=material_id,
             transaction_type="transfer",
             quantity=quantity,
-            unit_id=model.base_unit_id,
+            unit_id=cast(Optional[uuid.UUID], model.base_unit_id),
             reference_type="quality_inspection",
             reference_id=inspection_id,
             created_by=created_by,

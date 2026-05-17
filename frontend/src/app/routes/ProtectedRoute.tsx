@@ -3,7 +3,7 @@ import { useEffect, useState } from "react"
 import { useAuthStore } from "@/app/store/authStore"
 import { isClientSession } from "@/lib/auth-session"
 import { normalizeRole } from "@/lib/roles.config"
-import { apiClient } from "@/services/api-client"
+import { apiClient, isSessionInvalidError } from "@/services/api-client"
 
 interface ProtectedRouteProps {
   allowedRoles?: string[]
@@ -12,7 +12,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ allowedRoles, roles, children }: ProtectedRouteProps) {
-  const { isAuthenticated, user, logout, token, client_id } = useAuthStore()
+  const { isAuthenticated, user, logout, token, client_id, hasHydrated } = useAuthStore()
   const location = useLocation()
   const [isValidating, setIsValidating] = useState(true)
   const [isValid, setIsValid] = useState(false)
@@ -23,37 +23,47 @@ export function ProtectedRoute({ allowedRoles, roles, children }: ProtectedRoute
   // Validate token when entering protected route
   useEffect(() => {
     const validateToken = async () => {
+      if (!hasHydrated) {
+        return
+      }
+
       if (!isAuthenticated || !token) {
         setIsValid(false)
         setIsValidating(false)
         return
       }
 
+      setIsValidating(true)
       try {
         const validationEndpoint = isClientSession({
           token,
           userRole: user?.role,
           clientId: client_id,
-          pathname: location.pathname,
         })
           ? "/client/profile"
           : "/auth/me"
         await apiClient.get(validationEndpoint)
         setIsValid(true)
       } catch (error) {
-        // Token is invalid, expired, or user session was lost
-        logout()
-        setIsValid(false)
+        if (isSessionInvalidError(error)) {
+          logout()
+          setIsValid(false)
+        } else {
+          // Keep the local session intact for transient validation failures;
+          // page-level queries can show their own error state.
+          console.warn("Auth validation was inconclusive; preserving session.", error)
+          setIsValid(true)
+        }
       } finally {
         setIsValidating(false)
       }
     }
 
     validateToken()
-  }, [isAuthenticated, token, logout, user?.role, client_id, location.pathname])
+  }, [hasHydrated, isAuthenticated, token, logout, user?.role, client_id])
 
   // Show loading state while validating
-  if (isValidating) {
+  if (!hasHydrated || isValidating) {
     return <div className="flex items-center justify-center h-screen">Loading...</div>
   }
 

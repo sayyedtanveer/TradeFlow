@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.infrastructure.logging.logger import get_logger
 from backend.app.interfaces.api.v1.dependencies.auth import get_current_tenant_id, get_current_user_id
 from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
+from backend.app.application.inventory.services.barcode_resolution_service import BarcodeResolutionService
+from backend.app.application.inventory.services.inventory_traceability_service import InventoryTraceabilityService
 from backend.app.application.inventory.handlers.storekeeper_handler import StorekeeperHandler
 from backend.app.application.inventory.commands.storekeeper_commands import (
     ReserveStockCommand,
@@ -26,6 +28,7 @@ from backend.app.interfaces.api.v1.schemas.storekeeper_schemas import (
     PendingReservationResponse,
     PendingReturnResponse,
     InventoryAlertResponse,
+    OperationalBatchResponse,
     ReserveStockRequest,
     IssueMaterialRequest,
     PartialIssueRequest,
@@ -118,6 +121,38 @@ async def get_inventory_alerts(
     """Get stock and batch alerts for storekeeper operations."""
     storekeeper_service = StorekeeperService(session)
     return await storekeeper_service.get_inventory_alerts(tenant_id=tenant_id)
+
+
+@router.get("/operational-batches", response_model=list[OperationalBatchResponse])
+async def get_operational_batches(
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Get client-visible operational batch cards for the storekeeper workspace."""
+    storekeeper_service = StorekeeperService(session)
+    return await storekeeper_service.get_operational_batches(tenant_id=tenant_id)
+
+
+@router.get("/traceability/search")
+async def search_traceability(
+    q: str,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Resolve an operational identifier and return its inventory traceability."""
+    resolved = await BarcodeResolutionService(session).resolve(tenant_id=tenant_id, payload=q)
+    material_id = None
+    if resolved["type"] == "material":
+        material_id = uuid.UUID(resolved["id"])
+    elif resolved["type"] == "batch":
+        material_id = uuid.UUID(resolved["material_id"])
+    if material_id is None:
+        return {"resolved": resolved, "items": []}
+    items = await InventoryTraceabilityService(session).get_material_traceability(
+        tenant_id=tenant_id,
+        material_id=material_id,
+    )
+    return {"resolved": resolved, "items": items}
 
 
 # ── Storekeeper Actions ─────────────────────────────────────────────────────────

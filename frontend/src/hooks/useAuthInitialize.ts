@@ -1,7 +1,7 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { useAuthStore } from "@/app/store/authStore"
 import { isClientSession } from "@/lib/auth-session"
-import { apiClient } from "@/services/api-client"
+import { apiClient, isSessionInvalidError } from "@/services/api-client"
 
 /**
  * Hook to validate token on app initialization
@@ -9,12 +9,21 @@ import { apiClient } from "@/services/api-client"
  * This ensures users are logged out when backend session is lost
  */
 export function useAuthInitialize() {
-  const { token, logout, isAuthenticated, user, client_id, setUser, setPermissions } = useAuthStore()
+  const { token, logout, isAuthenticated, user, client_id, setUser, setPermissions, hasHydrated } = useAuthStore()
+  const lastValidatedToken = useRef<string | null>(null)
 
   useEffect(() => {
     const validateToken = async () => {
+      if (!hasHydrated) {
+        return
+      }
+
       // Only validate if user appears to be authenticated
       if (!isAuthenticated || !token) {
+        lastValidatedToken.current = null
+        return
+      }
+      if (lastValidatedToken.current === token) {
         return
       }
 
@@ -31,16 +40,19 @@ export function useAuthInitialize() {
           setUser(response.data.user)
           setPermissions(response.data.permissions ?? [])
         }
+        lastValidatedToken.current = token
       } catch (error) {
-        // If token validation fails, user is not actually authenticated
-        // This handles cases where:
-        // 1. Token is expired
-        // 2. Backend was restarted and token is invalid
-        // 3. User was deleted or deactivated
-        logout()
+        if (isSessionInvalidError(error)) {
+          // Token is expired/invalid or the auth validation endpoint rejected it.
+          logout()
+          lastValidatedToken.current = null
+        } else {
+          // Preserve the session when backend validation is temporarily unreachable.
+          console.warn("Initial auth validation was inconclusive; preserving session.", error)
+        }
       }
     }
 
     validateToken()
-  }, [token, isAuthenticated, logout, user?.role, client_id, setUser, setPermissions])
+  }, [hasHydrated, token, isAuthenticated, logout, user?.role, client_id, setUser, setPermissions])
 }

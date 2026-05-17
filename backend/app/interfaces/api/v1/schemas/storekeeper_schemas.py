@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -103,6 +103,27 @@ class InventoryAlertResponse(BaseModel):
     reorder_level: Optional[Decimal] = None
     remaining_quantity: Optional[Decimal] = None
     message: str
+
+
+class OperationalBatchResponse(BaseModel):
+    """Operator-facing batch visibility card."""
+    batch_id: uuid.UUID
+    batch_number: str
+    material_id: uuid.UUID
+    material_code: str
+    material_name: str
+    original_quantity: Decimal
+    remaining_quantity: Decimal
+    reserved_quantity: Decimal
+    consumed_quantity: Decimal
+    returned_quantity: Decimal
+    location_id: Optional[uuid.UUID] = None
+    location_name: Optional[str] = None
+    location_type: Optional[str] = None
+    expiry_date: Optional[date] = None
+    status: str
+    is_blocked: bool
+    is_near_empty: bool
 
 
 # ── Request Schemas ───────────────────────────────────────────────────────────

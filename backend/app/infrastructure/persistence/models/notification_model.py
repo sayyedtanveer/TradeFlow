@@ -17,6 +17,7 @@ class NotificationModel(Base):
         Index("ix_notification_tenant_user", "tenant_id", "user_id"),
         Index("ix_notification_user_read", "user_id", "is_read"),
         Index("ix_notification_type", "notification_type"),
+        {"extend_existing": True},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

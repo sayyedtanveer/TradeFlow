@@ -21,10 +21,12 @@ interface AuthState {
   client_id: string | null
   permissions: string[]
   isAuthenticated: boolean
+  hasHydrated: boolean
   setAuth: (token: string, tenant_id: string) => void
   setUser: (user: User) => void
   setPermissions: (permissions: string[]) => void
   setSupplierAndClient: (supplier_id: string | null, client_id: string | null) => void
+  setHasHydrated: (hasHydrated: boolean) => void
   logout: () => void
 }
 
@@ -38,6 +40,7 @@ export const useAuthStore = create<AuthState>()(
       client_id: null,
       permissions: [],
       isAuthenticated: false,
+      hasHydrated: false,
       setAuth: (token, tenant_id) =>
         set({ token, tenant_id, isAuthenticated: true }),
       setUser: (user) =>
@@ -50,6 +53,7 @@ export const useAuthStore = create<AuthState>()(
       setPermissions: (permissions) => set({ permissions }),
       setSupplierAndClient: (supplier_id, client_id) =>
         set({ supplier_id, client_id }),
+      setHasHydrated: (hasHydrated) => set({ hasHydrated }),
       logout: () => set({
         token: null,
         user: null,
@@ -62,6 +66,18 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: "auth-storage", // stores in localStorage
+      partialize: (state) => ({
+        token: state.token,
+        user: state.user,
+        tenant_id: state.tenant_id,
+        supplier_id: state.supplier_id,
+        client_id: state.client_id,
+        permissions: state.permissions,
+        isAuthenticated: state.isAuthenticated,
+      }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true)
+      },
     }
   )
 )

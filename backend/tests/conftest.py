@@ -24,7 +24,7 @@ except Exception:
 import asyncio
 import uuid
 from datetime import datetime, timedelta
-from typing import AsyncGenerator, Generator
+from typing import Any, AsyncGenerator, Generator, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -107,8 +107,16 @@ async def db_session(test_db_engine) -> AsyncGenerator[AsyncSession, None]:
         await session.rollback()
 
 
+# Backward-compatible alias:
+# Some e2e tests expect a fixture named `session`.
+@pytest.fixture
+async def session(db_session: AsyncSession) -> AsyncGenerator[AsyncSession, None]:
+    """Alias for db_session (backward compatibility)."""
+    yield db_session
+
+
 @pytest.fixture(scope="session")
-def test_container(test_db_engine) -> Container:
+def test_container(test_db_engine) -> Generator[Container, None, None]:
     """Build a DI container for tests using the SQLite in-memory database."""
     session_factory = async_sessionmaker(
         bind=test_db_engine,
@@ -217,7 +225,7 @@ async def async_client(test_container: Container, monkeypatch) -> AsyncGenerator
         classmethod(lambda cls, settings: test_container),
     )
     app.state.container = test_container
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=cast(Any, app))
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 

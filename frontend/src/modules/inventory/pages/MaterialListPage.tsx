@@ -8,8 +8,8 @@ import { StatusBadge } from "@/components/shared/StatusBadge"
 import { TableSkeleton } from "@/components/shared/LoadingSkeleton"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Plus, Replace } from "lucide-react"
-import { useSearchParams } from "react-router-dom"
+import { Plus, Replace, Upload } from "lucide-react"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { ColumnDef } from "@tanstack/react-table"
 import { usePermissions } from "@/hooks/usePermissions"
 import { MaterialFormDrawer } from "../components/MaterialFormDrawer"
@@ -18,6 +18,7 @@ import { StockOperationDrawer } from "../components/StockOperationDrawer"
 export default function MaterialListPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { canWrite } = usePermissions()
+  const navigate = useNavigate()
   
   const materialId = searchParams.get("materialId")
   const filter = searchParams.get("filter")
@@ -105,6 +106,12 @@ export default function MaterialListPage() {
 
   const actionButtons = (
     <>
+      {canWrite() && (
+        <Button variant="outline" onClick={() => navigate("/inventory/material-onboarding")}>
+          <Upload className="mr-2 h-4 w-4" />
+          Upload Raw Materials
+        </Button>
+      )}
       {canWrite() && (
         <Button onClick={() => setSearchParams({ materialId: "new" })}>
           <Plus className="mr-2 h-4 w-4" />

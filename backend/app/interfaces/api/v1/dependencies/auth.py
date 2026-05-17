@@ -25,21 +25,29 @@ async def get_current_user_payload(
     logger = get_logger(__name__)
     
     if not credentials:
-        logger.warning("No credentials provided in request")
+        logger.warning(
+            "Authentication failed: No credentials provided",
+            extra={
+                "path": request.url.path,
+                "method": request.method,
+                "has_auth_header": "authorization" in (k.lower() for k in request.headers.keys()),
+                "all_headers": {k: (v[:20] + "..." if len(v) > 20 else v) for k, v in request.headers.items()},
+            }
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required",
+            detail="No authentication token provided. Please include an Authorization header with a valid Bearer token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     container = get_container(request)
     try:
         payload = container.jwt_handler.decode_token(credentials.credentials)
-        logger.debug("JWT decoded successfully in get_current_user_payload", extra={"role": payload.get("role"), "tid": payload.get("tid")})
+        logger.debug("JWT decoded successfully", extra={"role": payload.get("role"), "tid": payload.get("tid"), "sub": payload.get("sub")})
     except Exception as e:
-        logger.error(f"JWT decode failed: {e}")
+        logger.error(f"JWT decode failed: {str(e)}", extra={"token_prefix": credentials.credentials[:20] if credentials else "NO_TOKEN"})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+            detail=f"Invalid or expired token: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

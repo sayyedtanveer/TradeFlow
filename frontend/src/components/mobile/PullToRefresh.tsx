@@ -22,7 +22,7 @@ export const PullToRefresh = ({
   const [pullDistance, setPullDistance] = useState(0)
   const startYRef = useRef(0)
   const scrollStartRef = useRef(0)
-  const refreshTimeoutRef = useRef<NodeJS.Timeout>()
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => {
     const container = document.querySelector('[data-pull-to-refresh="true"]')

@@ -163,6 +163,20 @@ const workOrderService = {
       { remarks: remarks ?? null }
     ),
 
+  generatePickList: (woId: string) =>
+    apiClient.post<{
+      pick_list_id: string;
+      pick_list_number: string;
+      work_order_id: string;
+      lines: Array<{
+        material_id: string;
+        material_code: string;
+        quantity: number;
+        location: string;
+        sequence: number;
+      }>;
+    }>(`${BASE}/${woId}/pick-list`, {}),
+
   checkMaterialAvailability: async (params: {
     product_id: string;
     bom_id?: string;

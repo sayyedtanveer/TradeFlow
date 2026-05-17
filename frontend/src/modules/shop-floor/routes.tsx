@@ -1,5 +1,7 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import type { RouteObject } from 'react-router-dom';
+import { ProtectedRoute } from '@/app/routes/ProtectedRoute';
+import { getRolesForModule } from '@/lib/roles.config';
 
 const ShopFloorPage = lazy(() => import('./pages/ShopFloorPage'));
 const JobCardsPage = lazy(() => import('./pages/JobCardsPage'));
@@ -10,21 +12,20 @@ const Loading = () => (
   </div>
 );
 
+const shopFloorRoles = getRolesForModule('shopFloor');
+const shopFloorElement = (children: ReactNode) => (
+  <ProtectedRoute allowedRoles={shopFloorRoles}>
+    <Suspense fallback={<Loading />}>{children}</Suspense>
+  </ProtectedRoute>
+);
+
 export const shopFloorRoutes: RouteObject[] = [
   {
     path: 'shop-floor',
-    element: (
-      <Suspense fallback={<Loading />}>
-        <ShopFloorPage />
-      </Suspense>
-    ),
+    element: shopFloorElement(<ShopFloorPage />),
   },
   {
     path: 'shop-floor/:woId/job-cards',
-    element: (
-      <Suspense fallback={<Loading />}>
-        <JobCardsPage />
-      </Suspense>
-    ),
+    element: shopFloorElement(<JobCardsPage />),
   },
 ];
