@@ -87,7 +87,7 @@ function mapRoleDashboard(data: any, role: string): KPIData[] {
       kpi("Ready to Start", Number(data.ready_to_start ?? 0)),
       kpi("In Progress", Number(data.in_progress ?? 0)),
       kpi("Recent Work Orders", Number(data.recent_work_orders?.length ?? 0)),
-      kpi("Open Work Orders", countStatuses(data.work_orders, ["PLANNED", "RELEASED", "IN_PROGRESS"])),
+      kpi("Open Work Orders", countStatuses(data.work_orders, ["PLANNED", "RELEASED", "MATERIAL_PENDING", "MATERIAL_RESERVED", "MATERIAL_ISSUED", "IN_PRODUCTION"])),
     ]
   }
 

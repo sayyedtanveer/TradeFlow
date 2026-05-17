@@ -10,6 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.infrastructure.persistence.models.inventory_management_models import StockLedgerModel
 from backend.app.infrastructure.persistence.models.inventory_transaction_model import InventoryTransactionModel
+from backend.app.infrastructure.persistence.models.inventory_reservation_model import InventoryReservationModel
+from backend.app.infrastructure.persistence.models.material_model import MaterialModel
+from backend.app.infrastructure.persistence.models.batch_model import BatchModel
+from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderModel
 
 
 class InventoryTraceabilityService:
@@ -33,26 +37,62 @@ class InventoryTraceabilityService:
     ) -> list[dict]:
         """Get full traceability history for a material."""
         stmt = (
-            select(InventoryTransactionModel)
+            select(InventoryTransactionModel, MaterialModel, BatchModel)
+            .join(MaterialModel, MaterialModel.id == InventoryTransactionModel.material_id)
+            .outerjoin(BatchModel, BatchModel.id == InventoryTransactionModel.batch_id)
             .where(
                 InventoryTransactionModel.tenant_id == tenant_id,
                 InventoryTransactionModel.material_id == material_id,
                 InventoryTransactionModel.is_deleted.is_(False),
+                MaterialModel.tenant_id == tenant_id,
+                MaterialModel.is_deleted.is_(False),
             )
             .order_by(InventoryTransactionModel.created_at.desc())
         )
         result = await self._session.execute(stmt)
-        transactions = result.scalars().all()
+        rows = result.all()
 
         traceability = []
-        for tx in transactions:
+        for tx, material, batch in rows:
+            reservation = None
+            work_order = None
+            if tx.reference_type == "work_order" and tx.reference_id is not None:
+                reservation = (
+                    await self._session.execute(
+                        select(InventoryReservationModel).where(
+                            InventoryReservationModel.tenant_id == tenant_id,
+                            InventoryReservationModel.reference_type == "work_order",
+                            InventoryReservationModel.reference_id == tx.reference_id,
+                            InventoryReservationModel.material_id == tx.material_id,
+                            InventoryReservationModel.batch_id == tx.batch_id,
+                        )
+                    )
+                ).scalars().first()
+                work_order = (
+                    await self._session.execute(
+                        select(WorkOrderModel).where(
+                            WorkOrderModel.id == tx.reference_id,
+                            WorkOrderModel.tenant_id == tenant_id,
+                            WorkOrderModel.is_deleted.is_(False),
+                        )
+                    )
+                ).scalar_one_or_none()
             traceability.append({
                 "transaction_id": tx.id,
                 "transaction_type": tx.transaction_type,
+                "material_code": material.code,
+                "material_name": material.name,
                 "quantity": tx.quantity,
                 "unit_id": tx.unit_id,
+                "batch_id": tx.batch_id,
+                "batch_number": batch.batch_number if batch is not None else None,
                 "reference_type": tx.reference_type,
                 "reference_id": tx.reference_id,
+                "wo_number": work_order.wo_number if work_order is not None else None,
+                "reserved_quantity": reservation.quantity if reservation is not None else None,
+                "issued_quantity": reservation.issued_quantity if reservation is not None else None,
+                "consumed_quantity": reservation.consumed_quantity if reservation is not None else None,
+                "returned_quantity": reservation.returned_quantity if reservation is not None else None,
                 "created_at": tx.created_at,
                 "created_by": tx.created_by,
                 "remarks": tx.remarks,
@@ -104,20 +144,31 @@ class InventoryTraceabilityService:
         transaction_id: uuid.UUID,
     ) -> dict:
         """Get full audit trail for a specific transaction."""
-        stmt = select(InventoryTransactionModel).where(
-            InventoryTransactionModel.id == transaction_id,
-            InventoryTransactionModel.tenant_id == tenant_id,
+        stmt = (
+            select(InventoryTransactionModel, MaterialModel, BatchModel)
+            .join(MaterialModel, MaterialModel.id == InventoryTransactionModel.material_id)
+            .outerjoin(BatchModel, BatchModel.id == InventoryTransactionModel.batch_id)
+            .where(
+                InventoryTransactionModel.id == transaction_id,
+                InventoryTransactionModel.tenant_id == tenant_id,
+                MaterialModel.tenant_id == tenant_id,
+            )
         )
         result = await self._session.execute(stmt)
-        tx = result.scalar_one_or_none()
+        row = result.one_or_none()
 
-        if not tx:
+        if not row:
             return None
+        tx, material, batch = row
 
         return {
             "transaction_id": tx.id,
             "transaction_type": tx.transaction_type,
             "material_id": tx.material_id,
+            "material_code": material.code,
+            "material_name": material.name,
+            "batch_id": tx.batch_id,
+            "batch_number": batch.batch_number if batch is not None else None,
             "quantity": tx.quantity,
             "unit_id": tx.unit_id,
             "reference_type": tx.reference_type,
@@ -145,8 +196,10 @@ class InventoryTraceabilityService:
                 InventoryTransactionModel.material_id == material_id,
                 InventoryTransactionModel.is_deleted.is_(False),
             )
-            .order_by(InventoryTransactionModel.created_at)
         )
+        if batch_id is not None:
+            stmt = stmt.where(InventoryTransactionModel.batch_id == batch_id)
+        stmt = stmt.order_by(InventoryTransactionModel.created_at)
         result = await self._session.execute(stmt)
         transactions = result.scalars().all()
 
@@ -162,16 +215,18 @@ class InventoryTraceabilityService:
         }
 
         for tx in transactions:
-            if tx.transaction_type in ("receipt", "purchase_receipt", "production_receipt", "transfer_in"):
+            tx_type = str(tx.transaction_type or "").lower()
+            if tx_type in ("in", "receipt", "purchase_receipt", "production_receipt", "transfer_in", "fg_receipt"):
                 running_balance += tx.quantity
                 lifecycle["total_received"] += tx.quantity
-            elif tx.transaction_type in ("issue", "transfer_out", "consumption"):
+            elif tx_type in ("out", "issue", "transfer_out", "consumption", "consume", "consume_reservation"):
                 running_balance -= tx.quantity
                 lifecycle["total_issued"] += tx.quantity
 
             lifecycle["transactions"].append({
                 "transaction_id": tx.id,
                 "transaction_type": tx.transaction_type,
+                "batch_id": tx.batch_id,
                 "quantity": tx.quantity,
                 "running_balance": running_balance,
                 "created_at": tx.created_at,

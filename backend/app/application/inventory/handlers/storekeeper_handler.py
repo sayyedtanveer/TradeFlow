@@ -36,6 +36,7 @@ class StorekeeperHandler:
             material_id=cmd.material_id,
             quantity=cmd.quantity,
             unit_id=cmd.unit_id,
+            batch_id=cmd.batch_id,
             reserved_by=cmd.reserved_by,
         )
 
@@ -51,6 +52,7 @@ class StorekeeperHandler:
             material_id=cmd.material_id,
             quantity=cmd.quantity,
             unit_id=cmd.unit_id,
+            batch_id=cmd.batch_id,
             issued_by=cmd.issued_by,
         )
 
@@ -62,6 +64,7 @@ class StorekeeperHandler:
             material_id=cmd.material_id,
             quantity=cmd.quantity,
             unit_id=cmd.unit_id,
+            batch_id=cmd.batch_id,
             issued_by=cmd.issued_by,
         )
 
@@ -86,5 +89,6 @@ class StorekeeperHandler:
             material_id=cmd.material_id,
             quantity=cmd.quantity,
             unit_id=cmd.unit_id,
+            batch_id=cmd.batch_id,
             returned_by=cmd.returned_by,
         )

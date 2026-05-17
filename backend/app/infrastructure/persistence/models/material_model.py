@@ -51,6 +51,14 @@ class MaterialModel(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
+    length_uom: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    length_per_unit: Mapped[Optional[float]] = mapped_column(Numeric(18, 4), nullable=True)
+    weight_per_unit: Mapped[Optional[float]] = mapped_column(Numeric(18, 4), nullable=True)
+    dimension_spec = Column(String, nullable=True)  # JSON stored as text for SQLite compat
+    preferred_supplier_id = Column(UUID(as_uuid=True), ForeignKey("suppliers.id"), nullable=True)
+    hazardous_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    qc_required_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     # Soft delete
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

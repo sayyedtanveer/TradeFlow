@@ -24,6 +24,7 @@ from backend.app.infrastructure.persistence.repositories.transaction_repository 
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
 from backend.app.infrastructure.persistence.models.inventory_management_models import StockLedgerModel
 from backend.app.application.inventory.services.item_code_service import ItemCodeService
+from backend.app.application.manufacturing.services.inventory_service import InventoryService
 from datetime import datetime
 from datetime import timezone
 
@@ -264,38 +265,21 @@ class AddStockHandler:
         if not material.is_active:
             raise ValueError("Cannot add stock to an inactive material.")
 
-        material.increase_stock(cmd.quantity)
-
-        transaction = InventoryTransaction(
+        await InventoryService(self._uow.session).add_stock(
             tenant_id=cmd.tenant_id,
             material_id=cmd.material_id,
-            transaction_type=TransactionType.IN,
             quantity=cmd.quantity,
             unit_id=cmd.unit_id,
             to_location_id=cmd.to_location_id,
-            reference_type=ReferenceType.MANUAL,
             reference_id=cmd.reference_id,
             remarks=cmd.remarks,
             created_by=cmd.created_by,
         )
-
-        ledger_entry = StockLedgerModel(
-            tenant_id=cmd.tenant_id,
-            material_id=cmd.material_id,
-            location_id=cmd.to_location_id,
-            transaction_date=datetime.now(timezone.utc),
-            transaction_type=TransactionType.IN.value,
-            quantity_change=cmd.quantity,
-            running_balance=material.get_available_stock(),
-            reference_type=ReferenceType.MANUAL.value,
-            reference_id=cmd.reference_id,
-        )
-
-        await self._material_repo.save(material)
-        await self._tx_repo.save(transaction)
-        self._uow.session.add(ledger_entry)
         await self._uow.commit()
-        return _to_result(material)
+        updated = await self._material_repo.get_by_id(cmd.material_id, cmd.tenant_id)
+        if not updated:
+            raise ValueError(f"Material {cmd.material_id} not found.")
+        return _to_result(updated)
 
 
 # ── Remove Stock ───────────────────────────────────────────────────────────
@@ -317,39 +301,21 @@ class RemoveStockHandler:
         if not material.is_active:
             raise ValueError("Cannot remove stock from an inactive material.")
 
-        # Domain rule: no negative stock — raises ValueError if insufficient
-        material.decrease_stock(cmd.quantity)
-
-        transaction = InventoryTransaction(
+        await InventoryService(self._uow.session).remove_stock(
             tenant_id=cmd.tenant_id,
             material_id=cmd.material_id,
-            transaction_type=TransactionType.OUT,
             quantity=cmd.quantity,
             unit_id=cmd.unit_id,
             from_location_id=cmd.from_location_id,
-            reference_type=ReferenceType.MANUAL,
             reference_id=cmd.reference_id,
             remarks=cmd.remarks,
             created_by=cmd.created_by,
         )
-
-        ledger_entry = StockLedgerModel(
-            tenant_id=cmd.tenant_id,
-            material_id=cmd.material_id,
-            location_id=cmd.from_location_id,
-            transaction_date=datetime.now(timezone.utc),
-            transaction_type=TransactionType.OUT.value,
-            quantity_change=-cmd.quantity,
-            running_balance=material.get_available_stock(),
-            reference_type=ReferenceType.MANUAL.value,
-            reference_id=cmd.reference_id,
-        )
-
-        await self._material_repo.save(material)
-        await self._tx_repo.save(transaction)
-        self._uow.session.add(ledger_entry)
         await self._uow.commit()
-        return _to_result(material)
+        updated = await self._material_repo.get_by_id(cmd.material_id, cmd.tenant_id)
+        if not updated:
+            raise ValueError(f"Material {cmd.material_id} not found.")
+        return _to_result(updated)
 
 
 # ── Adjust Stock ───────────────────────────────────────────────────────────
@@ -368,38 +334,20 @@ class AdjustStockHandler:
         material = await self._material_repo.get_by_id(cmd.material_id, cmd.tenant_id)
         if not material:
             raise ValueError(f"Material {cmd.material_id} not found.")
+        if not material.is_active:
+            raise ValueError("Cannot adjust stock for an inactive material.")
 
-        delta = material.adjust_stock(cmd.new_quantity)
-
-        # Record the absolute delta (positive = added, negative = removed)
-        transaction = InventoryTransaction(
+        await InventoryService(self._uow.session).adjust_stock(
             tenant_id=cmd.tenant_id,
             material_id=cmd.material_id,
-            transaction_type=TransactionType.ADJUSTMENT,
-            quantity=abs(delta),
+            new_quantity=cmd.new_quantity,
             unit_id=cmd.unit_id,
-            to_location_id=cmd.location_id,  # store single location in to_location for adjustments
-            from_location_id=None,
-            reference_type=ReferenceType.ADJUSTMENT,
-            reference_id=None,
+            location_id=cmd.location_id,
             remarks=cmd.remarks or f"Adjusted to {cmd.new_quantity}",
             created_by=cmd.created_by,
         )
-
-        ledger_entry = StockLedgerModel(
-            tenant_id=cmd.tenant_id,
-            material_id=cmd.material_id,
-            location_id=cmd.location_id,
-            transaction_date=datetime.now(timezone.utc),
-            transaction_type=TransactionType.ADJUSTMENT.value,
-            quantity_change=delta,
-            running_balance=material.get_available_stock(),
-            reference_type=ReferenceType.ADJUSTMENT.value,
-            reference_id=None,
-        )
-
-        await self._material_repo.save(material)
-        await self._tx_repo.save(transaction)
-        self._uow.session.add(ledger_entry)
         await self._uow.commit()
-        return _to_result(material)
+        updated = await self._material_repo.get_by_id(cmd.material_id, cmd.tenant_id)
+        if not updated:
+            raise ValueError(f"Material {cmd.material_id} not found.")
+        return _to_result(updated)

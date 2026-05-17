@@ -24,6 +24,7 @@ from backend.app.infrastructure.persistence.repositories.batch_repository import
 from backend.app.infrastructure.persistence.repositories.material_repository import MaterialRepository
 from backend.app.infrastructure.persistence.repositories.transaction_repository import TransactionRepository
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
+from backend.app.application.manufacturing.services.inventory_service import InventoryService
 
 
 # ── Result DTOs ────────────────────────────────────────────────────────────────
@@ -57,6 +58,25 @@ def _to_batch_result(batch: Batch) -> BatchResult:
         status=batch.status.value,
         is_expired=batch.is_expired(),
         days_until_expiry=batch.days_until_expiry(),
+        created_at=batch.created_at.isoformat(),
+    )
+
+
+def _to_batch_model_result(batch) -> BatchResult:
+    expiry = batch.expiry_date
+    days_until_expiry = (expiry - date.today()).days if expiry is not None else None
+    return BatchResult(
+        id=batch.id,
+        tenant_id=batch.tenant_id,
+        material_id=batch.material_id,
+        batch_number=batch.batch_number,
+        quantity=Decimal(str(batch.quantity or 0)),
+        remaining_quantity=Decimal(str(batch.remaining_quantity if batch.remaining_quantity is not None else batch.quantity or 0)),
+        expiry_date=expiry,
+        location_id=batch.location_id,
+        status=str(batch.status or "").lower(),
+        is_expired=expiry is not None and expiry < date.today(),
+        days_until_expiry=days_until_expiry,
         created_at=batch.created_at.isoformat(),
     )
 
@@ -96,42 +116,21 @@ class AddStockWithBatchHandler:
                 "Set is_batch_tracked=true before using batch stock operations."
             )
 
-        # 2. Load or create batch
-        batch = await self._batch_repo.get_by_batch_number(
-            cmd.batch_number, cmd.material_id, cmd.tenant_id
-        )
-        if batch is None:
-            batch = Batch(
-                tenant_id=cmd.tenant_id,
-                material_id=cmd.material_id,
-                batch_number=cmd.batch_number,
-                quantity=Decimal("0"),
-                expiry_date=cmd.expiry_date,
-            )
-        batch.increase_quantity(cmd.quantity)
-
-        # 3. Update aggregate material stock
-        material.increase_stock(cmd.quantity)
-
-        # 4. Record transaction
-        tx = InventoryTransaction(
+        batch = await InventoryService(self._uow.session).add_batch_stock(
             tenant_id=cmd.tenant_id,
             material_id=cmd.material_id,
-            transaction_type=TransactionType.IN,
+            batch_number=cmd.batch_number,
             quantity=cmd.quantity,
             unit_id=cmd.unit_id,
-            to_location_id=cmd.to_location_id,
-            reference_type=ReferenceType.MANUAL,
-            reference_id=cmd.reference_id,
-            remarks=cmd.remarks or f"Batch IN — {cmd.batch_number}",
             created_by=cmd.created_by,
+            expiry_date=cmd.expiry_date,
+            to_location_id=cmd.to_location_id,
+            reference_id=cmd.reference_id,
+            remarks=cmd.remarks,
         )
 
-        await self._batch_repo.save(batch)
-        await self._material_repo.save(material)
-        await self._tx_repo.save(tx)
         await self._uow.commit()
-        return _to_batch_result(batch)
+        return _to_batch_model_result(batch)
 
 
 # ── Remove Stock From Batch ────────────────────────────────────────────────────
@@ -171,28 +170,20 @@ class RemoveStockFromBatchHandler:
                 f"Batch '{cmd.batch_number}' not found for material {cmd.material_id}."
             )
 
-        # Domain rule enforced inside Batch entity
-        batch.decrease_quantity(cmd.quantity)
-        material.decrease_stock(cmd.quantity)
-
-        tx = InventoryTransaction(
+        batch = await InventoryService(self._uow.session).remove_batch_stock(
             tenant_id=cmd.tenant_id,
             material_id=cmd.material_id,
-            transaction_type=TransactionType.OUT,
+            batch_number=cmd.batch_number,
             quantity=cmd.quantity,
             unit_id=cmd.unit_id,
-            from_location_id=cmd.from_location_id,
-            reference_type=ReferenceType.MANUAL,
-            reference_id=cmd.reference_id,
-            remarks=cmd.remarks or f"Batch OUT — {cmd.batch_number}",
             created_by=cmd.created_by,
+            from_location_id=cmd.from_location_id,
+            reference_id=cmd.reference_id,
+            remarks=cmd.remarks,
         )
 
-        await self._batch_repo.save(batch)
-        await self._material_repo.save(material)
-        await self._tx_repo.save(tx)
         await self._uow.commit()
-        return _to_batch_result(batch)
+        return _to_batch_model_result(batch)
 
 
 # ── Batch Query Handler ────────────────────────────────────────────────────────

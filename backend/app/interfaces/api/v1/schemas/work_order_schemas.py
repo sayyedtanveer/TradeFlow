@@ -35,6 +35,8 @@ class IssueMaterialRequest(BaseModel):
 class RecordProductionRequest(BaseModel):
     produced_quantity: Decimal = Field(..., gt=0)
     scrap_quantity: Decimal = Field(Decimal("0"), ge=0)
+    job_card_id: Optional[uuid.UUID] = None
+    operation_id: Optional[uuid.UUID] = None
     notes: Optional[str] = None
 
 
@@ -67,6 +69,11 @@ class StartJobCardRequest(BaseModel):
 
 class CompleteJobCardRequest(BaseModel):
     remarks: Optional[str] = None
+    operator_notes: Optional[str] = None
+    produced_quantity: Optional[Decimal] = Field(default=None, ge=0)
+    scrap_quantity: Optional[Decimal] = Field(default=None, ge=0)
+    rework_quantity: Optional[Decimal] = Field(default=None, ge=0)
+    rejected_quantity: Optional[Decimal] = Field(default=None, ge=0)
 
 
 # ── Response Schemas ────────────────────────────────────────────────────────────
@@ -79,7 +86,18 @@ class JobCardResponse(BaseModel):
     status: str
     assigned_to: Optional[uuid.UUID]
     started_at: Optional[datetime]
+    paused_at: Optional[datetime] = None
     completed_at: Optional[datetime]
+    total_downtime_seconds: Decimal = Decimal("0")
+    actual_duration_seconds: Optional[float] = None
+    produced_quantity: Decimal = Decimal("0")
+    scrap_quantity: Decimal = Decimal("0")
+    rework_quantity: Decimal = Decimal("0")
+    rejected_quantity: Decimal = Decimal("0")
+    yield_percent: float = 0
+    progress_percent: float = 0
+    pause_reason: Optional[str] = None
+    operator_notes: Optional[str] = None
     remarks: Optional[str]
 
     model_config = {"from_attributes": True}

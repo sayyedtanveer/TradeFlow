@@ -7,7 +7,7 @@ import ResponsiveDataList from '@/components/shared/ResponsiveDataList';
 const STATUS_COLORS: Record<string, string> = {
   PLANNED: 'bg-slate-100 text-slate-700',
   RELEASED: 'bg-blue-100 text-blue-700',
-  IN_PROGRESS: 'bg-amber-100 text-amber-700',
+  IN_PRODUCTION: 'bg-amber-100 text-amber-700',
   COMPLETED: 'bg-emerald-100 text-emerald-700',
   CLOSED: 'bg-zinc-100 text-zinc-600',
 };
@@ -19,7 +19,7 @@ const PRIORITY_COLORS: Record<string, string> = {
   URGENT: 'text-red-600',
 };
 
-const STATUS_OPTIONS = ['', 'PLANNED', 'RELEASED', 'IN_PROGRESS', 'COMPLETED', 'CLOSED'];
+const STATUS_OPTIONS = ['', 'PLANNED', 'RELEASED', 'MATERIAL_PENDING', 'MATERIAL_RESERVED', 'MATERIAL_ISSUED', 'IN_PRODUCTION', 'QC_PENDING', 'FG_RECEIVED', 'COMPLETED', 'CLOSED'];
 
 export default function WorkOrdersListPage() {
   const navigate = useNavigate();

@@ -99,11 +99,15 @@ class WorkOrderHandler:
         # 4. Snapshot BOM lines → work_order_materials
         for line in bom.lines:
             if line.material_id and not line.is_deleted:
+                scrap_factor = Decimal(str(getattr(line, "scrap_percentage", 0) or 0)) / Decimal("100")
+                required_qty = Decimal(str(line.quantity)) * cmd.planned_quantity * (
+                    Decimal("1") + scrap_factor
+                )
                 mat = WorkOrderMaterialModel(
                     work_order_id=wo.id,
                     material_id=line.material_id,
                     unit_id=line.unit_id,
-                    required_quantity=float(Decimal(str(line.quantity)) * cmd.planned_quantity),
+                    required_quantity=float(required_qty),
                     issued_quantity=0,
                 )
                 self._session.add(mat)
@@ -133,12 +137,14 @@ class WorkOrderHandler:
         wo = await self._get_wo(cmd.work_order_id, cmd.tenant_id)
         entity = self._to_entity(wo)
         entity.release()
-        wo.status = entity.status
+        wo.status = entity.status.value
         wo.updated_at = datetime.now(timezone.utc)
 
-        # Transition to MATERIAL_PENDING and trigger material planning
-        wo.status = WorkOrderStatus.MATERIAL_PENDING
-        await self._plan_materials_for_release(wo)
+        wo.status = WorkOrderStatus.MATERIAL_PENDING.value
+        await self._workflow.on_work_order_released(
+            tenant_id=cmd.tenant_id,
+            work_order_id=cmd.work_order_id,
+        )
 
         # Emit event for dashboard notifications
         self._emit_event(WorkOrderReleased(
@@ -149,157 +155,6 @@ class WorkOrderHandler:
             wo_number=wo.wo_number,
             product=str(wo.product_id),
         ))
-
-    async def _plan_materials_for_release(self, wo: WorkOrderModel) -> None:
-        """Reserve available BOM material and procure net shortage for this WO."""
-        from backend.app.application.supply_chain.po_number_service import PONumberService
-        from backend.app.infrastructure.persistence.models.material_model import MaterialModel
-        from backend.app.infrastructure.persistence.models.material_request_model import MaterialRequestModel
-        from backend.app.infrastructure.persistence.models.purchase_order_model import (
-            PurchaseOrderLineModel,
-            PurchaseOrderModel,
-        )
-        from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel
-
-        rows = (
-            await self._session.execute(
-                select(WorkOrderMaterialModel, MaterialModel)
-                .join(MaterialModel, MaterialModel.id == WorkOrderMaterialModel.material_id)
-                .where(
-                    WorkOrderMaterialModel.work_order_id == wo.id,
-                    MaterialModel.tenant_id == wo.tenant_id,
-                    MaterialModel.is_deleted.is_(False),
-                )
-            )
-        ).all()
-        if not rows:
-            return
-
-        shortage_lines: list[tuple[WorkOrderMaterialModel, MaterialModel, Decimal]] = []
-        for requirement, material in rows:
-            required_qty = Decimal(str(requirement.required_quantity or 0))
-            issued_qty = Decimal(str(requirement.issued_quantity or 0))
-            remaining_qty = required_qty - issued_qty
-            if remaining_qty <= 0:
-                continue
-
-            available_qty = await self._inventory.get_available_stock(
-                tenant_id=wo.tenant_id,
-                material_id=material.id,
-            )
-            reserve_qty = min(remaining_qty, available_qty)
-            if reserve_qty > 0:
-                # Use new reservation service with partial reservation handling
-                reserved_qty, shortage_qty, shortage_record_id = await self._reservation.reserve_for_work_order(
-                    tenant_id=wo.tenant_id,
-                    work_order_id=wo.id,
-                    material_id=material.id,
-                    required_quantity=remaining_qty,
-                    unit_id=requirement.unit_id,
-                    created_by=wo.created_by,
-                )
-            else:
-                shortage_qty = remaining_qty
-
-            # Check for net shortage after considering incoming POs
-            incoming_qty = await self._open_po_quantity(wo.tenant_id, material.id)
-            net_shortage_qty = shortage_qty - incoming_qty
-            if net_shortage_qty > 0:
-                shortage_lines.append((requirement, material, net_shortage_qty))
-
-        # If no shortages and reservations successful, transition to MATERIAL_RESERVED
-        if not shortage_lines:
-            wo.status = WorkOrderStatus.MATERIAL_RESERVED
-            wo.updated_at = datetime.now(timezone.utc)
-            return
-
-        for requirement, material, shortage_qty in shortage_lines:
-            existing_request = (
-                await self._session.execute(
-                    select(MaterialRequestModel).where(
-                        MaterialRequestModel.tenant_id == wo.tenant_id,
-                        MaterialRequestModel.item_id == material.id,
-                        MaterialRequestModel.item_type == "material",
-                        MaterialRequestModel.source_ref_type == "work_order",
-                        MaterialRequestModel.source_ref_id == wo.id,
-                        MaterialRequestModel.status == "open",
-                        MaterialRequestModel.is_deleted.is_(False),
-                    )
-                )
-            ).scalar_one_or_none()
-
-            if existing_request is None:
-                self._session.add(
-                    MaterialRequestModel(
-                        id=uuid.uuid4(),
-                        tenant_id=wo.tenant_id,
-                        item_id=material.id,
-                        item_type="material",
-                        required_quantity=float(shortage_qty),
-                        fulfilled_quantity=0,
-                        required_by=wo.due_date,
-                        status="open",
-                        source_ref_type="work_order",
-                        source_ref_id=wo.id,
-                    )
-                )
-            elif shortage_qty > Decimal(str(existing_request.required_quantity or 0)):
-                existing_request.required_quantity = float(shortage_qty)
-                existing_request.required_by = wo.due_date
-
-        supplier_groups: dict[
-            uuid.UUID,
-            tuple[SupplierModel, list[tuple[WorkOrderMaterialModel, MaterialModel, Decimal]]],
-        ] = {}
-        for requirement, material, shortage_qty in shortage_lines:
-            supplier = await self._choose_supplier_for_material(wo.tenant_id, material.id)
-            if supplier is None:
-                logger.warning(
-                    "WO %s has material shortage for %s but no active supplier is available.",
-                    wo.id,
-                    material.id,
-                )
-                continue
-
-            _, grouped_lines = supplier_groups.setdefault(supplier.id, (supplier, []))
-            grouped_lines.append((requirement, material, shortage_qty))
-
-        for supplier, grouped_lines in supplier_groups.values():
-            po_total = Decimal("0")
-            po_number = await PONumberService(self._session).generate(wo.tenant_id)
-            po = PurchaseOrderModel(
-                id=uuid.uuid4(),
-                tenant_id=wo.tenant_id,
-                po_number=po_number,
-                supplier_id=supplier.id,
-                order_date=date.today(),
-                expected_delivery=wo.due_date,
-                status="sent",
-                total_amount=0,
-                notes=f"Auto-created for WO {wo.id} raw-material shortage.",
-                created_by=wo.created_by,
-            )
-            self._session.add(po)
-            await self._session.flush()
-
-            for _, material, shortage_qty in grouped_lines:
-                unit_price = Decimal(str(material.current_cost or 0))
-                line_total = shortage_qty * unit_price
-                po_total += line_total
-                self._session.add(
-                    PurchaseOrderLineModel(
-                        id=uuid.uuid4(),
-                        tenant_id=wo.tenant_id,
-                        purchase_order_id=po.id,
-                        material_id=material.id,
-                        quantity=float(shortage_qty),
-                        received_quantity=0,
-                        unit_price=float(unit_price),
-                        line_total=float(line_total),
-                    )
-                )
-
-            po.total_amount = float(po_total)
 
     async def _open_po_quantity(self, tenant_id: uuid.UUID, material_id: uuid.UUID) -> Decimal:
         from backend.app.infrastructure.persistence.models.purchase_order_model import (
@@ -390,11 +245,11 @@ class WorkOrderHandler:
         wo = await self._get_wo(cmd.work_order_id, cmd.tenant_id)
         entity = self._to_entity(wo)
         entity.start()
-        wo.status = entity.status
+        wo.status = entity.status.value
         wo.updated_at = datetime.now(timezone.utc)
 
         # Transition to IN_PRODUCTION (from MATERIAL_ISSUED)
-        wo.status = WorkOrderStatus.IN_PRODUCTION
+        wo.status = WorkOrderStatus.IN_PRODUCTION.value
         wo.updated_at = datetime.now(timezone.utc)
 
         # Emit event for dashboard notifications
@@ -419,52 +274,15 @@ class WorkOrderHandler:
                 f"Cannot issue material with WO in status {entity.status}"
             )
 
-        # Find material requirement
-        mat_stmt = select(WorkOrderMaterialModel).where(
-            WorkOrderMaterialModel.work_order_id == cmd.work_order_id,
-            WorkOrderMaterialModel.material_id == cmd.material_id,
-        )
-        result = await self._session.execute(mat_stmt)
-        req = result.scalar_one_or_none()
-        if not req:
-            raise ValueError(f"Material {cmd.material_id} is not in the WO material requirements")
-
-        remaining = Decimal(str(req.required_quantity)) - Decimal(str(req.issued_quantity))
-        if cmd.quantity > remaining:
-            raise ValueError(
-                f"Cannot issue {cmd.quantity}: only {remaining} remaining for this material requirement"
-            )
-
-        # Issue via InventoryService (SELECT FOR UPDATE + audit)
-        await self._inventory.issue_stock(
+        await self._inventory.issue_material_for_wo(
             tenant_id=cmd.tenant_id,
+            work_order_id=cmd.work_order_id,
             material_id=cmd.material_id,
             quantity=cmd.quantity,
-            work_order_id=cmd.work_order_id,
             unit_id=cmd.unit_id,
             created_by=cmd.issued_by,
+            transition_wo_status=True,
         )
-
-        req.issued_quantity = float(Decimal(str(req.issued_quantity)) + cmd.quantity)
-
-        # Check if all materials are now issued, transition to MATERIAL_ISSUED if not already
-        all_materials_stmt = select(WorkOrderMaterialModel).where(
-            WorkOrderMaterialModel.work_order_id == cmd.work_order_id
-        )
-        all_materials_result = await self._session.execute(all_materials_stmt)
-        all_materials = all_materials_result.scalars().all()
-
-        all_issued = all(
-            Decimal(str(m.issued_quantity)) >= Decimal(str(m.required_quantity))
-            for m in all_materials
-        )
-
-        if all_issued and entity.status == WorkOrderStatus.MATERIAL_RESERVED:
-            wo.status = WorkOrderStatus.MATERIAL_ISSUED
-            wo.updated_at = datetime.now(timezone.utc)
-        elif entity.status == WorkOrderStatus.MATERIAL_RESERVED:
-            wo.status = WorkOrderStatus.MATERIAL_ISSUED
-            wo.updated_at = datetime.now(timezone.utc)
 
     # ── Record Production ────────────────────────────────────────────────────────
 
@@ -479,12 +297,25 @@ class WorkOrderHandler:
             notes=cmd.notes,
         )
         self._session.add(rec)
+        await self._session.flush()
 
         new_produced = Decimal(str(wo.produced_quantity)) + cmd.produced_quantity
         new_scrap = Decimal(str(wo.scrap_quantity)) + cmd.scrap_quantity
         wo.produced_quantity = float(new_produced)
         wo.scrap_quantity = float(new_scrap)
         wo.updated_at = datetime.now(timezone.utc)
+
+        resolved_operation_id = cmd.operation_id
+        if cmd.job_card_id is not None:
+            jc = await self._get_job_card(cmd.job_card_id, wo.id, cmd.tenant_id)
+            if resolved_operation_id is None:
+                resolved_operation_id = jc.operation_id
+            jc.produced_quantity = float(Decimal(str(jc.produced_quantity or 0)) + cmd.produced_quantity)
+            jc.scrap_quantity = float(Decimal(str(jc.scrap_quantity or 0)) + cmd.scrap_quantity)
+            if cmd.notes:
+                timestamp = datetime.now(timezone.utc).isoformat()
+                note = f"[{timestamp}] {cmd.notes}"
+                jc.operator_notes = f"{jc.operator_notes}\n{note}" if jc.operator_notes else note
 
         # Resolve the finished-goods material_id. Older schemas do not have an
         # item_variant_id column, so mirror product search: first try a material
@@ -529,77 +360,20 @@ class WorkOrderHandler:
                     code_result = await self._session.execute(code_stmt)
                     fg_material = code_result.scalar_one_or_none()
 
-        if fg_material is None:
-            # Fallback: no linked material found — skip inventory update but log warning.
-            # This keeps production recording from failing if FG material isn't set up.
-            import logging
-            logging.getLogger(__name__).warning(
-                "WO %s: no material linked to product_id %s — skipping FG inventory receipt.",
-                wo.id, wo.product_id,
-            )
-            return
+        from backend.app.application.manufacturing.services.production_posting_service import (
+            ProductionPostingService,
+        )
 
-        # --- Consume component materials according to BOM lines ---
-        # For each BOM line with a linked material, ensure cumulative consumption
-        # equals (produced + scrap) * per-unit quantity. Issue any shortfall.
-        from backend.app.infrastructure.persistence.models.bom_model import BOMLineModel
-
-        total_output = Decimal(str(wo.produced_quantity)) + Decimal(str(wo.scrap_quantity))
-        if wo.bom_id is not None:
-            bl_stmt = (
-                select(BOMLineModel)
-                .where(
-                    BOMLineModel.bom_id == wo.bom_id,
-                    BOMLineModel.material_id.isnot(None),
-                    BOMLineModel.is_deleted.is_(False),
-                )
-            )
-            bl_res = await self._session.execute(bl_stmt)
-            bom_lines = bl_res.scalars().all()
-            for line in bom_lines:
-                per_unit = Decimal(str(line.quantity))
-                cumulative_required = total_output * per_unit
-
-                # load the WO material requirement row
-                wm_stmt = select(WorkOrderMaterialModel).where(
-                    WorkOrderMaterialModel.work_order_id == wo.id,
-                    WorkOrderMaterialModel.material_id == line.material_id,
-                )
-                wm_res = await self._session.execute(wm_stmt)
-                wm = wm_res.scalar_one_or_none()
-                if wm is None:
-                    # no requirement tracked (unexpected) — skip
-                    continue
-
-                already_issued = Decimal(str(wm.issued_quantity))
-                to_issue = cumulative_required - already_issued
-                if to_issue > 0 and line.material_id is not None:
-                    # perform inventory issuance (may raise InsufficientStockError)
-                    await self._inventory.issue_stock(
-                        tenant_id=cmd.tenant_id,
-                        material_id=line.material_id,
-                        quantity=to_issue,
-                        work_order_id=wo.id,
-                        unit_id=line.unit_id,
-                        created_by=cmd.recorded_by,
-                    )
-                    wm.issued_quantity = float(already_issued + to_issue)
-
-        # --- Receive finished goods into inventory ---
-        await self._inventory.receive_stock(
+        await ProductionPostingService(self._session).post_production_consumption(
             tenant_id=cmd.tenant_id,
-            material_id=fg_material.id,  # FIXED: use material.id, not product_id
-            quantity=cmd.produced_quantity,
             work_order_id=wo.id,
-            created_by=cmd.recorded_by,
-        )
-        await self._reserve_produced_goods_for_sales(
-            tenant_id=cmd.tenant_id,
-            work_order=wo,
-            finished_material_id=fg_material.id,
-            produced_quantity=cmd.produced_quantity,
+            produced_delta=cmd.produced_quantity,
+            scrap_delta=cmd.scrap_quantity,
+            production_record_id=rec.id,
             recorded_by=cmd.recorded_by,
+            operation_id=resolved_operation_id,
         )
+        # FG receipt occurs once on QC approval (WorkflowOrchestrationService.on_qc_approved)
 
     # ── Complete ─────────────────────────────────────────────────────────────────
 
@@ -607,11 +381,7 @@ class WorkOrderHandler:
         wo = await self._get_wo(cmd.work_order_id, cmd.tenant_id)
         entity = self._to_entity(wo)
         entity.complete()  # raises MaterialNotIssuedError if produced_qty == 0
-        wo.status = entity.status
-        wo.updated_at = datetime.now(timezone.utc)
-
-        # Transition to QC_PENDING instead of COMPLETED
-        wo.status = WorkOrderStatus.QC_PENDING
+        wo.status = entity.status.value
         wo.updated_at = datetime.now(timezone.utc)
 
         # Emit event for dashboard notifications
@@ -695,7 +465,7 @@ class WorkOrderHandler:
         wo = await self._get_wo(cmd.work_order_id, cmd.tenant_id)
         entity = self._to_entity(wo)
         entity.close()
-        wo.status = entity.status
+        wo.status = entity.status.value
         wo.updated_at = datetime.now(timezone.utc)
 
         # Emit event for dashboard notifications
@@ -720,7 +490,7 @@ class WorkOrderHandler:
                 f"Cannot approve QC: WO must be in QC_PENDING status, current: {entity.status}"
             )
 
-        wo.status = WorkOrderStatus.QC_APPROVED
+        wo.status = WorkOrderStatus.QC_APPROVED.value
         wo.updated_at = datetime.now(timezone.utc)
 
         # Automatically increase FG stock after QC approval
@@ -745,9 +515,9 @@ class WorkOrderHandler:
             )
 
         if cmd.send_to_rework:
-            wo.status = WorkOrderStatus.REWORK
+            wo.status = WorkOrderStatus.REWORK.value
         else:
-            wo.status = WorkOrderStatus.REJECTED
+            wo.status = WorkOrderStatus.REJECTED.value
         wo.updated_at = datetime.now(timezone.utc)
 
     async def handle_qc_send_to_rework(self, cmd: QCSendToReworkCommand) -> None:
@@ -761,7 +531,7 @@ class WorkOrderHandler:
                 f"Cannot send to rework: WO must be in REJECTED status, current: {entity.status}"
             )
 
-        wo.status = WorkOrderStatus.REWORK
+        wo.status = WorkOrderStatus.REWORK.value
         wo.updated_at = datetime.now(timezone.utc)
 
     async def handle_fg_receive(self, cmd: FGReceiveCommand) -> None:
@@ -771,7 +541,7 @@ class WorkOrderHandler:
 
         entity.require_qc_approved()
 
-        wo.status = WorkOrderStatus.FG_RECEIVED
+        wo.status = WorkOrderStatus.FG_RECEIVED.value
         wo.updated_at = datetime.now(timezone.utc)
 
         # Call workflow orchestration to update sales order to READY_FOR_DISPATCH
@@ -809,6 +579,18 @@ class WorkOrderHandler:
         jc.completed_at = datetime.now(timezone.utc)
         if cmd.remarks:
             jc.remarks = cmd.remarks
+        for attr, value in {
+            "produced_quantity": cmd.produced_quantity,
+            "scrap_quantity": cmd.scrap_quantity,
+            "rework_quantity": cmd.rework_quantity,
+            "rejected_quantity": cmd.rejected_quantity,
+        }.items():
+            if value is not None:
+                setattr(jc, attr, float(value))
+        if cmd.operator_notes:
+            timestamp = datetime.now(timezone.utc).isoformat()
+            note = f"[{timestamp}] {cmd.operator_notes}"
+            jc.operator_notes = f"{jc.operator_notes}\n{note}" if jc.operator_notes else note
 
     # ── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -39,7 +39,6 @@ const ACTIONS: Record<string, Array<{ label: string; actionKey: string; color: s
   MATERIAL_PENDING: [], // Auto-transitions based on material reservation
   MATERIAL_RESERVED: [{ label: 'Issue Material', actionKey: 'issue', color: 'bg-violet-600 hover:bg-violet-500' }],
   MATERIAL_ISSUED: [{ label: 'Start Production', actionKey: 'start', color: 'bg-purple-600 hover:bg-purple-500' }],
-  IN_PROGRESS: [{ label: 'Complete', actionKey: 'complete', color: 'bg-amber-600 hover:bg-amber-500' }],
   IN_PRODUCTION: [{ label: 'Complete Production', actionKey: 'complete', color: 'bg-amber-600 hover:bg-amber-500' }],
   QC_PENDING: [], // Handled by QC dashboard
   QC_APPROVED: [{ label: 'Receive FG', actionKey: 'receive-fg', color: 'bg-emerald-600 hover:bg-emerald-500' }],
@@ -301,7 +300,7 @@ export default function WorkOrderDetailPage() {
         ))}
       </div>
 
-      {(wo.status === 'RELEASED' || wo.status === 'IN_PROGRESS') && (
+      {(wo.status === 'RELEASED' || wo.status === 'IN_PRODUCTION') && (
         <div>
           <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -358,7 +357,7 @@ export default function WorkOrderDetailPage() {
                 <button
                   id="btn-record-production"
                   onClick={handleRecordProduction}
-                  disabled={productionPending || wo.status !== 'IN_PROGRESS'}
+                  disabled={productionPending || wo.status !== 'IN_PRODUCTION'}
                   className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:-translate-y-0.5 hover:from-blue-700 hover:to-blue-800 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {productionPending ? 'Savingâ€¦' : 'Record Production'}
@@ -382,7 +381,7 @@ export default function WorkOrderDetailPage() {
               </div>
             </div>
 
-            {wo.status === 'IN_PROGRESS' && Number(wo.produced_quantity) <= 0 && (
+            {wo.status === 'IN_PRODUCTION' && Number(wo.produced_quantity) <= 0 && (
               <p className="mt-3 text-xs text-amber-700">
                 Next step: record produced quantity, then complete the work order.
               </p>
@@ -485,7 +484,7 @@ export default function WorkOrderDetailPage() {
                 </div>
               ))
             )}
-            {wo.status === 'IN_PROGRESS' && (
+            {wo.status === 'IN_PRODUCTION' && (
               <p className="mt-2 text-center text-xs text-slate-500">
                 Go to <button onClick={() => navigate(`/shop-floor/${id}/job-cards`)} className="font-medium text-blue-600 hover:underline">Shop Floor</button> to start or complete individual operations.
               </p>

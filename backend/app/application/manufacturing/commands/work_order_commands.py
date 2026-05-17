@@ -53,6 +53,8 @@ class RecordProductionCommand(BaseModel):
     work_order_id: uuid.UUID
     produced_quantity: Decimal = Field(..., gt=0)
     scrap_quantity: Decimal = Field(Decimal("0"), ge=0)
+    job_card_id: Optional[uuid.UUID] = None
+    operation_id: Optional[uuid.UUID] = None
     notes: Optional[str] = None
     recorded_by: uuid.UUID
 
@@ -79,6 +81,11 @@ class CompleteJobCardCommand(BaseModel):
     work_order_id: uuid.UUID
     job_card_id: uuid.UUID
     remarks: Optional[str] = None
+    operator_notes: Optional[str] = None
+    produced_quantity: Optional[Decimal] = Field(default=None, ge=0)
+    scrap_quantity: Optional[Decimal] = Field(default=None, ge=0)
+    rework_quantity: Optional[Decimal] = Field(default=None, ge=0)
+    rejected_quantity: Optional[Decimal] = Field(default=None, ge=0)
 
 
 class QCApproveCommand(BaseModel):

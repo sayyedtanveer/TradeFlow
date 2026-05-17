@@ -51,6 +51,36 @@ class WorkflowOrchestrationService:
         self.inventory_service = InventoryService(session)
         self.notification_service = NotificationService(session)
     
+    async def on_work_order_released(
+        self,
+        tenant_id: uuid.UUID,
+        work_order_id: uuid.UUID,
+    ) -> Dict[str, Any]:
+        """Reserve materials and plan procurement when a work order is released."""
+        stmt = select(WorkOrderModel).where(
+            and_(
+                WorkOrderModel.id == work_order_id,
+                WorkOrderModel.tenant_id == tenant_id,
+                WorkOrderModel.is_deleted.is_(False),
+            )
+        )
+        wo = (await self.session.execute(stmt)).scalar_one_or_none()
+        if wo is None:
+            raise ValueError(f"Work order {work_order_id} not found")
+
+        from backend.app.application.manufacturing.services.material_planning_service import (
+            MaterialPlanningService,
+        )
+
+        await MaterialPlanningService(self.session).plan_for_release(wo)
+        await self.session.flush()
+
+        return {
+            "work_order_id": str(work_order_id),
+            "status": wo.status,
+            "message": "Material planning completed for released work order",
+        }
+
     async def on_sales_order_approved(
         self,
         tenant_id: uuid.UUID,
@@ -199,50 +229,109 @@ class WorkflowOrchestrationService:
         if not work_order:
             raise ValueError(f"Work Order {work_order_id} not found")
         
-        # Get product material (FG)
-        from backend.app.infrastructure.persistence.models.product_model import ProductModel
-        product_stmt = select(ProductModel).where(
-            and_(
-                ProductModel.id == work_order.product_id,
-                ProductModel.tenant_id == tenant_id,
-                ProductModel.is_deleted.is_(False),
+        if work_order.status == WorkOrderStatus.QC_PENDING.value:
+            work_order.status = WorkOrderStatus.QC_APPROVED.value
+            work_order.updated_at = datetime.now(timezone.utc)
+
+        if work_order.status not in (
+            WorkOrderStatus.QC_APPROVED.value,
+            WorkOrderStatus.FG_RECEIVED.value,
+        ):
+            raise ValueError(
+                f"Cannot receive FG for WO in status {work_order.status}; QC approval is required"
             )
+
+        fg_material_id = await self._resolve_finished_good_material_id(work_order)
+        fg_quantity = Decimal(str(work_order.produced_quantity or 0)) - Decimal(
+            str(work_order.scrap_quantity or 0)
         )
-        product_result = await self.session.execute(product_stmt)
-        product = product_result.scalar_one_or_none()
-        
-        if not product or not product.material_id:
-            raise ValueError(f"Product {work_order.product_id} has no associated material")
-        
-        # Automatically increase FG stock
-        fg_quantity = work_order.produced_quantity - work_order.scrap_quantity
-        if fg_quantity > 0:
-            await self.inventory_service.add_stock(
-                tenant_id=tenant_id,
-                material_id=product.material_id,
-                quantity=fg_quantity,
-                transaction_type="production_receipt",
-                reference_id=str(work_order_id),
-                reference_type="work_order",
-                performed_by=received_by,
-                remarks=f"FG receipt from WO {work_order.wo_number} after QC approval",
+
+        existing_receipt = (
+            await self.session.execute(
+                select(InventoryTransactionModel.id).where(
+                    InventoryTransactionModel.tenant_id == tenant_id,
+                    InventoryTransactionModel.material_id == fg_material_id,
+                    InventoryTransactionModel.reference_type == "work_order",
+                    InventoryTransactionModel.reference_id == work_order_id,
+                    InventoryTransactionModel.transaction_type == "FG_RECEIPT",
+                    InventoryTransactionModel.is_deleted.is_(False),
+                )
             )
-            
+        ).scalar_one_or_none()
+
+        if fg_quantity > 0 and existing_receipt is None:
+            await self.inventory_service.receive_fg(
+                tenant_id=tenant_id,
+                product_id=fg_material_id,
+                quantity=fg_quantity,
+                work_order_id=work_order_id,
+                created_by=received_by,
+            )
+
             logger.info(
                 "FG stock increased",
                 extra={
                     "tenant_id": str(tenant_id),
-                    "material_id": str(product.material_id),
+                    "material_id": str(fg_material_id),
                     "quantity": float(fg_quantity),
-                }
+                },
             )
+
+        work_order.status = WorkOrderStatus.FG_RECEIVED.value
+        work_order.updated_at = datetime.now(timezone.utc)
         
         return {
             "work_order_id": str(work_order_id),
             "fg_quantity": float(fg_quantity),
-            "material_id": str(product.material_id),
+            "material_id": str(fg_material_id),
+            "receipt_created": existing_receipt is None and fg_quantity > 0,
             "message": "QC approved and FG stock increased",
         }
+
+    async def _resolve_finished_good_material_id(self, work_order: WorkOrderModel) -> uuid.UUID:
+        """Resolve a WO product reference to the material row that receives FG stock."""
+        from backend.app.infrastructure.persistence.models.item_variant_model import ItemVariantModel
+
+        material = (
+            await self.session.execute(
+                select(MaterialModel).where(
+                    MaterialModel.id == work_order.product_id,
+                    MaterialModel.tenant_id == work_order.tenant_id,
+                    MaterialModel.is_deleted.is_(False),
+                )
+            )
+        ).scalar_one_or_none()
+        if material is not None:
+            return material.id
+
+        variant = (
+            await self.session.execute(
+                select(ItemVariantModel).where(
+                    ItemVariantModel.id == work_order.product_id,
+                    ItemVariantModel.tenant_id == work_order.tenant_id,
+                    ItemVariantModel.is_deleted.is_(False),
+                )
+            )
+        ).scalar_one_or_none()
+        if variant is None:
+            raise ValueError(f"Finished-good product {work_order.product_id} not found")
+
+        if getattr(variant, "material_id", None):
+            return variant.material_id
+
+        material = (
+            await self.session.execute(
+                select(MaterialModel).where(
+                    MaterialModel.tenant_id == work_order.tenant_id,
+                    MaterialModel.code == variant.code,
+                    MaterialModel.material_type == "finished",
+                    MaterialModel.is_deleted.is_(False),
+                )
+            )
+        ).scalar_one_or_none()
+        if material is None:
+            raise ValueError(f"Product {work_order.product_id} has no finished-good material")
+        return material.id
     
     async def on_order_delivered(
         self,

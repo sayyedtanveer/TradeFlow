@@ -1,11 +1,14 @@
 import { apiClient } from './api-client';
+import type { WorkOrderStatus } from '@/types/work-order-status';
+
+export type { WorkOrderStatus };
 
 export interface WorkOrderSummary {
   id: string;
   wo_number: string;
   product_id: string;
   bom_id: string;
-  status: 'PLANNED' | 'RELEASED' | 'IN_PROGRESS' | 'COMPLETED' | 'CLOSED';
+  status: WorkOrderStatus;
   priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
   planned_quantity: number;
   produced_quantity: number;
@@ -114,8 +117,12 @@ const normalizeAvailabilityPreview = (
 const BASE = '/work-orders';
 
 const workOrderService = {
-  list: (params?: { status?: string; product_id?: string }) =>
+  list: (params?: { status?: string; active?: boolean; product_id?: string }) =>
     apiClient.get<WorkOrderSummary[]>(BASE, { params }),
+
+  /** Shop-floor active work orders (material reserved through production/rework). */
+  listActive: () =>
+    apiClient.get<WorkOrderSummary[]>(BASE, { params: { active: true } }),
 
   get: (id: string) =>
     apiClient.get<WorkOrderDetail>(`${BASE}/${id}`),

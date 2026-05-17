@@ -41,6 +41,10 @@ class BatchModel(Base):
         UUID(as_uuid=True), ForeignKey("locations.id"), nullable=True
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="in_stock")
+    original_quantity: Mapped[Optional[float]] = mapped_column(Numeric(18, 4), nullable=True)
+    reserved_quantity: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    consumed_quantity: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False, default=0)
+    returned_quantity: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False, default=0)
 
     # Soft delete
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

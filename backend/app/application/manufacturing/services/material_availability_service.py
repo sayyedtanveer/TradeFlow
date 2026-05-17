@@ -54,7 +54,10 @@ class MaterialAvailabilityService:
         lines: list[dict] = []
         has_shortage = False
         for bom_line, material, unit in rows:
-            required_qty = Decimal(str(bom_line.quantity or 0)) * quantity
+            scrap_factor = Decimal(str(bom_line.scrap_percentage or 0)) / Decimal("100")
+            required_qty = Decimal(str(bom_line.quantity or 0)) * quantity * (
+                Decimal("1") + scrap_factor
+            )
             available_qty = await self._inventory.get_available_stock(
                 tenant_id=tenant_id,
                 material_id=material.id,

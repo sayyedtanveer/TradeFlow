@@ -36,6 +36,10 @@ from backend.app.interfaces.api.v1.routes.quality_control import router as quali
 from backend.app.interfaces.api.v1.routes.storekeeper import router as storekeeper_router
 from backend.app.interfaces.api.v1.routes.worker import router as worker_router
 from backend.app.interfaces.api.v1.routes.workflow import router as workflow_router
+from backend.app.interfaces.api.v1.routes.delivery_dashboard import router as delivery_dashboard_router
+from backend.app.interfaces.api.v1.routes.analytics import router as analytics_router
+from backend.app.infrastructure.persistence.models import material_consumption_model as _material_consumption_model
+from backend.app.infrastructure.persistence.models import pick_list_model as _pick_list_model
 
 api_v1_router = APIRouter()
 
@@ -70,6 +74,8 @@ api_v1_router.include_router(quality_control_router)
 api_v1_router.include_router(storekeeper_router)
 api_v1_router.include_router(worker_router)
 api_v1_router.include_router(workflow_router)
+api_v1_router.include_router(delivery_dashboard_router)
+api_v1_router.include_router(analytics_router)
 
 
 # --- Dynamic Module Registration ---

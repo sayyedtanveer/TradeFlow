@@ -24,6 +24,7 @@ from backend.app.infrastructure.persistence.repositories.material_repository imp
 from backend.app.infrastructure.persistence.repositories.serial_number_repository import SerialNumberRepository
 from backend.app.infrastructure.persistence.repositories.transaction_repository import TransactionRepository
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
+from backend.app.application.manufacturing.services.inventory_service import InventoryService
 
 
 # ── Result DTOs ────────────────────────────────────────────────────────────────
@@ -112,22 +113,18 @@ class AddSerialStockHandler:
             serials.append(serial)
 
         count = Decimal(str(len(serials)))
-        material.increase_stock(count)
-
-        tx = InventoryTransaction(
+        await InventoryService(self._uow.session).add_stock(
             tenant_id=cmd.tenant_id,
             material_id=cmd.material_id,
-            transaction_type=TransactionType.IN,
             quantity=count,
-            reference_type=ReferenceType.MANUAL,
-            remarks=cmd.remarks or f"Serial IN — {len(serials)} unit(s)",
+            unit_id=None,
             created_by=cmd.created_by,
+            to_location_id=cmd.location_id,
+            remarks=cmd.remarks or f"Serial IN — {len(serials)} unit(s)",
         )
 
         for serial in serials:
             await self._serial_repo.save(serial)
-        await self._material_repo.save(material)
-        await self._tx_repo.save(tx)
         await self._uow.commit()
         return [_to_serial_result(s) for s in serials]
 
@@ -163,22 +160,18 @@ class IssueSerialHandler:
 
         # Domain rule in SerialNumber entity
         serial.issue(reference_id=cmd.reference_id, location_id=cmd.location_id)
-        material.decrease_stock(Decimal("1"))
-
-        tx = InventoryTransaction(
+        await InventoryService(self._uow.session).remove_stock(
             tenant_id=cmd.tenant_id,
             material_id=serial.material_id,
-            transaction_type=TransactionType.OUT,
             quantity=Decimal("1"),
-            reference_type=ReferenceType.MANUAL,
+            unit_id=None,
+            created_by=cmd.created_by,
+            from_location_id=cmd.location_id,
             reference_id=cmd.reference_id,
             remarks=cmd.remarks or f"Serial ISSUED — {cmd.serial_number}",
-            created_by=cmd.created_by,
         )
 
         await self._serial_repo.save(serial)
-        await self._material_repo.save(material)
-        await self._tx_repo.save(tx)
         await self._uow.commit()
         return _to_serial_result(serial)
 
@@ -214,21 +207,17 @@ class ReturnSerialHandler:
 
         # Domain rule in SerialNumber entity
         serial.return_item(location_id=cmd.location_id)
-        material.increase_stock(Decimal("1"))
-
-        tx = InventoryTransaction(
+        await InventoryService(self._uow.session).add_stock(
             tenant_id=cmd.tenant_id,
             material_id=serial.material_id,
-            transaction_type=TransactionType.IN,
             quantity=Decimal("1"),
-            reference_type=ReferenceType.MANUAL,
-            remarks=cmd.remarks or f"Serial RETURNED — {cmd.serial_number}",
+            unit_id=None,
             created_by=cmd.created_by,
+            to_location_id=cmd.location_id,
+            remarks=cmd.remarks or f"Serial RETURNED — {cmd.serial_number}",
         )
 
         await self._serial_repo.save(serial)
-        await self._material_repo.save(material)
-        await self._tx_repo.save(tx)
         await self._uow.commit()
         return _to_serial_result(serial)
 

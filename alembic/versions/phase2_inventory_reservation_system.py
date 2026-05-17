@@ -61,7 +61,7 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['material_id'], ['materials.id'], ondelete='RESTRICT'),
-        sa.ForeignKeyConstraint(['unit_id'], ['units.id'], ondelete='SET NULL'),
+        sa.ForeignKeyConstraint(['unit_id'], ['units_of_measure.id'], ondelete='SET NULL'),
         sa.Index('ix_ir_tenant_ref', 'tenant_id', 'reference_type', 'reference_id'),
         sa.Index('ix_ir_tenant_material', 'tenant_id', 'material_id'),
         sa.Index('ix_ir_status', 'status'),

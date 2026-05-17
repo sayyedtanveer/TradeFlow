@@ -19,6 +19,7 @@ class ReserveStockCommand(BaseModel):
     material_id: uuid.UUID
     quantity: Decimal = Field(..., gt=0)
     unit_id: Optional[uuid.UUID] = None
+    batch_id: Optional[uuid.UUID] = None
     reserved_by: uuid.UUID
 
 
@@ -33,6 +34,7 @@ class IssueMaterialCommand(BaseModel):
     material_id: uuid.UUID
     quantity: Decimal = Field(..., gt=0)
     unit_id: Optional[uuid.UUID] = None
+    batch_id: Optional[uuid.UUID] = None
     issued_by: uuid.UUID
 
 
@@ -46,6 +48,7 @@ class PartialIssueCommand(BaseModel):
     material_id: uuid.UUID
     quantity: Decimal = Field(..., gt=0)
     unit_id: Optional[uuid.UUID] = None
+    batch_id: Optional[uuid.UUID] = None
     issued_by: uuid.UUID
 
 
@@ -68,4 +71,5 @@ class ReturnMaterialCommand(BaseModel):
     material_id: uuid.UUID
     quantity: Decimal = Field(..., gt=0)
     unit_id: Optional[uuid.UUID] = None
+    batch_id: Optional[uuid.UUID] = None
     returned_by: uuid.UUID

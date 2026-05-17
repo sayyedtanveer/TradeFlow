@@ -33,6 +33,7 @@ class InventoryTransactionModel(Base):
     quantity = Column(Numeric(15, 3), nullable=False)
 
     unit_id = Column(UUID(as_uuid=True), ForeignKey("units_of_measure.id"), nullable=True)
+    batch_id = Column(UUID(as_uuid=True), ForeignKey("batches.id"), nullable=True)
 
     from_location_id = Column(UUID(as_uuid=True), ForeignKey("locations.id"), nullable=True)
     to_location_id = Column(UUID(as_uuid=True), ForeignKey("locations.id"), nullable=True)

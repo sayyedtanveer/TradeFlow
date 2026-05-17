@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from datetime import datetime
+from decimal import Decimal
 
 from backend.app.infrastructure.persistence.models.inventory_management_models import (
     StockReservationModel,
@@ -28,6 +29,7 @@ from backend.app.application.inventory.commands.storekeeper_commands import (
     ReturnMaterialCommand,
 )
 from backend.app.application.inventory.services.inventory_traceability_service import InventoryTraceabilityService
+from backend.app.application.manufacturing.services.inventory_service import InventoryService
 
 router = APIRouter(prefix="/inventory", tags=["Inventory Extended"])
 
@@ -128,17 +130,22 @@ async def list_warehouse_zones(
 async def reserve_stock(
     body: StockReservationCreate,
     request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id)
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    created_by: uuid.UUID = Depends(get_current_user_id),
 ):
     container = get_container(request)
     async with container.session_factory() as session:
-        material_repo = MaterialRepository(session)
-        material = await material_repo.get_by_id(body.material_id, tenant_id)
-        if not material:
-            raise HTTPException(404, "Material not found")
-        
         try:
-            material.reserve_stock(body.quantity)
+            await InventoryService(session).reserve_reference_stock(
+                tenant_id=tenant_id,
+                material_id=body.material_id,
+                quantity=Decimal(str(body.quantity)),
+                unit_id=None,
+                created_by=created_by,
+                reference_type=body.reference_type,
+                reference_id=body.reference_id,
+                remarks=body.notes,
+            )
         except ValueError as e:
             raise HTTPException(400, str(e))
         
@@ -153,7 +160,6 @@ async def reserve_stock(
             status="ACTIVE"
         )
         session.add(res)
-        await material_repo.save(material)
         await session.commit()
         await session.refresh(res)
         return StockReservationResponse.model_validate(res)
@@ -162,38 +168,42 @@ async def reserve_stock(
 async def consume_reservation(
     reservation_id: uuid.UUID,
     request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id)
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    created_by: uuid.UUID = Depends(get_current_user_id),
 ):
     container = get_container(request)
     async with container.session_factory() as session:
-        res = await session.get(StockReservationModel, reservation_id)
-        if not res or res.tenant_id != tenant_id:
+        res = (
+            await session.execute(
+                select(StockReservationModel)
+                .where(
+                    StockReservationModel.id == reservation_id,
+                    StockReservationModel.tenant_id == tenant_id,
+                )
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if not res:
             raise HTTPException(404, "Reservation not found")
         if res.status != "ACTIVE":
             raise HTTPException(400, f"Reservation is {res.status}")
         
-        material_repo = MaterialRepository(session)
-        material = await material_repo.get_by_id(res.material_id, tenant_id)
-        
-        material.release_stock(res.quantity)
-        material.decrease_stock(res.quantity) # Now decrease the actual stock
-        
-        # We should logically emit an OUT transaction, but simplified here
-        ledger_entry = StockLedgerModel(
-            tenant_id=tenant_id,
-            material_id=material.id,
-            location_id=res.location_id,
-            transaction_date=datetime.now(),
-            transaction_type="CONSUME_RESERVATION",
-            quantity_change=-res.quantity,
-            running_balance=material.get_available_stock(),
-            reference_type=res.reference_type,
-            reference_id=res.reference_id
-        )
-        session.add(ledger_entry)
+        try:
+            await InventoryService(session).consume_reference_reservation(
+                tenant_id=tenant_id,
+                material_id=res.material_id,
+                quantity=Decimal(str(res.quantity)),
+                unit_id=None,
+                created_by=created_by,
+                from_location_id=res.location_id,
+                reference_type=res.reference_type,
+                reference_id=res.reference_id,
+                remarks=res.notes,
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
         res.status = "CONSUMED"
-        await material_repo.save(material)
         await session.commit()
         return {"status": "success"}
 
@@ -201,23 +211,38 @@ async def consume_reservation(
 async def cancel_reservation(
     reservation_id: uuid.UUID,
     request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id)
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    created_by: uuid.UUID = Depends(get_current_user_id),
 ):
     container = get_container(request)
     async with container.session_factory() as session:
-        res = await session.get(StockReservationModel, reservation_id)
-        if not res or res.tenant_id != tenant_id:
+        res = (
+            await session.execute(
+                select(StockReservationModel)
+                .where(
+                    StockReservationModel.id == reservation_id,
+                    StockReservationModel.tenant_id == tenant_id,
+                )
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if not res:
             raise HTTPException(404, "Reservation not found")
         if res.status != "ACTIVE":
             raise HTTPException(400, f"Reservation is {res.status}")
-        
-        material_repo = MaterialRepository(session)
-        material = await material_repo.get_by_id(res.material_id, tenant_id)
-        
-        material.release_stock(res.quantity)
+
+        await InventoryService(session).cancel_reference_reservation(
+            tenant_id=tenant_id,
+            material_id=res.material_id,
+            quantity=Decimal(str(res.quantity)),
+            unit_id=None,
+            created_by=created_by,
+            reference_type=res.reference_type,
+            reference_id=res.reference_id,
+            remarks=res.notes,
+        )
         res.status = "CANCELLED"
         
-        await material_repo.save(material)
         await session.commit()
         return {"status": "success"}
 
@@ -266,9 +291,26 @@ async def get_realtime_stock(
         return results
 
 
-# ── Phase 3: Storekeeper Operational Flow ───────────────────────────────────
+# ── Phase 3: Storekeeper Operational Flow (deprecated — prefer /api/v1/storekeeper/*) ──
 
-@router.get("/storekeeper/issue-queue")
+@router.post("/scan/resolve")
+async def resolve_scan(
+    body: dict,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+):
+    """Resolve barcode/QR payload to material, batch, or work order."""
+    from backend.app.application.inventory.services.barcode_resolution_service import (
+        BarcodeResolutionService,
+    )
+
+    container = get_container(request)
+    async with container.session_factory() as session:
+        service = BarcodeResolutionService(session)
+        return await service.resolve(tenant_id=tenant_id, payload=body.get("payload", ""))
+
+
+@router.get("/storekeeper/issue-queue", deprecated=True)
 async def get_issue_queue(
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
@@ -313,6 +355,48 @@ async def get_partially_issued_wo(
         return queue
 
 
+@router.get("/storekeeper/pending-reservations", deprecated=True)
+async def get_pending_reservations(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Deprecated wrapper for canonical /storekeeper/pending-reservations."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
+        service = StorekeeperService(session)
+        return await service.get_pending_reservations(tenant_id=tenant_id)
+
+
+@router.get("/storekeeper/pending-returns", deprecated=True)
+async def get_pending_returns(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Deprecated wrapper for canonical /storekeeper/pending-returns."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
+        service = StorekeeperService(session)
+        return await service.get_pending_returns(tenant_id=tenant_id)
+
+
+@router.get("/storekeeper/inventory-alerts", deprecated=True)
+async def get_inventory_alerts(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Deprecated wrapper for canonical /storekeeper/inventory-alerts."""
+    container = get_container(request)
+    async with container.session_factory() as session:
+        from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
+        service = StorekeeperService(session)
+        return await service.get_inventory_alerts(tenant_id=tenant_id)
+
+
 @router.post("/storekeeper/issue")
 async def issue_material(
     body: IssueMaterialCommand,
@@ -324,7 +408,8 @@ async def issue_material(
     container = get_container(request)
     async with container.session_factory() as session:
         handler = StorekeeperHandler(session)
-        await handler.handle_issue_material(body)
+        command = body.model_copy(update={"tenant_id": tenant_id, "issued_by": user_id})
+        await handler.handle_issue_material(command)
         await session.commit()
         return {"status": "success"}
 
@@ -340,7 +425,8 @@ async def partial_issue_material(
     container = get_container(request)
     async with container.session_factory() as session:
         handler = StorekeeperHandler(session)
-        await handler.handle_partial_issue(body)
+        command = body.model_copy(update={"tenant_id": tenant_id, "issued_by": user_id})
+        await handler.handle_partial_issue(command)
         await session.commit()
         return {"status": "success"}
 
@@ -356,7 +442,8 @@ async def reject_issue(
     container = get_container(request)
     async with container.session_factory() as session:
         handler = StorekeeperHandler(session)
-        await handler.handle_reject_issue(body)
+        command = body.model_copy(update={"tenant_id": tenant_id, "rejected_by": user_id})
+        await handler.handle_reject_issue(command)
         await session.commit()
         return {"status": "success"}
 
@@ -372,7 +459,8 @@ async def return_material(
     container = get_container(request)
     async with container.session_factory() as session:
         handler = StorekeeperHandler(session)
-        await handler.handle_return_material(body)
+        command = body.model_copy(update={"tenant_id": tenant_id, "returned_by": user_id})
+        await handler.handle_return_material(command)
         await session.commit()
         return {"status": "success"}
 
@@ -454,4 +542,3 @@ async def trace_material_lifecycle(
             material_id=material_id,
         )
         return lifecycle
-

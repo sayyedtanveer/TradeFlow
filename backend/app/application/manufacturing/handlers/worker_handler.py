@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.application.manufacturing.commands.worker_commands import (
     StartOperationCommand,
     PauseOperationCommand,
+    ResumeOperationCommand,
     CompleteOperationCommand,
     ReportWastageCommand,
     RecordProductionCommand,
@@ -42,6 +43,17 @@ class WorkerHandler:
             tenant_id=cmd.tenant_id,
             work_order_id=cmd.work_order_id,
             job_card_id=cmd.job_card_id,
+            pause_reason=cmd.pause_reason,
+            operator_notes=cmd.operator_notes,
+        )
+
+    async def handle_resume_operation(self, cmd: ResumeOperationCommand) -> None:
+        """Handle resuming a paused job card operation."""
+        await self._production.resume_operation(
+            tenant_id=cmd.tenant_id,
+            work_order_id=cmd.work_order_id,
+            job_card_id=cmd.job_card_id,
+            operator_notes=cmd.operator_notes,
         )
 
     async def handle_complete_operation(self, cmd: CompleteOperationCommand) -> None:
@@ -51,6 +63,11 @@ class WorkerHandler:
             work_order_id=cmd.work_order_id,
             job_card_id=cmd.job_card_id,
             remarks=cmd.remarks,
+            operator_notes=cmd.operator_notes,
+            produced_quantity=cmd.produced_quantity,
+            scrap_quantity=cmd.scrap_quantity,
+            rework_quantity=cmd.rework_quantity,
+            rejected_quantity=cmd.rejected_quantity,
         )
 
     async def handle_report_wastage(self, cmd: ReportWastageCommand) -> None:
@@ -77,6 +94,8 @@ class WorkerHandler:
             work_order_id=cmd.work_order_id,
             produced_quantity=cmd.produced_quantity,
             scrap_quantity=cmd.scrap_quantity,
+            job_card_id=cmd.job_card_id,
+            operation_id=cmd.operation_id,
             recorded_by=cmd.recorded_by,
             notes=cmd.notes,
         )

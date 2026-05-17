@@ -58,6 +58,75 @@ async def inventory_turnover(
         raise HTTPException(status_code=403, detail=str(e))
 
 
+@router.get("/inventory/near-empty-batches")
+async def near_empty_batches(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(_get_db_session),
+    threshold_pct: float = Query(10.0, ge=0, le=100),
+):
+    """Batches below threshold % of original quantity."""
+    from sqlalchemy import select
+    from backend.app.infrastructure.persistence.models.batch_model import BatchModel
+
+    rows = (
+        await session.execute(
+            select(BatchModel).where(
+                BatchModel.tenant_id == tenant_id,
+                BatchModel.is_deleted.is_(False),
+                BatchModel.remaining_quantity.isnot(None),
+            )
+        )
+    ).scalars().all()
+    result = []
+    for b in rows:
+        orig = float(b.original_quantity or b.quantity or 0)
+        rem = float(b.remaining_quantity or 0)
+        if orig <= 0:
+            continue
+        pct = rem / orig * 100
+        if pct <= threshold_pct:
+            result.append({
+                "batch_id": str(b.id),
+                "batch_number": b.batch_number,
+                "material_id": str(b.material_id),
+                "remaining_quantity": rem,
+                "original_quantity": orig,
+                "percent_remaining": round(pct, 2),
+            })
+    return result
+
+
+@router.get("/inventory/consumption-variance")
+async def consumption_variance_report(
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(_get_db_session),
+    work_order_id: Optional[uuid.UUID] = Query(None),
+):
+    from sqlalchemy import select
+    from backend.app.infrastructure.persistence.models.material_consumption_model import (
+        MaterialConsumptionRecordModel,
+    )
+
+    stmt = select(MaterialConsumptionRecordModel).where(
+        MaterialConsumptionRecordModel.tenant_id == tenant_id
+    )
+    if work_order_id:
+        stmt = stmt.where(MaterialConsumptionRecordModel.work_order_id == work_order_id)
+    rows = (await session.execute(stmt)).scalars().all()
+    return [
+        {
+            "work_order_id": str(r.work_order_id),
+            "material_id": str(r.material_id),
+            "planned_quantity": r.planned_quantity,
+            "actual_quantity": r.actual_quantity,
+            "variance_quantity": r.variance_quantity,
+            "recorded_at": r.recorded_at.isoformat(),
+        }
+        for r in rows
+    ]
+
+
 @router.get("/production/summary")
 async def production_summary(
     request: Request,

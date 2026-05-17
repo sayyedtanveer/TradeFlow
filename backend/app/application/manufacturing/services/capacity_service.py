@@ -12,10 +12,10 @@ from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.domain.manufacturing.entities.work_order import WorkOrderStatus
 from backend.app.infrastructure.persistence.models.work_order_model import (
     WorkOrderModel,
     JobCardModel,
-    WorkOrderStatus,
 )
 from backend.app.infrastructure.persistence.models.operation_model import OperationModel
 from backend.app.infrastructure.persistence.models.workstation_model import WorkstationModel

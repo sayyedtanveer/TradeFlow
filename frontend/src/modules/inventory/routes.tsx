@@ -7,6 +7,7 @@ const TransactionHistoryPage = lazy(() => import("./pages/TransactionHistoryPage
 const StockMovementPage = lazy(() => import("./pages/StockMovementPage"))
 const InventoryDashboard = lazy(() => import("./pages/InventoryDashboard"))
 const BatchListPage = lazy(() => import("./pages/BatchListPage"))
+const StorekeeperDashboardPage = lazy(() => import("./pages/StorekeeperDashboardPage"))
 
 // Simple fallback
 const PageLoading = () => <div className="p-8 flex items-center justify-center">Loading...</div>
@@ -35,5 +36,9 @@ export const inventoryRoutes: RouteObject[] = [
   {
     path: "inventory/batches",
     element: <Suspense fallback={<PageLoading />}><BatchListPage /></Suspense>,
+  },
+  {
+    path: "inventory/storekeeper",
+    element: <Suspense fallback={<PageLoading />}><StorekeeperDashboardPage /></Suspense>,
   },
 ]

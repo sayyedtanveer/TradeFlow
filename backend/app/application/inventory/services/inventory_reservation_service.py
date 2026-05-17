@@ -5,6 +5,7 @@ import uuid
 from decimal import Decimal
 from typing import Optional
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.application.manufacturing.services.inventory_service import InventoryService
@@ -106,11 +107,13 @@ class InventoryReservationService:
                     reference_type=model.reference_type,
                     reference_id=model.reference_id,
                     material_id=model.material_id,
+                    batch_id=model.batch_id,
                     quantity=Decimal(str(model.quantity)),
                     status=ReservationStatus(model.status),
                     unit_id=model.unit_id,
                     issued_quantity=Decimal(str(model.issued_quantity or 0)),
                     consumed_quantity=Decimal(str(model.consumed_quantity or 0)),
+                    returned_quantity=Decimal(str(model.returned_quantity or 0)),
                     created_at=model.created_at,
                     updated_at=model.updated_at,
                 )

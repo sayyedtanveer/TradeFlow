@@ -20,6 +20,7 @@ from backend.app.application.manufacturing.handlers.worker_handler import Worker
 from backend.app.application.manufacturing.commands.worker_commands import (
     StartOperationCommand,
     PauseOperationCommand,
+    ResumeOperationCommand,
     CompleteOperationCommand,
     ReportWastageCommand,
     RecordProductionCommand,
@@ -29,6 +30,7 @@ from backend.app.interfaces.api.v1.schemas.worker_schemas import (
     JobCardResponse,
     StartOperationRequest,
     PauseOperationRequest,
+    ResumeOperationRequest,
     CompleteOperationRequest,
     ReportWastageRequest,
     RecordProductionRequest,
@@ -89,6 +91,8 @@ async def pause_operation(
         tenant_id=tenant_id,
         work_order_id=body.work_order_id,
         job_card_id=body.job_card_id,
+        pause_reason=body.pause_reason,
+        operator_notes=body.operator_notes,
     )
     
     handler = WorkerHandler(session)
@@ -96,6 +100,27 @@ async def pause_operation(
     
     await session.commit()
     return {"status": "success", "message": "Operation paused"}
+
+
+@router.post("/resume-operation")
+async def resume_operation(
+    body: ResumeOperationRequest,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Resume a paused job card operation."""
+    command = ResumeOperationCommand(
+        tenant_id=tenant_id,
+        work_order_id=body.work_order_id,
+        job_card_id=body.job_card_id,
+        operator_notes=body.operator_notes,
+    )
+
+    handler = WorkerHandler(session)
+    await handler.handle_resume_operation(command)
+
+    await session.commit()
+    return {"status": "success", "message": "Operation resumed"}
 
 
 @router.post("/complete-operation")
@@ -110,6 +135,11 @@ async def complete_operation(
         work_order_id=body.work_order_id,
         job_card_id=body.job_card_id,
         remarks=body.remarks,
+        operator_notes=body.operator_notes,
+        produced_quantity=body.produced_quantity,
+        scrap_quantity=body.scrap_quantity,
+        rework_quantity=body.rework_quantity,
+        rejected_quantity=body.rejected_quantity,
     )
     
     handler = WorkerHandler(session)
@@ -162,6 +192,8 @@ async def record_production(
         work_order_id=body.work_order_id,
         produced_quantity=body.produced_quantity,
         scrap_quantity=body.scrap_quantity,
+        job_card_id=body.job_card_id,
+        operation_id=body.operation_id,
         recorded_by=recorded_by,
         notes=body.notes,
     )

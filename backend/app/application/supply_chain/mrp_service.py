@@ -16,10 +16,10 @@ from backend.app.infrastructure.persistence.models.purchase_order_model import (
     PurchaseOrderLineModel,
     PurchaseOrderModel,
 )
+from backend.app.domain.manufacturing.entities.work_order import WorkOrderStatus
 from backend.app.infrastructure.persistence.models.work_order_model import (
     WorkOrderMaterialModel,
     WorkOrderModel,
-    WorkOrderStatus,
 )
 
 
@@ -223,7 +223,14 @@ class MRPService:
                 WorkOrderModel.tenant_id == tenant_id,
                 WorkOrderModel.is_deleted.is_(False),
                 WorkOrderModel.status.in_(
-                    [WorkOrderStatus.PLANNED, WorkOrderStatus.RELEASED, WorkOrderStatus.IN_PROGRESS]
+                    [
+                        WorkOrderStatus.PLANNED.value,
+                        WorkOrderStatus.RELEASED.value,
+                        WorkOrderStatus.MATERIAL_PENDING.value,
+                        WorkOrderStatus.MATERIAL_RESERVED.value,
+                        WorkOrderStatus.MATERIAL_ISSUED.value,
+                        WorkOrderStatus.IN_PRODUCTION.value,
+                    ]
                 ),
             )
             .group_by(WorkOrderMaterialModel.material_id)

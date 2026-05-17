@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Optional
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.application.manufacturing.services.inventory_service import InventoryService
@@ -14,6 +14,9 @@ from backend.app.infrastructure.persistence.models.work_order_model import (
     WorkOrderModel,
     WorkOrderMaterialModel,
 )
+from backend.app.infrastructure.persistence.models.material_model import MaterialModel
+from backend.app.infrastructure.persistence.models.inventory_reservation_model import InventoryReservationModel
+from backend.app.infrastructure.persistence.models.batch_model import BatchModel
 
 
 class StorekeeperService:
@@ -55,10 +58,34 @@ class StorekeeperService:
 
         shortage_queue = []
         for shortage in shortages:
+            incoming_qty = await self._open_po_quantity(tenant_id, shortage.material_id)
+            if incoming_qty >= Decimal(str(shortage.shortage_quantity or 0)):
+                continue
+            material = (
+                await self._session.execute(
+                    select(MaterialModel).where(
+                        MaterialModel.id == shortage.material_id,
+                        MaterialModel.tenant_id == tenant_id,
+                        MaterialModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            wo = (
+                await self._session.execute(
+                    select(WorkOrderModel).where(
+                        WorkOrderModel.id == shortage.work_order_id,
+                        WorkOrderModel.tenant_id == tenant_id,
+                        WorkOrderModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
             shortage_queue.append({
                 "shortage_id": shortage.id,
                 "work_order_id": shortage.work_order_id,
+                "wo_number": wo.wo_number if wo is not None else None,
                 "material_id": shortage.material_id,
+                "material_code": material.code if material is not None else None,
+                "material_name": material.name if material is not None else None,
                 "required_quantity": shortage.required_quantity,
                 "available_quantity": shortage.available_quantity,
                 "shortage_quantity": shortage.shortage_quantity,
@@ -68,13 +95,36 @@ class StorekeeperService:
 
         return shortage_queue
 
+    async def _open_po_quantity(self, tenant_id: uuid.UUID, material_id: uuid.UUID) -> Decimal:
+        from backend.app.infrastructure.persistence.models.purchase_order_model import (
+            PurchaseOrderLineModel,
+            PurchaseOrderModel,
+        )
+
+        result = await self._session.execute(
+            select(
+                func.coalesce(
+                    func.sum(PurchaseOrderLineModel.quantity - PurchaseOrderLineModel.received_quantity),
+                    0,
+                )
+            )
+            .join(PurchaseOrderModel, PurchaseOrderModel.id == PurchaseOrderLineModel.purchase_order_id)
+            .where(
+                PurchaseOrderModel.tenant_id == tenant_id,
+                PurchaseOrderModel.is_deleted.is_(False),
+                PurchaseOrderLineModel.material_id == material_id,
+                PurchaseOrderModel.status.in_(["sent", "partially_received", "approved"]),
+            )
+        )
+        return Decimal(str(result.scalar() or 0))
+
     async def get_partially_issued_wo(self, *, tenant_id: uuid.UUID) -> list[dict]:
         """Get partially issued WOs for storekeeper dashboard."""
         stmt = (
             select(WorkOrderModel)
             .where(
                 WorkOrderModel.tenant_id == tenant_id,
-                WorkOrderModel.status == "MATERIAL_ISSUED",
+                WorkOrderModel.status.in_(["MATERIAL_PENDING", "MATERIAL_RESERVED", "MATERIAL_ISSUED"]),
                 WorkOrderModel.is_deleted.is_(False),
             )
             .order_by(WorkOrderModel.due_date)
@@ -109,6 +159,153 @@ class StorekeeperService:
 
         return partially_issued
 
+    async def get_pending_reservations(self, *, tenant_id: uuid.UUID) -> list[dict]:
+        """Get reservations that still need storekeeper issue action."""
+        stmt = (
+            select(InventoryReservationModel, WorkOrderModel, MaterialModel, BatchModel)
+            .join(
+                WorkOrderModel,
+                WorkOrderModel.id == InventoryReservationModel.reference_id,
+            )
+            .join(MaterialModel, MaterialModel.id == InventoryReservationModel.material_id)
+            .outerjoin(BatchModel, BatchModel.id == InventoryReservationModel.batch_id)
+            .where(
+                InventoryReservationModel.tenant_id == tenant_id,
+                InventoryReservationModel.reference_type == "work_order",
+                InventoryReservationModel.status.in_(("RESERVED", "PARTIALLY_ISSUED")),
+                WorkOrderModel.tenant_id == tenant_id,
+                WorkOrderModel.is_deleted.is_(False),
+                MaterialModel.tenant_id == tenant_id,
+                MaterialModel.is_deleted.is_(False),
+            )
+            .order_by(WorkOrderModel.due_date, InventoryReservationModel.created_at)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        queue: list[dict] = []
+        for reservation, wo, material, batch in rows:
+            reserved_qty = Decimal(str(reservation.quantity or 0))
+            issued_qty = Decimal(str(reservation.issued_quantity or 0))
+            pending_qty = reserved_qty - issued_qty
+            if pending_qty <= 0:
+                continue
+            queue.append({
+                "reservation_id": reservation.id,
+                "work_order_id": wo.id,
+                "wo_number": wo.wo_number,
+                "material_id": material.id,
+                "material_code": material.code,
+                "material_name": material.name,
+                "batch_id": reservation.batch_id,
+                "batch_number": batch.batch_number if batch is not None else None,
+                "reserved_quantity": reserved_qty,
+                "issued_quantity": issued_qty,
+                "pending_quantity": pending_qty,
+                "status": reservation.status,
+                "created_at": reservation.created_at,
+            })
+        return queue
+
+    async def get_pending_returns(self, *, tenant_id: uuid.UUID) -> list[dict]:
+        """Get issued, unconsumed material that can be returned from production."""
+        stmt = (
+            select(InventoryReservationModel, WorkOrderModel, MaterialModel, BatchModel)
+            .join(WorkOrderModel, WorkOrderModel.id == InventoryReservationModel.reference_id)
+            .join(MaterialModel, MaterialModel.id == InventoryReservationModel.material_id)
+            .outerjoin(BatchModel, BatchModel.id == InventoryReservationModel.batch_id)
+            .where(
+                InventoryReservationModel.tenant_id == tenant_id,
+                InventoryReservationModel.reference_type == "work_order",
+                InventoryReservationModel.status.in_(("ISSUED", "PARTIALLY_CONSUMED")),
+                WorkOrderModel.tenant_id == tenant_id,
+                WorkOrderModel.is_deleted.is_(False),
+                MaterialModel.tenant_id == tenant_id,
+                MaterialModel.is_deleted.is_(False),
+            )
+            .order_by(WorkOrderModel.due_date, InventoryReservationModel.updated_at)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        queue: list[dict] = []
+        for reservation, wo, material, batch in rows:
+            returnable_qty = (
+                Decimal(str(reservation.issued_quantity or 0))
+                - Decimal(str(reservation.consumed_quantity or 0))
+                - Decimal(str(reservation.returned_quantity or 0))
+            )
+            if returnable_qty <= 0:
+                continue
+            queue.append({
+                "reservation_id": reservation.id,
+                "work_order_id": wo.id,
+                "wo_number": wo.wo_number,
+                "material_id": material.id,
+                "material_code": material.code,
+                "material_name": material.name,
+                "batch_id": reservation.batch_id,
+                "batch_number": batch.batch_number if batch is not None else None,
+                "issued_quantity": reservation.issued_quantity,
+                "consumed_quantity": reservation.consumed_quantity,
+                "returned_quantity": reservation.returned_quantity,
+                "returnable_quantity": returnable_qty,
+                "status": reservation.status,
+                "updated_at": reservation.updated_at,
+            })
+        return queue
+
+    async def get_inventory_alerts(self, *, tenant_id: uuid.UUID) -> list[dict]:
+        """Get stock and batch alerts for storekeeper operations."""
+        alerts: list[dict] = []
+        material_rows = (
+            await self._session.execute(
+                select(MaterialModel).where(
+                    MaterialModel.tenant_id == tenant_id,
+                    MaterialModel.is_deleted.is_(False),
+                    MaterialModel.is_active.is_(True),
+                )
+            )
+        ).scalars().all()
+        for material in material_rows:
+            reorder_level = Decimal(str(material.reorder_level or 0))
+            current_stock = Decimal(str(material.current_stock or 0))
+            if reorder_level > 0 and current_stock <= reorder_level:
+                alerts.append({
+                    "alert_type": "LOW_STOCK",
+                    "severity": "warning",
+                    "material_id": material.id,
+                    "material_code": material.code,
+                    "material_name": material.name,
+                    "current_stock": current_stock,
+                    "reorder_level": reorder_level,
+                    "message": f"{material.code} is at or below reorder level",
+                })
+
+        batch_rows = (
+            await self._session.execute(
+                select(BatchModel, MaterialModel)
+                .join(MaterialModel, MaterialModel.id == BatchModel.material_id)
+                .where(
+                    BatchModel.tenant_id == tenant_id,
+                    BatchModel.is_deleted.is_(False),
+                    BatchModel.status.in_(("EXPIRED", "expired", "QUARANTINED", "quarantined")),
+                    MaterialModel.tenant_id == tenant_id,
+                    MaterialModel.is_deleted.is_(False),
+                )
+            )
+        ).all()
+        for batch, material in batch_rows:
+            status = str(batch.status or "").upper()
+            alerts.append({
+                "alert_type": status,
+                "severity": "critical" if status == "QUARANTINED" else "warning",
+                "material_id": material.id,
+                "material_code": material.code,
+                "material_name": material.name,
+                "batch_id": batch.id,
+                "batch_number": batch.batch_number,
+                "remaining_quantity": batch.remaining_quantity,
+                "message": f"{material.code} batch {batch.batch_number} is {status.lower()}",
+            })
+        return alerts
+
     async def reserve_stock(
         self,
         *,
@@ -117,6 +314,7 @@ class StorekeeperService:
         material_id: uuid.UUID,
         quantity: Decimal,
         unit_id: Optional[uuid.UUID],
+        batch_id: Optional[uuid.UUID],
         reserved_by: uuid.UUID,
     ) -> None:
         """Reserve stock for work order.
@@ -131,6 +329,7 @@ class StorekeeperService:
             quantity=quantity,
             work_order_id=work_order_id,
             unit_id=unit_id,
+            batch_id=batch_id,
             created_by=reserved_by,
         )
         
@@ -158,6 +357,7 @@ class StorekeeperService:
         material_id: uuid.UUID,
         quantity: Decimal,
         unit_id: Optional[uuid.UUID],
+        batch_id: Optional[uuid.UUID],
         issued_by: uuid.UUID,
     ) -> None:
         """Issue material to work order.
@@ -165,48 +365,16 @@ class StorekeeperService:
         Triggers WO transition: MATERIAL_RESERVED → MATERIAL_ISSUED.
         Inventory: RESERVED → ISSUED.
         """
-        # Call InventoryService to issue stock
-        await self._inventory.issue_stock(
+        await self._inventory.issue_material_for_wo(
             tenant_id=tenant_id,
+            work_order_id=work_order_id,
             material_id=material_id,
             quantity=quantity,
-            work_order_id=work_order_id,
             unit_id=unit_id,
             created_by=issued_by,
+            transition_wo_status=True,
+            batch_id=batch_id,
         )
-        
-        # Check if all materials are issued, then transition WO to MATERIAL_ISSUED
-        from backend.app.infrastructure.persistence.models.work_order_model import (
-            WorkOrderModel,
-            WorkOrderMaterialModel,
-        )
-        from backend.app.domain.manufacturing.entities.work_order import WorkOrderStatus
-        
-        # Get WO
-        stmt = select(WorkOrderModel).where(
-            WorkOrderModel.id == work_order_id,
-            WorkOrderModel.tenant_id == tenant_id,
-            WorkOrderModel.is_deleted.is_(False),
-        )
-        result = await self._session.execute(stmt)
-        wo_model = result.scalar_one_or_none()
-        
-        if wo_model and wo_model.status == WorkOrderStatus.MATERIAL_RESERVED.value:
-            # Check if all materials are fully issued
-            mat_stmt = select(WorkOrderMaterialModel).where(
-                WorkOrderMaterialModel.work_order_id == work_order_id
-            )
-            mat_result = await self._session.execute(mat_stmt)
-            materials = mat_result.scalars().all()
-            
-            all_issued = all(
-                Decimal(str(m.issued_quantity)) >= Decimal(str(m.required_quantity))
-                for m in materials
-            )
-            
-            if all_issued and materials:
-                wo_model.status = WorkOrderStatus.MATERIAL_ISSUED.value
-                wo_model.updated_at = datetime.now(timezone.utc)
 
     async def partially_issue_material(
         self,
@@ -216,16 +384,19 @@ class StorekeeperService:
         material_id: uuid.UUID,
         quantity: Decimal,
         unit_id: Optional[uuid.UUID],
+        batch_id: Optional[uuid.UUID],
         issued_by: uuid.UUID,
     ) -> None:
         """Partially issue material to work order."""
-        await self._inventory.issue_stock(
+        await self._inventory.issue_material_for_wo(
             tenant_id=tenant_id,
+            work_order_id=work_order_id,
             material_id=material_id,
             quantity=quantity,
-            work_order_id=work_order_id,
             unit_id=unit_id,
             created_by=issued_by,
+            transition_wo_status=True,
+            batch_id=batch_id,
         )
 
     async def reject_issue(
@@ -242,14 +413,13 @@ class StorekeeperService:
         Cancels reservation and logs rejection reason.
         Inventory: RESERVED → AVAILABLE.
         """
-        # Call InventoryService to cancel reservation (return stock to available)
-        await self._inventory.return_stock(
+        await self._inventory.cancel_work_order_reservation(
             tenant_id=tenant_id,
             material_id=material_id,
-            quantity=Decimal("0"),  # Will be calculated from reservation
             work_order_id=work_order_id,
             unit_id=None,
             created_by=rejected_by,
+            remarks=f"Rejected: {reason}",
         )
         
         # Log rejection reason in audit trail
@@ -274,6 +444,7 @@ class StorekeeperService:
         material_id: uuid.UUID,
         quantity: Decimal,
         unit_id: Optional[uuid.UUID],
+        batch_id: Optional[uuid.UUID],
         returned_by: uuid.UUID,
     ) -> None:
         """Return issued material back to inventory.
@@ -289,19 +460,5 @@ class StorekeeperService:
             work_order_id=work_order_id,
             unit_id=unit_id,
             created_by=returned_by,
+            batch_id=batch_id,
         )
-        
-        # Update WorkOrderMaterialModel to decrease issued quantity
-        from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderMaterialModel
-        
-        stmt = select(WorkOrderMaterialModel).where(
-            WorkOrderMaterialModel.work_order_id == work_order_id,
-            WorkOrderMaterialModel.material_id == material_id,
-        )
-        result = await self._session.execute(stmt)
-        material_record = result.scalar_one_or_none()
-        
-        if material_record:
-            current_issued = Decimal(str(material_record.issued_quantity))
-            material_record.issued_quantity = max(Decimal("0"), current_issued - quantity)
-            material_record.updated_at = datetime.now(timezone.utc)

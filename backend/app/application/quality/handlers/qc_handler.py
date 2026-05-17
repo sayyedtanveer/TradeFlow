@@ -16,6 +16,9 @@ from backend.app.application.quality.commands.qc_commands import (
 )
 from backend.app.application.quality.services.qc_service import QCService
 from backend.app.application.manufacturing.services.inventory_service import InventoryService
+from backend.app.application.manufacturing.services.workflow_orchestration_service import (
+    WorkflowOrchestrationService,
+)
 from backend.app.domain.quality.entities.quality_inspection import (
     QualityInspection,
     InspectionResult,
@@ -118,17 +121,14 @@ class QCHandler:
             )
             self._session.add(detail_model)
         
-        # Transition WO to QC_APPROVED
+        # Transition WO to QC_APPROVED, then delegate the single FG receipt path.
         wo_model.status = WorkOrderStatus.QC_APPROVED.value
         wo_model.updated_at = date.today()
-        
-        # Trigger FG inventory increase
-        await self._inventory.receive_fg(
+
+        await WorkflowOrchestrationService(self._session).on_qc_approved(
             tenant_id=command.tenant_id,
-            product_id=wo_model.product_id,
-            quantity=wo_model.produced_quantity,
             work_order_id=command.work_order_id,
-            created_by=command.inspector_id,
+            received_by=command.inspector_id,
         )
         
         await self._session.flush()

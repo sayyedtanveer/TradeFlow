@@ -28,13 +28,17 @@ class InventoryReservationModel(Base):
     material_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("materials.id", ondelete="RESTRICT"), nullable=False
     )
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("batches.id", ondelete="SET NULL"), nullable=True
+    )
     quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="RESERVED")
     unit_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("units.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True), ForeignKey("units_of_measure.id", ondelete="SET NULL"), nullable=True
     )
     issued_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
     consumed_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
+    returned_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

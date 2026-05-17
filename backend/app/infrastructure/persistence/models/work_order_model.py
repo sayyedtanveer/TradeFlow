@@ -12,20 +12,13 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from backend.app.domain.manufacturing.entities.work_order import WorkOrderStatus
 from backend.app.infrastructure.persistence.database import Base
 
 # Type hints for forward references
 if TYPE_CHECKING:
     from backend.app.infrastructure.persistence.models.material_model import MaterialModel
     from backend.app.infrastructure.persistence.models.operation_model import OperationModel
-
-
-class WorkOrderStatus(str, enum.Enum):
-    PLANNED = "PLANNED"
-    RELEASED = "RELEASED"
-    IN_PROGRESS = "IN_PROGRESS"
-    COMPLETED = "COMPLETED"
-    CLOSED = "CLOSED"
 
 
 class WorkOrderPriority(str, enum.Enum):
@@ -63,9 +56,9 @@ class WorkOrderModel(Base):
     produced_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
     scrap_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
 
-    # Lifecycle
+    # Lifecycle — VARCHAR stores full operational state machine (domain WorkOrderStatus).
     status: Mapped[str] = mapped_column(
-        SAEnum(WorkOrderStatus, name="work_order_status"), nullable=False, default=WorkOrderStatus.PLANNED
+        String(32), nullable=False, default=WorkOrderStatus.PLANNED.value
     )
     priority: Mapped[str] = mapped_column(
         SAEnum(WorkOrderPriority, name="work_order_priority"), nullable=False, default=WorkOrderPriority.NORMAL
@@ -141,7 +134,15 @@ class JobCardModel(Base):
     assigned_to: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")  # PENDING / IN_PROGRESS / DONE
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    paused_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    total_downtime_seconds: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
+    pause_reason: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    operator_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    produced_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
+    scrap_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
+    rework_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
+    rejected_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     work_order: Mapped["WorkOrderModel"] = relationship("WorkOrderModel", back_populates="job_cards")

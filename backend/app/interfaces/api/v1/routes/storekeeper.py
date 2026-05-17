@@ -23,6 +23,9 @@ from backend.app.interfaces.api.v1.schemas.storekeeper_schemas import (
     IssueQueueResponse,
     ShortageQueueResponse,
     PartiallyIssuedWOResponse,
+    PendingReservationResponse,
+    PendingReturnResponse,
+    InventoryAlertResponse,
     ReserveStockRequest,
     IssueMaterialRequest,
     PartialIssueRequest,
@@ -87,6 +90,36 @@ async def get_partially_issued_wo(
     return queue
 
 
+@router.get("/pending-reservations", response_model=list[PendingReservationResponse])
+async def get_pending_reservations(
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Get reservations waiting for storekeeper issue."""
+    storekeeper_service = StorekeeperService(session)
+    return await storekeeper_service.get_pending_reservations(tenant_id=tenant_id)
+
+
+@router.get("/pending-returns", response_model=list[PendingReturnResponse])
+async def get_pending_returns(
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Get issued material that can be returned."""
+    storekeeper_service = StorekeeperService(session)
+    return await storekeeper_service.get_pending_returns(tenant_id=tenant_id)
+
+
+@router.get("/inventory-alerts", response_model=list[InventoryAlertResponse])
+async def get_inventory_alerts(
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Get stock and batch alerts for storekeeper operations."""
+    storekeeper_service = StorekeeperService(session)
+    return await storekeeper_service.get_inventory_alerts(tenant_id=tenant_id)
+
+
 # ── Storekeeper Actions ─────────────────────────────────────────────────────────
 
 @router.post("/reserve-stock")
@@ -107,6 +140,7 @@ async def reserve_stock(
         material_id=body.material_id,
         quantity=body.quantity,
         unit_id=body.unit_id,
+        batch_id=body.batch_id,
         reserved_by=reserved_by,
     )
     
@@ -135,6 +169,7 @@ async def issue_material(
         material_id=body.material_id,
         quantity=body.quantity,
         unit_id=body.unit_id,
+        batch_id=body.batch_id,
         issued_by=issued_by,
     )
     
@@ -162,6 +197,7 @@ async def partial_issue(
         material_id=body.material_id,
         quantity=body.quantity,
         unit_id=body.unit_id,
+        batch_id=body.batch_id,
         issued_by=issued_by,
     )
     
@@ -216,6 +252,7 @@ async def return_material(
         material_id=body.material_id,
         quantity=body.quantity,
         unit_id=body.unit_id,
+        batch_id=body.batch_id,
         returned_by=returned_by,
     )
     

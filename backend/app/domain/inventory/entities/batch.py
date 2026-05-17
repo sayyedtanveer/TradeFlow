@@ -13,6 +13,13 @@ class BatchStatus(str, Enum):
     IN_STOCK = "in_stock"
     DEPLETED = "depleted"
     EXPIRED = "expired"
+    # Enterprise lifecycle (maps to DB status values)
+    AVAILABLE = "available"
+    RESERVED = "reserved"
+    PARTIALLY_CONSUMED = "partially_consumed"
+    FULLY_CONSUMED = "fully_consumed"
+    RETURNED = "returned"
+    QUARANTINED = "quarantined"
 
 
 class Batch(BaseEntity):

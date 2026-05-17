@@ -43,6 +43,7 @@ class InventoryTransaction(BaseEntity):
         transaction_type: TransactionType,
         quantity: Decimal,
         unit_id: Optional[uuid.UUID] = None,
+        batch_id: Optional[uuid.UUID] = None,
         from_location_id: Optional[uuid.UUID] = None,
         to_location_id: Optional[uuid.UUID] = None,
         reference_type: ReferenceType = ReferenceType.MANUAL,
@@ -66,6 +67,7 @@ class InventoryTransaction(BaseEntity):
         self._transaction_type = transaction_type
         self._quantity = Decimal(str(quantity))
         self._unit_id = unit_id
+        self._batch_id = batch_id
         self._from_location_id = from_location_id
         self._to_location_id = to_location_id
         self._reference_type = reference_type
@@ -89,6 +91,10 @@ class InventoryTransaction(BaseEntity):
     @property
     def unit_id(self) -> Optional[uuid.UUID]:
         return self._unit_id
+
+    @property
+    def batch_id(self) -> Optional[uuid.UUID]:
+        return self._batch_id
 
     @property
     def from_location_id(self) -> Optional[uuid.UUID]:

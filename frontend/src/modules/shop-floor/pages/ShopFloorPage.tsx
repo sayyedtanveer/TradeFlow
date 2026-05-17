@@ -19,7 +19,7 @@ export default function ShopFloorPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await workOrderService.list({ status: 'IN_PROGRESS' });
+      const res = await workOrderService.listActive();
       setOrders(res.data);
     } catch {
       setError('Failed to load active work orders.');

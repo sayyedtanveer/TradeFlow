@@ -10,7 +10,9 @@ from typing import Optional
 
 class ReservationStatus(str, enum.Enum):
     RESERVED = "RESERVED"
+    PARTIALLY_ISSUED = "PARTIALLY_ISSUED"
     ISSUED = "ISSUED"
+    PARTIALLY_CONSUMED = "PARTIALLY_CONSUMED"
     CONSUMED = "CONSUMED"
     REJECTED = "REJECTED"
     RETURNED = "RETURNED"
@@ -29,8 +31,10 @@ class InventoryReservation:
         quantity: Decimal,
         status: ReservationStatus,
         unit_id: Optional[uuid.UUID] = None,
+        batch_id: Optional[uuid.UUID] = None,
         issued_quantity: Decimal = Decimal("0"),
         consumed_quantity: Decimal = Decimal("0"),
+        returned_quantity: Decimal = Decimal("0"),
         created_at: Optional[datetime] = None,
         updated_at: Optional[datetime] = None,
     ):
@@ -42,14 +46,16 @@ class InventoryReservation:
         self.quantity = quantity
         self.status = status
         self.unit_id = unit_id
+        self.batch_id = batch_id
         self.issued_quantity = issued_quantity
         self.consumed_quantity = consumed_quantity
+        self.returned_quantity = returned_quantity
         self.created_at = created_at or datetime.now(timezone.utc)
         self.updated_at = updated_at or datetime.now(timezone.utc)
 
     def issue(self, quantity: Decimal) -> None:
         """Issue material from reservation."""
-        if self.status != ReservationStatus.RESERVED:
+        if self.status not in (ReservationStatus.RESERVED, ReservationStatus.PARTIALLY_ISSUED):
             raise ValueError(f"Cannot issue reservation in {self.status} status")
 
         if quantity > (self.quantity - self.issued_quantity):
@@ -60,22 +66,31 @@ class InventoryReservation:
         self.issued_quantity += quantity
         if self.issued_quantity >= self.quantity:
             self.status = ReservationStatus.ISSUED
+        else:
+            self.status = ReservationStatus.PARTIALLY_ISSUED
 
         self.updated_at = datetime.now(timezone.utc)
 
     def consume(self, quantity: Decimal) -> None:
         """Consume material from reservation (during production)."""
-        if self.status not in (ReservationStatus.ISSUED, ReservationStatus.RESERVED):
+        if self.status not in (
+            ReservationStatus.ISSUED,
+            ReservationStatus.PARTIALLY_ISSUED,
+            ReservationStatus.PARTIALLY_CONSUMED,
+        ):
             raise ValueError(f"Cannot consume reservation in {self.status} status")
 
-        if quantity > (self.issued_quantity - self.consumed_quantity):
+        if quantity > (self.issued_quantity - self.consumed_quantity - self.returned_quantity):
             raise ValueError(
-                f"Cannot consume {quantity}: only {self.issued_quantity - self.consumed_quantity} issued"
+                "Cannot consume "
+                f"{quantity}: only {self.issued_quantity - self.consumed_quantity - self.returned_quantity} issued"
             )
 
         self.consumed_quantity += quantity
         if self.consumed_quantity >= self.quantity:
             self.status = ReservationStatus.CONSUMED
+        else:
+            self.status = ReservationStatus.PARTIALLY_CONSUMED
 
         self.updated_at = datetime.now(timezone.utc)
 
@@ -92,13 +107,18 @@ class InventoryReservation:
 
     def return_material(self, quantity: Decimal) -> None:
         """Return material to inventory (partial return)."""
-        if quantity > self.issued_quantity:
+        if quantity > (self.issued_quantity - self.consumed_quantity - self.returned_quantity):
             raise ValueError(
-                f"Cannot return {quantity}: only {self.issued_quantity} issued"
+                "Cannot return "
+                f"{quantity}: only {self.issued_quantity - self.consumed_quantity - self.returned_quantity} returnable"
             )
 
-        self.issued_quantity -= quantity
-        self.status = ReservationStatus.RETURNED
+        self.returned_quantity += quantity
+        self.status = (
+            ReservationStatus.RETURNED
+            if self.consumed_quantity == Decimal("0")
+            else ReservationStatus.PARTIALLY_CONSUMED
+        )
         self.updated_at = datetime.now(timezone.utc)
 
     @property
