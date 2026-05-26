@@ -9,7 +9,6 @@ from backend.app.interfaces.api.v1.routes.self_service_password_reset_router imp
 from backend.app.interfaces.api.v1.routes.tenants import router as tenants_router
 from backend.app.interfaces.api.v1.routes.files import router as files_router
 from backend.app.interfaces.api.v1.routes.inventory import router as inventory_router
-from backend.app.interfaces.api.v1.routes.material_onboarding import router as material_onboarding_router
 from backend.app.interfaces.api.v1.routes.master_data import router as master_data_router
 from backend.app.interfaces.api.v1.routes.batch_and_serial import router as batch_and_serial_router
 from backend.app.interfaces.api.v1.routes.products import router as products_router
@@ -39,6 +38,7 @@ from backend.app.interfaces.api.v1.routes.worker import router as worker_router
 from backend.app.interfaces.api.v1.routes.workflow import router as workflow_router
 from backend.app.interfaces.api.v1.routes.delivery_dashboard import router as delivery_dashboard_router
 from backend.app.interfaces.api.v1.routes.analytics import router as analytics_router
+from backend.app.interfaces.api.v1.routes.material_onboarding import router as material_onboarding_router
 from backend.app.infrastructure.persistence.models import material_consumption_model as _material_consumption_model
 from backend.app.infrastructure.persistence.models import pick_list_model as _pick_list_model
 
@@ -52,7 +52,6 @@ api_v1_router.include_router(password_reset_router)
 api_v1_router.include_router(tenants_router)
 api_v1_router.include_router(files_router)
 api_v1_router.include_router(inventory_router)
-api_v1_router.include_router(material_onboarding_router)
 api_v1_router.include_router(inventory_extended_router)
 api_v1_router.include_router(master_data_router)
 api_v1_router.include_router(batch_and_serial_router)
@@ -78,6 +77,7 @@ api_v1_router.include_router(worker_router)
 api_v1_router.include_router(workflow_router)
 api_v1_router.include_router(delivery_dashboard_router)
 api_v1_router.include_router(analytics_router)
+api_v1_router.include_router(material_onboarding_router)
 
 
 # --- Dynamic Module Registration ---

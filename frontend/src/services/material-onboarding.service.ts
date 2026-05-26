@@ -40,13 +40,12 @@ export const materialOnboardingService = {
     }
   },
   upload: (file: File) => {
-    // Debug: Log auth state before upload
     console.log('[Material Onboarding] Starting upload', {
       fileName: file.name,
       fileSize: file.size,
       timestamp: new Date().toISOString(),
     })
-    
+
     const body = new FormData()
     body.append('file', file)
     return apiClient.post<{ session_id: string; headers: string[]; mapping: string }>('/inventory/material-onboarding/sessions', body)

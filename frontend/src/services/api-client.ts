@@ -39,7 +39,6 @@ export function isSessionInvalidError(error: unknown): boolean {
 
   const requestPath = normalizeRequestUrl(error.config?.url)
   const detail = authFailureDetail(error)
-  const tokenWasSent = Boolean(error.config?.headers?.Authorization)
 
   const explicitInvalid =
     detail.includes("auth_failed") ||
@@ -120,42 +119,60 @@ export function extractErrorMessage(error: AxiosError<any>): string {
   return error.response.statusText || "An error occurred"
 }
 
+const DEBUG_ONBOARDING_ENDPOINT = "/inventory/material-onboarding/sessions"
+
 // Request interceptor: attach token and clean up params
 apiClient.interceptors.request.use(
   (config) => {
     const { token, tenant_id } = useAuthStore.getState()
-    
-    // Always set Authorization header if token exists
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-      config.headers["Authorization"] = `Bearer ${token}`  // Redundant but explicit for FormData
+
+    const requestPath = normalizeRequestUrl(config.url)
+    if (requestPath === DEBUG_ONBOARDING_ENDPOINT) {
+      console.log("[AuthDebug][Request] onboarding sessions - pre-headers", {
+        url: config.url,
+        method: config.method,
+        tokenPresent: Boolean(token),
+        tenantPresent: Boolean(tenant_id),
+        tokenPrefix: token ? token.slice(0, 12) : null,
+        storeTenantId: tenant_id,
+        existingAuthHeader: Boolean(
+          (config.headers as any)?.Authorization || (config.headers as any)?.authorization
+        ),
+      })
     }
-    
+
+    // Ensure headers is always a mutable plain object
+    const headers: Record<string, string> = {
+      ...(config.headers ? (config.headers as Record<string, string>) : {}),
+    }
+
     // Add tenant ID header for multi-tenant support
     if (tenant_id) {
-      config.headers["X-Tenant-ID"] = tenant_id
+      headers["X-Tenant-ID"] = tenant_id
     }
 
     if (config.data instanceof FormData) {
       // For FormData, remove the default JSON content-type so browser can set proper multipart boundary
-      delete config.headers["Content-Type"]
-      
-      // Ensure Authorization header is preserved for FormData requests
-      if (token) {
-        config.headers["Authorization"] = `Bearer ${token}`
-      }
-      
+      delete headers["Content-Type"]
     }
-    
+
+    // Always set Authorization header in final form (after FormData header adjustments)
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`
+    }
+
+    config.headers = headers as any
+
     // Remove empty/null query parameters to prevent backend validation errors
     if (config.params) {
-      Object.keys(config.params).forEach(key => {
-        if (config.params[key] === null || config.params[key] === undefined || config.params[key] === '') {
-          delete config.params[key]
+      Object.keys(config.params).forEach((key) => {
+        const value = (config.params as Record<string, unknown>)[key]
+        if (value === null || value === undefined || value === "") {
+          delete (config.params as Record<string, unknown>)[key]
         }
       })
     }
-    
+
     return config
   },
   (error) => Promise.reject(error)
@@ -180,7 +197,6 @@ apiClient.interceptors.response.use(
     // Extract and enhance error message for better debugging
     const errorMessage = extractErrorMessage(error)
     const tokenWasSent = Boolean(error.config?.headers?.Authorization)
-    
     console.error("API Error:", {
       status: error.response?.status,
       message: errorMessage,

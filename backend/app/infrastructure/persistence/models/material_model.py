@@ -23,16 +23,16 @@ class MaterialModel(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    code = Column(String(50), nullable=False)
-    item_code = Column(String(50), nullable=True)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    item_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     code_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    name = Column(String(255), nullable=False)
-    description = Column(String, nullable=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
-    category_id = Column(UUID(as_uuid=True), ForeignKey("material_categories.id"), index=True, nullable=True)
-    base_unit_id = Column(UUID(as_uuid=True), ForeignKey("units_of_measure.id"), nullable=True)
+    category_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("material_categories.id"), index=True, nullable=True)
+    base_unit_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("units_of_measure.id"), nullable=True)
     
-    material_type = Column(String(20), nullable=False, default="raw") # raw, finished
+    material_type: Mapped[str] = mapped_column(String(20), nullable=False, default="raw")  # raw, finished
 
     # Stock and Cost fields — stored as NUMERIC for precision
     current_cost: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False, default=0)
@@ -40,12 +40,12 @@ class MaterialModel(Base):
     reserved_stock: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     reorder_level: Mapped[Optional[float]] = mapped_column(Numeric(18, 4), nullable=True)
 
-    location_id = Column(UUID(as_uuid=True), ForeignKey("locations.id"), nullable=True)
+    location_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("locations.id"), nullable=True)
     is_batch_tracked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_serialized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     inspection_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    inspection_template_id = Column(UUID(as_uuid=True), ForeignKey("inspection_templates.id"), nullable=True)
+    inspection_template_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("inspection_templates.id"), nullable=True)
     safety_stock: Mapped[Optional[float]] = mapped_column(Numeric(18, 4), nullable=True)
     lead_time_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
