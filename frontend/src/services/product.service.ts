@@ -5,7 +5,7 @@ import {
   ItemVariant,
   ItemVariantListResponse,
   ItemVariantSearchListResponse,
-} from "@/types/bom.types";
+} from "@/types/product.types";
 
 export interface CreateTemplateInput {
   code?: string | null;

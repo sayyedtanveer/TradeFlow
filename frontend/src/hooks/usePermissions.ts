@@ -32,8 +32,6 @@ export function usePermissions() {
   const canWrite = (): boolean =>
     hasPermission(Permission.INVENTORY_WRITE) || hasPermission(Permission.PROCUREMENT_WRITE)
   const canDelete = (): boolean => hasRole([UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER])
-  const canEditBOM = (): boolean => hasRole([UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER])
-  const canViewBOM = (): boolean => !!user
 
   /** Subcontract receive / GRN / PO write (storekeeper + admin). */
   const canProcurementWrite = (): boolean => hasPermission(Permission.PROCUREMENT_WRITE)
@@ -52,8 +50,6 @@ export function usePermissions() {
     isQc,
     canWrite,
     canDelete,
-    canEditBOM,
-    canViewBOM,
     canProcurementWrite,
     canQualityWrite,
     canInventoryWrite,

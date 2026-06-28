@@ -11,19 +11,16 @@ class InventoryReservationService:
     Responsibilities:
     - Reserve stock when order is confirmed
     - Release stock when order is cancelled
-    - Identify shortages and trigger work order creation
     """
 
-    def __init__(self, inventory_service, manufacturing_service):
+    def __init__(self, inventory_service):
         """
         Initialize inventory reservation service.
         
         Args:
             inventory_service: External inventory domain service
-            manufacturing_service: External manufacturing domain service
         """
         self.inventory_service = inventory_service
-        self.manufacturing_service = manufacturing_service
 
     async def reserve_for_order_line(
         self,
@@ -35,13 +32,13 @@ class InventoryReservationService:
         sales_order_id: UUID,
         sales_order_line_id: UUID,
         delivery_date,
-    ) -> tuple[Decimal, Decimal, UUID | None]:
+    ) -> tuple[Decimal, Decimal]:
         """
         Reserve inventory for an order line.
         
         Allocation strategy:
         1. Try to allocate from available stock
-        2. If shortage: create work order, allocate what's available
+        2. If shortage: return shortage quantity (caller handles validation)
         
         Args:
             tenant_id: Tenant ID
@@ -49,11 +46,12 @@ class InventoryReservationService:
             product_type: Product type ("variant" or "finished_product")
             uom_id: Unit of measure ID
             quantity: Quantity to reserve
-            sales_order_line_id: Sales order line ID (for work order linkage)
-            delivery_date: Delivery date (due date for work orders)
+            sales_order_id: Sales order ID
+            sales_order_line_id: Sales order line ID
+            delivery_date: Delivery date
             
         Returns:
-            Tuple of (allocated_qty: Decimal, backorder_qty: Decimal, work_order_id: UUID | None)
+            Tuple of (allocated_qty: Decimal, shortage_qty: Decimal)
         """
         try:
             # Get available stock from inventory service
@@ -78,21 +76,7 @@ class InventoryReservationService:
                     reference_id=sales_order_line_id,
                 )
             
-            # Create work order for shortage if any
-            work_order_id = None
-            if shortage_qty > 0:
-                work_order_id = await self.manufacturing_service.create_work_order(
-                    tenant_id=tenant_id,
-                    product_id=product_id,
-                    product_type=product_type,
-                    quantity=shortage_qty,
-                    uom_id=uom_id,
-                    due_date=delivery_date,
-                    sales_order_id=sales_order_id,
-                    sales_order_line_id=sales_order_line_id,
-                )
-            
-            return allocated_qty, shortage_qty, work_order_id
+            return allocated_qty, shortage_qty
             
         except Exception as e:
             # Log and re-raise with context

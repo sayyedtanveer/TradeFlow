@@ -24,7 +24,7 @@ from backend.app.infrastructure.persistence.repositories.transaction_repository 
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
 from backend.app.infrastructure.persistence.models.inventory_management_models import StockLedgerModel
 from backend.app.application.inventory.services.item_code_service import ItemCodeService
-from backend.app.application.manufacturing.services.inventory_service import InventoryService
+from backend.app.application.inventory.services.stock_service import InventoryService
 from datetime import datetime
 from datetime import timezone
 

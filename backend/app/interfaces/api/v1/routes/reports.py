@@ -97,66 +97,6 @@ async def near_empty_batches(
     return result
 
 
-@router.get("/inventory/consumption-variance")
-async def consumption_variance_report(
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    session: AsyncSession = Depends(_get_db_session),
-    work_order_id: Optional[uuid.UUID] = Query(None),
-):
-    from sqlalchemy import select
-    from backend.app.infrastructure.persistence.models.material_consumption_model import (
-        MaterialConsumptionRecordModel,
-    )
-
-    stmt = select(MaterialConsumptionRecordModel).where(
-        MaterialConsumptionRecordModel.tenant_id == tenant_id
-    )
-    if work_order_id:
-        stmt = stmt.where(MaterialConsumptionRecordModel.work_order_id == work_order_id)
-    rows = (await session.execute(stmt)).scalars().all()
-    return [
-        {
-            "work_order_id": str(r.work_order_id),
-            "material_id": str(r.material_id),
-            "planned_quantity": r.planned_quantity,
-            "actual_quantity": r.actual_quantity,
-            "variance_quantity": r.variance_quantity,
-            "recorded_at": r.recorded_at.isoformat(),
-        }
-        for r in rows
-    ]
-
-
-@router.get("/production/summary")
-async def production_summary(
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    session: AsyncSession = Depends(_get_db_session),
-):
-    """Work order summary by status."""
-    role = request.scope.get("user_role", "viewer")
-    try:
-        svc = ReportingService(session)
-        return await svc.work_order_summary(tenant_id, role.upper())
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-
-
-@router.get("/production/efficiency")
-async def production_efficiency(
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    session: AsyncSession = Depends(_get_db_session),
-):
-    """Work order efficiency — scrap rates by month."""
-    role = request.scope.get("user_role", "viewer")
-    try:
-        svc = ReportingService(session)
-        return await svc.work_order_efficiency(tenant_id, role.upper())
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-
-
 @router.get("/sales/summary")
 async def sales_summary(
     request: Request,
@@ -199,21 +139,6 @@ async def procurement_summary(
     try:
         svc = ReportingService(session)
         return await svc.procurement_summary(tenant_id, role.upper())
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-
-
-@router.get("/quality/summary")
-async def quality_summary(
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    session: AsyncSession = Depends(_get_db_session),
-):
-    """Quality inspection results summary."""
-    role = request.scope.get("user_role", "viewer")
-    try:
-        svc = ReportingService(session)
-        return await svc.quality_summary(tenant_id, role.upper())
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
@@ -452,31 +377,6 @@ async def inventory_summary_pdf(
         raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/dashboard/manufacturing")
-async def manufacturing_dashboard(
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    session: AsyncSession = Depends(_get_db_session),
-):
-    """Manufacturing dashboard with WO status, efficiency, and capacity metrics."""
-    role = request.scope.get("user_role", "viewer")
-    try:
-        svc = ReportingService(session)
-        summary = await svc.work_order_summary(tenant_id, role.upper())
-        efficiency = await svc.work_order_efficiency(tenant_id, role.upper())
-        
-        return {
-            "work_orders": summary,
-            "efficiency": efficiency,
-            "capacity": {
-                "active_orders": sum(row.get("count", 0) for row in summary.get("by_status", []) if row.get("status") in ["IN_PROGRESS", "READY"]),
-                "utilization": "75%",  # Could be calculated from actual data
-            },
-        }
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
 
 
 @router.get("/dashboard/procurement")

@@ -69,7 +69,7 @@ export function Sidebar() {
             <div className="flex w-full items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-blue-300/80">
-                  MedTrack ERP
+                  TradeFlow ERP
                 </p>
                 <p className="truncate pt-1 text-lg font-semibold text-white">
                   {tenantName || "Factory Workspace"}

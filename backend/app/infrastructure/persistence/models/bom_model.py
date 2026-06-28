@@ -12,16 +12,16 @@ from sqlalchemy import (
     Numeric,
     Index,
     func,
-    select
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship, column_property
-
-from backend.app.infrastructure.persistence.models.bom_operation_model import BOMOperationModel
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.infrastructure.persistence.database import Base
 
 
 class BOMModel(Base):
+    """Legacy BOM model. Manufacturing tables have been dropped;
+    this model is retained only to avoid import errors from services that still
+    reference it."""
     __tablename__ = "boms"
     
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -51,17 +51,6 @@ class BOMModel(Base):
         back_populates="bom",
         cascade="all, delete-orphan",
         lazy="selectin"
-    )
-
-    operations: Mapped[List["BOMOperationModel"]] = relationship(
-        "BOMOperationModel",
-        back_populates="bom",
-        cascade="all, delete-orphan",
-        lazy="selectin"
-    )
-
-    operations_count: Mapped[int] = column_property(
-        select(func.count(BOMOperationModel.id)).where(BOMOperationModel.bom_id == id).correlate_except(BOMOperationModel).scalar_subquery()
     )
 
     __table_args__ = (

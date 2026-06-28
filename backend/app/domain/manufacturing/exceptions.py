@@ -1,7 +1,12 @@
-"""Domain exceptions for the manufacturing module."""
+"""Manufacturing domain exceptions stub — retained for backward compatibility.
+
+These exceptions are referenced by retained infrastructure code and will be
+removed when manufacturing tables are dropped.
+"""
 
 
 class InsufficientStockError(Exception):
+    """Deprecated: Use backend.app.domain.shared.exceptions.inventory_exceptions.InsufficientStockError instead."""
     error_code = "INSUFFICIENT_STOCK"
 
 

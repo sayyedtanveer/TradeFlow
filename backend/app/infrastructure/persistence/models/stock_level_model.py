@@ -31,6 +31,9 @@ class StockLevelModel(Base):
     location_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("locations.id", ondelete="RESTRICT"), nullable=False
     )
+    warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("warehouses.id", ondelete="SET NULL"), nullable=True
+    )
     stock_status: Mapped[str] = mapped_column(String(30), nullable=False)
     quantity: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False, default=0)
     is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

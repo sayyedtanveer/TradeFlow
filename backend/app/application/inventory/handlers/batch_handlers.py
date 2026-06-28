@@ -24,7 +24,7 @@ from backend.app.infrastructure.persistence.repositories.batch_repository import
 from backend.app.infrastructure.persistence.repositories.material_repository import MaterialRepository
 from backend.app.infrastructure.persistence.repositories.transaction_repository import TransactionRepository
 from backend.app.infrastructure.persistence.unit_of_work import SQLAlchemyUnitOfWork
-from backend.app.application.manufacturing.services.inventory_service import InventoryService
+from backend.app.application.inventory.services.stock_service import InventoryService
 
 
 # ── Result DTOs ────────────────────────────────────────────────────────────────

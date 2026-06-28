@@ -9,10 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import selectinload
 
-from backend.app.application.manufacturing.services.inventory_service import InventoryService
+from backend.app.application.inventory.services.stock_service import InventoryService
 from backend.app.application.supply_chain.po_number_service import PONumberService
 from backend.app.application.supply_chain.supplier_portal_service import SupplierPortalService
-from backend.app.application.supply_chain.subcontract_number_service import SubcontractNumberService
+
 from backend.app.infrastructure.persistence.models.location_model import LocationModel
 from backend.app.infrastructure.persistence.models.inventory_transaction_model import InventoryTransactionModel
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
@@ -29,7 +29,7 @@ from backend.app.infrastructure.persistence.models.quality_model import (
     SupplierQuotationModel,
 )
 from backend.app.infrastructure.persistence.models.stock_level_model import StockLevelModel
-from backend.app.infrastructure.persistence.models.subcontract_model import SubcontractMaterialIssueModel, SubcontractOrderModel
+
 from backend.app.infrastructure.persistence.models.supplier_model import SupplierModel
 from backend.app.application.procurement.handlers.purchase_order_handler import PurchaseOrderHandler
 from backend.app.application.procurement.handlers.supplier_quotation_handler import SupplierQuotationHandler
@@ -48,7 +48,6 @@ from backend.app.interfaces.api.v1.schemas.supply_chain_schemas import (
     POLineIn, PurchaseOrderCreate,
     ReceiveLineItem, GoodsReceiptRequest,
     QualityInspectRequest, NCRCreateRequest,
-    SubcontractOrderCreate, SubcontractIssueRequest, SubcontractReceiveRequest,
     SupplierQuotationCreate, SupplierQuotationResponse,
     MaterialRequestCreate, MaterialRequestUpdate, MaterialRequestResponse,
     RFQLineIn, RFQCreate, RFQAwardRequest,
@@ -223,33 +222,6 @@ async def _first_quarantine_location(session, tenant_id: uuid.UUID) -> Optional[
     )
     r = await session.execute(stmt)
     return r.scalar_one_or_none()
-
-
-async def _subcontractor_location(session, tenant_id: uuid.UUID, supplier_id: uuid.UUID) -> uuid.UUID:
-    """Reuse or create a location row for this supplier (type subcontractor)."""
-    code = f"SUB-{supplier_id}"
-    stmt = select(LocationModel).where(
-        LocationModel.tenant_id == tenant_id,
-        LocationModel.code == code,
-        LocationModel.is_deleted.is_(False),
-    )
-    r = await session.execute(stmt)
-    loc = r.scalar_one_or_none()
-    if loc:
-        return loc.id
-    sup = await session.get(SupplierModel, supplier_id)
-    name = f"Subcontractor: {sup.code}" if sup else f"Subcontractor {supplier_id}"
-    loc = LocationModel(
-        id=uuid.uuid4(),
-        tenant_id=tenant_id,
-        name=name[:100],
-        type="subcontractor",
-        code=code,
-        is_active=True,
-    )
-    session.add(loc)
-    await session.flush()
-    return loc.id
 
 
 # ── Suppliers (tenant) ────────────────────────────────────────────────────────
@@ -1950,204 +1922,6 @@ async def quarantine_stock(
         for m_id, loc_id, qty, code, name, loc_name in rows
     ]
 
-
-# ── Subcontract ───────────────────────────────────────────────────────────────
-
-
-@router.post(
-    "/subcontract/orders",
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permission("procurement:write"))],
-)
-async def create_subcontract_order(
-    body: SubcontractOrderCreate,
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-):
-    container = get_container(request)
-    async with container.session_factory() as session:
-        num = SubcontractNumberService(session)
-        on = await num.generate(tenant_id)
-        o = SubcontractOrderModel(
-            id=uuid.uuid4(),
-            tenant_id=tenant_id,
-            order_number=on,
-            supplier_id=body.supplier_id,
-            product_id=body.product_id,
-            product_type=body.product_type,
-            quantity=float(body.quantity),
-            status="draft",
-        )
-        session.add(o)
-        await session.commit()
-    return {"id": str(o.id), "order_number": on}
-
-
-@router.get("/subcontract/orders")
-async def list_subcontract_orders(
-    request: Request,
-    status: Optional[str] = Query(None, description="Filter by status: draft, issued, received"),
-    supplier_id: Optional[uuid.UUID] = Query(None, description="Filter by supplier"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-):
-    """List subcontract orders with pagination and filtering."""
-    container = get_container(request)
-    async with container.session_factory() as session:
-        query = select(SubcontractOrderModel).where(
-            SubcontractOrderModel.tenant_id == tenant_id,
-            SubcontractOrderModel.is_deleted.is_(False),
-        )
-        
-        if status:
-            query = query.where(SubcontractOrderModel.status == status)
-        if supplier_id:
-            query = query.where(SubcontractOrderModel.supplier_id == supplier_id)
-        
-        # Count total
-        count_stmt = select(func.count()).select_from(query.subquery())
-        total = await session.execute(count_stmt)
-        total_count = total.scalar_one()
-        
-        # Paginate
-        query = query.order_by(SubcontractOrderModel.created_at.desc()).offset(skip).limit(limit)
-        r = await session.execute(query)
-        rows = r.scalars().all()
-    
-    return {
-        "total": total_count,
-        "skip": skip,
-        "limit": limit,
-        "items": [
-            {
-                "id": str(x.id),
-                "order_number": x.order_number,
-                "supplier_id": str(x.supplier_id),
-                "product_id": str(x.product_id),
-                "product_type": x.product_type,
-                "quantity": float(x.quantity),
-                "status": x.status,
-            }
-            for x in rows
-        ],
-    }
-
-
-@router.get("/subcontract/orders/{order_id}")
-async def get_subcontract_order(
-    order_id: uuid.UUID,
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-):
-    container = get_container(request)
-    async with container.session_factory() as session:
-        o = await session.get(SubcontractOrderModel, order_id)
-        if not o or o.tenant_id != tenant_id or o.is_deleted:
-            raise HTTPException(status_code=404, detail="Subcontract order not found")
-        iss_stmt = select(SubcontractMaterialIssueModel).where(
-            SubcontractMaterialIssueModel.subcontract_order_id == order_id,
-            SubcontractMaterialIssueModel.tenant_id == tenant_id,
-        )
-        ir = await session.execute(iss_stmt)
-        issues = ir.scalars().all()
-    return {
-        "id": str(o.id),
-        "order_number": o.order_number,
-        "supplier_id": str(o.supplier_id),
-        "product_id": str(o.product_id),
-        "product_type": o.product_type,
-        "quantity": float(o.quantity),
-        "status": o.status,
-        "issues": [
-            {
-                "id": str(i.id),
-                "material_id": str(i.material_id),
-                "quantity": float(i.quantity),
-                "batch_number": i.batch_number,
-                "issued_at": i.issued_at.isoformat() if i.issued_at else None,
-            }
-            for i in issues
-        ],
-    }
-
-
-@router.post(
-    "/subcontract/orders/{order_id}/issue",
-    dependencies=[Depends(require_permission("procurement:write"))],
-)
-async def issue_subcontract_material(
-    order_id: uuid.UUID,
-    body: SubcontractIssueRequest,
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    user_id: uuid.UUID = Depends(get_current_user_id),
-):
-    container = get_container(request)
-    async with container.session_factory() as session:
-        o = await session.get(SubcontractOrderModel, order_id)
-        if not o or o.tenant_id != tenant_id or o.is_deleted:
-            raise HTTPException(status_code=404, detail="Subcontract order not found")
-        sub_loc = await _subcontractor_location(session, tenant_id, o.supplier_id)
-        mat = await session.get(MaterialModel, body.material_id)
-        inv = InventoryService(session)
-        await inv.issue_to_subcontractor(
-            tenant_id=tenant_id,
-            material_id=body.material_id,
-            quantity=body.quantity,
-            from_location_id=body.from_location_id,
-            subcontractor_location_id=sub_loc,
-            subcontract_order_id=o.id,
-            unit_id=mat.base_unit_id if mat else None,
-            created_by=user_id,
-        )
-        session.add(
-            SubcontractMaterialIssueModel(
-                id=uuid.uuid4(),
-                tenant_id=tenant_id,
-                subcontract_order_id=o.id,
-                material_id=body.material_id,
-                quantity=float(body.quantity),
-                batch_number=body.batch_number,
-            )
-        )
-        o.status = "issued"
-        o.updated_at = datetime.now(timezone.utc)
-        await session.commit()
-    return {"status": "ok"}
-
-
-@router.post(
-    "/subcontract/orders/{order_id}/receive",
-    dependencies=[Depends(require_permission("procurement:write"))],
-)
-async def receive_subcontract(
-    order_id: uuid.UUID,
-    body: SubcontractReceiveRequest,
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    user_id: uuid.UUID = Depends(get_current_user_id),
-):
-    container = get_container(request)
-    async with container.session_factory() as session:
-        o = await session.get(SubcontractOrderModel, order_id)
-        if not o or o.tenant_id != tenant_id or o.is_deleted:
-            raise HTTPException(status_code=404, detail="Subcontract order not found")
-        mat = await session.get(MaterialModel, body.material_id)
-        inv = InventoryService(session)
-        await inv.receive_subcontract_finished_goods(
-            tenant_id=tenant_id,
-            material_id=body.material_id,
-            quantity=body.quantity,
-            warehouse_location_id=body.warehouse_location_id,
-            subcontract_order_id=o.id,
-            unit_id=mat.base_unit_id if mat else None,
-            created_by=user_id,
-        )
-        o.status = "received"
-        o.updated_at = datetime.now(timezone.utc)
-        await session.commit()
-    return {"status": "ok"}
 
 
 # ── Material Requests (continued) ────────────────────────────────────────────

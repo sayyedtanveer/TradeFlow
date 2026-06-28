@@ -890,20 +890,14 @@ async def approve_order(
 
         from backend.app.domain.sales.services.credit_validation_service import CreditValidationService
         from backend.app.domain.sales.services.inventory_reservation_service import InventoryReservationService
-        from backend.app.application.sales.manufacturing_integration import SalesManufacturingIntegrationService
+        from backend.app.application.sales.noop_manufacturing_service import NoOpManufacturingService
         from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
-        from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
-        from backend.app.application.manufacturing.services.inventory_service import InventoryService as StockInventoryService
+        from backend.app.application.inventory.services.stock_service import InventoryService as StockInventoryService
 
         credit_service = CreditValidationService(client_repo)
         stock_inventory = StockInventoryService(session)
-        wo_handler = WorkOrderHandler(session).with_uow(uow)
         inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
-        mfg_integ = SalesManufacturingIntegrationService(
-            wo_handler,
-            uow,
-            created_by=user_id,
-        ).with_event_dispatcher(container.event_dispatcher)
+        mfg_integ = NoOpManufacturingService()
         inv_service = InventoryReservationService(inv_integ, mfg_integ)
         confirm_handler = ConfirmSalesOrderCommandHandler(order_repo, client_repo, credit_service, inv_service, uow)
 
@@ -1007,20 +1001,14 @@ async def confirm_order(
         
         from backend.app.domain.sales.services.credit_validation_service import CreditValidationService
         from backend.app.domain.sales.services.inventory_reservation_service import InventoryReservationService
-        from backend.app.application.sales.manufacturing_integration import SalesManufacturingIntegrationService
+        from backend.app.application.sales.noop_manufacturing_service import NoOpManufacturingService
         from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
-        from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
-        from backend.app.application.manufacturing.services.inventory_service import InventoryService as StockInventoryService
+        from backend.app.application.inventory.services.stock_service import InventoryService as StockInventoryService
         
         credit_service = CreditValidationService(client_repo)
         stock_inventory = StockInventoryService(session)
-        wo_handler = WorkOrderHandler(session).with_uow(uow)
         inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
-        mfg_integ = SalesManufacturingIntegrationService(
-            wo_handler,
-            uow,
-            created_by=user_id,
-        ).with_event_dispatcher(container.event_dispatcher)
+        mfg_integ = NoOpManufacturingService()
         inv_service = InventoryReservationService(inv_integ, mfg_integ)
 
         handler = ConfirmSalesOrderCommandHandler(order_repo, client_repo, credit_service, inv_service, uow)
@@ -1068,19 +1056,13 @@ async def ship_order(
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
         
         from backend.app.domain.sales.services.inventory_reservation_service import InventoryReservationService
-        from backend.app.application.sales.manufacturing_integration import SalesManufacturingIntegrationService
+        from backend.app.application.sales.noop_manufacturing_service import NoOpManufacturingService
         from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
-        from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
-        from backend.app.application.manufacturing.services.inventory_service import InventoryService as StockInventoryService
+        from backend.app.application.inventory.services.stock_service import InventoryService as StockInventoryService
         
         stock_inventory = StockInventoryService(session)
-        wo_handler = WorkOrderHandler(session).with_uow(uow)
         inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
-        mfg_integ = SalesManufacturingIntegrationService(
-            wo_handler,
-            uow,
-            created_by=user_id,
-        ).with_event_dispatcher(container.event_dispatcher)
+        mfg_integ = NoOpManufacturingService()
         inv_service = InventoryReservationService(inv_integ, mfg_integ)
         
         handler = ShipOrderCommandHandler(order_repo, inv_service, uow)
@@ -1208,20 +1190,14 @@ async def cancel_order(
         
         from backend.app.domain.sales.services.credit_validation_service import CreditValidationService
         from backend.app.domain.sales.services.inventory_reservation_service import InventoryReservationService
-        from backend.app.application.sales.manufacturing_integration import SalesManufacturingIntegrationService
+        from backend.app.application.sales.noop_manufacturing_service import NoOpManufacturingService
         from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
-        from backend.app.application.manufacturing.handlers.work_order_handler import WorkOrderHandler
-        from backend.app.application.manufacturing.services.inventory_service import InventoryService as StockInventoryService
+        from backend.app.application.inventory.services.stock_service import InventoryService as StockInventoryService
         
         credit_service = CreditValidationService(client_repo)
         stock_inventory = StockInventoryService(session)
-        wo_handler = WorkOrderHandler(session).with_uow(uow)
         inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
-        mfg_integ = SalesManufacturingIntegrationService(
-            wo_handler,
-            uow,
-            created_by=user_id,
-        ).with_event_dispatcher(container.event_dispatcher)
+        mfg_integ = NoOpManufacturingService()
         inv_service = InventoryReservationService(inv_integ, mfg_integ)
 
         handler = CancelSalesOrderCommandHandler(order_repo, credit_service, inv_service, uow)

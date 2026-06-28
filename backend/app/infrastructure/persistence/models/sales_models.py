@@ -275,10 +275,7 @@ class SalesOrderLineModel(Base):
         Numeric(18, 4), nullable=False, default=0
     )
 
-    # Work order linkage (if created for shortage)
-    work_order_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), nullable=True
-    )
+
 
     # Status
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")

@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.application.manufacturing.services.inventory_service import InventoryService
+from backend.app.application.inventory.services.stock_service import InventoryService
 from backend.app.domain.inventory.entities.inventory_reservation import (
     InventoryReservation,
     ReservationStatus,

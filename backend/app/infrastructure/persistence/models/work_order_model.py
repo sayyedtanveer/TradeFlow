@@ -18,7 +18,6 @@ from backend.app.infrastructure.persistence.database import Base
 # Type hints for forward references
 if TYPE_CHECKING:
     from backend.app.infrastructure.persistence.models.material_model import MaterialModel
-    from backend.app.infrastructure.persistence.models.operation_model import OperationModel
 
 
 class WorkOrderPriority(str, enum.Enum):
@@ -46,7 +45,7 @@ class WorkOrderModel(Base):
         UUID(as_uuid=True), ForeignKey("item_variants.id", ondelete="RESTRICT"), nullable=False
     )
     bom_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("boms.id", ondelete="RESTRICT"), nullable=False
+        UUID(as_uuid=True), nullable=False
     )
     sales_order_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     sales_order_line_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
@@ -128,7 +127,7 @@ class JobCardModel(Base):
         UUID(as_uuid=True), ForeignKey("work_orders.id", ondelete="CASCADE"), nullable=False, index=True
     )
     operation_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("operations.id", ondelete="RESTRICT"), nullable=False
+        UUID(as_uuid=True), nullable=False
     )
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     assigned_to: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
@@ -146,7 +145,6 @@ class JobCardModel(Base):
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     work_order: Mapped["WorkOrderModel"] = relationship("WorkOrderModel", back_populates="job_cards")
-    operation: Mapped["OperationModel"] = relationship("OperationModel", lazy="joined")
 
 
 class ProductionRecordModel(Base):

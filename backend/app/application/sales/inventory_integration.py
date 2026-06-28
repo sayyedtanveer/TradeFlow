@@ -9,7 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from backend.app.application.manufacturing.services.inventory_service import (
+from backend.app.application.inventory.services.stock_service import (
     InventoryService as StockInventoryService,
 )
 from backend.app.infrastructure.persistence.models.inventory_transaction_model import (

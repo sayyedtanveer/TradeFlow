@@ -11,7 +11,6 @@ import storekeeperService, {
   type OperationalBatchItem,
   type PendingReturnItem,
 } from '@/services/storekeeper.service';
-import workOrderService from '@/services/work-order.service';
 
 const qty = (value: number | null | undefined) => Number(value ?? 0).toFixed(3);
 const tone = (status: string) => {
@@ -65,9 +64,6 @@ export default function StorekeeperDashboardPage() {
       });
     },
     onSuccess: refresh,
-  });
-  const pickListMutation = useMutation({
-    mutationFn: (woId: string) => workOrderService.generatePickList(woId),
   });
 
   const issueQueue = issueRes.data?.data ?? [];
@@ -159,7 +155,6 @@ export default function StorekeeperDashboardPage() {
                       onChange={(e) => setIssueQty((prev) => ({ ...prev, [key]: e.target.value }))}
                     />
                     <Button onClick={() => issueMutation.mutate(item)}>Issue</Button>
-                    <Button variant="outline" onClick={() => pickListMutation.mutate(item.work_order_id)}>Pick list</Button>
                   </div>
                 </div>
               </div>

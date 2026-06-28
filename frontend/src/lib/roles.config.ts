@@ -26,15 +26,10 @@ export type AppModuleKey =
   | "dashboard"
   | "systemMap"
   | "products"
-  | "bom"
-  | "manufacturing"
   | "inventory"
-  | "workOrders"
   | "procurement"
-  | "quality"
   | "sales"
   | "finance"
-  | "shopFloor"
   | "reports"
   | "auditLogs"
   | "users"
@@ -46,15 +41,10 @@ export const ROLE_MODULE_ACCESS: Record<UserRole, AppModuleKey[]> = {
     "dashboard",
     "systemMap",
     "products",
-    "bom",
-    "manufacturing",
     "inventory",
-    "workOrders",
     "procurement",
-    "quality",
     "sales",
     "finance",
-    "shopFloor",
     "reports",
     "auditLogs",
     "users",
@@ -64,40 +54,31 @@ export const ROLE_MODULE_ACCESS: Record<UserRole, AppModuleKey[]> = {
     "dashboard",
     "systemMap",
     "products",
-    "bom",
-    "manufacturing",
     "inventory",
-    "workOrders",
     "procurement",
-    "quality",
     "sales",
     "finance",
-    "shopFloor",
     "reports",
     "auditLogs",
     "users",
     "settings",
   ],
-  [UserRole.PLANNER]: ["dashboard", "bom", "workOrders", "inventory", "procurement", "reports"],
-  [UserRole.STOREKEEPER]: ["dashboard", "inventory", "workOrders", "procurement"],
-  [UserRole.OPERATOR]: ["dashboard", "inventory", "workOrders", "procurement", "quality", "manufacturing"],
+  [UserRole.PLANNER]: ["dashboard", "inventory", "procurement", "reports"],
+  [UserRole.STOREKEEPER]: ["dashboard", "inventory", "procurement"],
+  [UserRole.OPERATOR]: ["dashboard", "inventory", "procurement"],
   [UserRole.MANAGER]: [
     "dashboard",
     "products",
-    "bom",
-    "manufacturing",
     "inventory",
-    "workOrders",
     "procurement",
-    "quality",
     "sales",
     "finance",
     "reports",
   ],
   [UserRole.ACCOUNTANT]: ["dashboard", "finance", "reports"],
   [UserRole.SALES]: ["dashboard", "sales"],
-  [UserRole.QC]: ["dashboard", "quality", "workOrders", "inventory"],
-  [UserRole.WORKER]: ["shopFloor"],
+  [UserRole.QC]: ["dashboard", "inventory"],
+  [UserRole.WORKER]: ["dashboard"],
   [UserRole.CLIENT]: ["dashboard", "sales"],
   [UserRole.SUPPLIER]: ["supplierPortal"],
   [UserRole.VIEWER]: ["dashboard", "inventory", "sales", "reports"],
@@ -110,8 +91,8 @@ export const ROLE_DASHBOARD_PATHS: Partial<Record<UserRole, string>> = {
   [UserRole.STOREKEEPER]: "/dashboard/storekeeper",
   [UserRole.SALES]: "/dashboard/sales",
   [UserRole.ACCOUNTANT]: "/finance",
-  [UserRole.QC]: "/procurement/quality",
-  [UserRole.WORKER]: "/shop-floor",
+  [UserRole.QC]: "/",
+  [UserRole.WORKER]: "/",
   [UserRole.CLIENT]: "/client",
   [UserRole.SUPPLIER]: "/supplier-portal",
   [UserRole.OPERATOR]: "/dashboard/storekeeper",
@@ -281,8 +262,6 @@ export const MODULE_ROLES: Record<string, UserRole[]> = {
   ],
   systemMap: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.PLANNER],
   products: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER],
-  bom: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.PLANNER, UserRole.OPERATOR],
-  manufacturing: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.PLANNER],
   inventory: [
     UserRole.ADMIN,
     UserRole.TENANT_ADMIN,
@@ -294,16 +273,6 @@ export const MODULE_ROLES: Record<string, UserRole[]> = {
     UserRole.VIEWER,
   ],
   finance: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.ACCOUNTANT],
-  workOrders: [
-    UserRole.ADMIN,
-    UserRole.TENANT_ADMIN,
-    UserRole.MANAGER,
-    UserRole.PLANNER,
-    UserRole.STOREKEEPER,
-    UserRole.OPERATOR,
-    UserRole.QC,
-    UserRole.WORKER,
-  ],
   procurement: [
     UserRole.ADMIN,
     UserRole.TENANT_ADMIN,
@@ -312,7 +281,6 @@ export const MODULE_ROLES: Record<string, UserRole[]> = {
     UserRole.STOREKEEPER,
     UserRole.OPERATOR,
   ],
-  quality: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.OPERATOR, UserRole.QC],
   sales: [
     UserRole.ADMIN,
     UserRole.TENANT_ADMIN,
@@ -321,7 +289,6 @@ export const MODULE_ROLES: Record<string, UserRole[]> = {
     UserRole.CLIENT,
     UserRole.VIEWER,
   ],
-  shopFloor: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.WORKER, UserRole.OPERATOR],
   reports: [UserRole.ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.PLANNER, UserRole.ACCOUNTANT, UserRole.VIEWER],
   auditLogs: [UserRole.ADMIN, UserRole.TENANT_ADMIN],
   users: [UserRole.ADMIN, UserRole.TENANT_ADMIN],

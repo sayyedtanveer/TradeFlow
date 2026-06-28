@@ -33,7 +33,6 @@ class SalesOrderLine:
         backorder_quantity: Decimal = Decimal("0"),
         tax_amount: Decimal | None = None,
         line_total: Decimal | None = None,
-        work_order_id: UUID | None = None,
         notes: str | None = None,
         created_at: datetime | None = None,
         updated_at: datetime | None = None,
@@ -58,7 +57,6 @@ class SalesOrderLine:
         self.line_total = Decimal(str(line_total)) if line_total is not None else Decimal("0")
         
         self.status = status if isinstance(status, LineStatus) else LineStatus(str(status).lower())
-        self.work_order_id = work_order_id
         self.notes = notes
         self.created_at = created_at or datetime.now(timezone.utc)
         self.updated_at = updated_at or datetime.now(timezone.utc)
@@ -178,7 +176,6 @@ class SalesOrderLine:
             "shipped_quantity": str(self.shipped_quantity),
             "backorder_quantity": str(self.backorder_quantity),
             "status": self.status.value,
-            "work_order_id": str(self.work_order_id) if self.work_order_id else None,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }

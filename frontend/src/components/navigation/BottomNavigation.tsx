@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import {
   Home,
   Package,
-  Wrench,
+  ShoppingCart,
   BarChart3,
   Settings,
   LucideIcon,
@@ -26,9 +26,9 @@ const DEFAULT_NAV_ITEMS: NavItem[] = [
     icon: Package,
   },
   {
-    label: 'Work Orders',
-    path: '/work-orders',
-    icon: Wrench,
+    label: 'Sales',
+    path: '/sales',
+    icon: ShoppingCart,
   },
   {
     label: 'Reports',

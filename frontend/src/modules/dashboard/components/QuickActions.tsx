@@ -8,7 +8,6 @@ import {
   ScanBarcode,
   UserPlus,
   PackageSearch,
-  Layers,
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 
@@ -26,11 +25,11 @@ export function QuickActions() {
       </CardHeader>
       <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
 
-        {/* Manufacturing Section */}
+        {/* Products Section */}
         {canManageProducts && (
           <>
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground col-span-full mt-1">
-              Manufacturing
+              Products
             </p>
             <Button
               className="w-full justify-start h-12"
@@ -39,14 +38,6 @@ export function QuickActions() {
             >
               <PackageSearch className="mr-2 h-5 w-5 text-blue-500" />
               Manage Products
-            </Button>
-            <Button
-              className="w-full justify-start h-12"
-              variant="outline"
-              onClick={() => navigate("/bom/list")}
-            >
-              <Layers className="mr-2 h-5 w-5 text-violet-500" />
-              View BOMs
             </Button>
             <Separator className="col-span-full my-1" />
           </>

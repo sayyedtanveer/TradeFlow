@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.application.finance.finance_service import FinanceService
-from backend.app.application.manufacturing.services.inventory_service import InventoryService
+from backend.app.application.inventory.services.stock_service import InventoryService
 from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
 from backend.app.infrastructure.persistence.models.delivery_model import (
     DeliveryLineModel,

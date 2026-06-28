@@ -14,11 +14,7 @@ from backend.app.infrastructure.logging.logger import get_logger
 from backend.app.infrastructure.websocket.event_handlers import (
     OrderStatusChangeHandler,
     InventoryLowStockAlert,
-    WorkOrderReleased,
-    WorkOrderStarted,
-    WorkOrderCompleted,
     InvoiceOverdue,
-    QualityInspectionFailed,
 )
 from backend.app.interfaces.api.v1.middleware.logging_middleware import RequestLoggingMiddleware
 from backend.app.interfaces.api.v1.middleware.tenant_middleware import TenantMiddleware
@@ -36,7 +32,7 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan – startup and shutdown."""
-    logger.info("Starting MedTrack ERP", extra={"version": settings.app_version})
+    logger.info("Starting TradeFlow ERP", extra={"version": settings.app_version})
 
     # Build DI container once
     container = Container.create(settings)
@@ -57,19 +53,7 @@ async def lifespan(app: FastAPI):
         "inventory.low_stock_alert", InventoryLowStockAlert(connection_manager)
     )
     event_dispatcher.subscribe(
-        "work_order.released", WorkOrderReleased(connection_manager)
-    )
-    event_dispatcher.subscribe(
-        "work_order.started", WorkOrderStarted(connection_manager)
-    )
-    event_dispatcher.subscribe(
-        "work_order.completed", WorkOrderCompleted(connection_manager)
-    )
-    event_dispatcher.subscribe(
         "invoice.overdue", InvoiceOverdue(connection_manager)
-    )
-    event_dispatcher.subscribe(
-        "quality.inspection_failed", QualityInspectionFailed(connection_manager)
     )
 
     logger.info("WebSocket event handlers registered")
@@ -89,7 +73,7 @@ def create_application() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        description="Multi-tenant Manufacturing ERP — Phase 0 Foundation",
+        description="Multi-tenant Distribution, Trading & Wholesale ERP",
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",

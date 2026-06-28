@@ -3,8 +3,6 @@ import { ChevronRight, Home } from "lucide-react"
 
 // Human-readable labels for known path segments
 const SEGMENT_LABELS: Record<string, string> = {
-  "bom": "Bill of Materials",
-  "list": "All BOMs",
   "products": "Products",
   "inventory": "Inventory",
   "materials": "Materials",
@@ -12,9 +10,6 @@ const SEGMENT_LABELS: Record<string, string> = {
   "transactions": "Transactions",
   "users": "Users",
   "settings": "Settings",
-  "manufacturing": "Manufacturing",
-  "workstations": "Workstations",
-  "operations": "Operations",
   "reports": "Reports",
   "new": "New",
   "edit": "Edit",

@@ -29,7 +29,7 @@ export default function DashboardPage() {
     <div className="grid w-full items-start gap-6">
       <PageHeader 
         title="Dashboard" 
-        description="Overview of your manufacturing and inventory operations."
+        description="Overview of your distribution and inventory operations."
       />
 
       {isLoading ? (

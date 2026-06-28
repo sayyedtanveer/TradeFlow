@@ -343,7 +343,7 @@ async def create_transaction(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Transfer requires both from_location_id and to_location_id",
                     )
-                from backend.app.application.manufacturing.services.inventory_service import InventoryService
+                from backend.app.application.inventory.services.stock_service import InventoryService
 
                 inventory_service = InventoryService(session)
                 await inventory_service.transfer_stock(

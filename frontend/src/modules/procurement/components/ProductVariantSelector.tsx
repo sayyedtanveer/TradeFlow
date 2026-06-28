@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { productService } from "@/services/product.service"
 import { materialService } from "@/services/material.service"
-import type { ItemVariantSearchItem } from "@/types/bom.types"
+import type { ItemVariantSearchItem } from "@/types/product.types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"

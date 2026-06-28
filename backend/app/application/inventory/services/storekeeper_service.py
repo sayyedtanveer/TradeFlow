@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.application.manufacturing.services.inventory_service import InventoryService
+from backend.app.application.inventory.services.stock_service import InventoryService
 from backend.app.infrastructure.persistence.models.work_order_model import (
     WorkOrderModel,
     WorkOrderMaterialModel,

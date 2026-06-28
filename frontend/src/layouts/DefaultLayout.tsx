@@ -61,7 +61,7 @@ export default function DefaultLayout() {
         isOpen={scannerOpen}
         onClose={() => setScannerOpen(false)}
         onScan={handleBarcodeScan}
-        title="Scan Work Order or Material"
+        title="Scan Barcode"
         description="Point camera at barcode"
       />
     </>

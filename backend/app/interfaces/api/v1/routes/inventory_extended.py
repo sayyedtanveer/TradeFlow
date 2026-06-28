@@ -21,15 +21,8 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_user_id,
 )
 from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
-from backend.app.application.inventory.handlers.storekeeper_handler import StorekeeperHandler
-from backend.app.application.inventory.commands.storekeeper_commands import (
-    IssueMaterialCommand,
-    PartialIssueCommand,
-    RejectIssueCommand,
-    ReturnMaterialCommand,
-)
 from backend.app.application.inventory.services.inventory_traceability_service import InventoryTraceabilityService
-from backend.app.application.manufacturing.services.inventory_service import InventoryService
+from backend.app.application.inventory.services.stock_service import InventoryService
 
 router = APIRouter(prefix="/inventory", tags=["Inventory Extended"])
 
@@ -291,7 +284,7 @@ async def get_realtime_stock(
         return results
 
 
-# ── Phase 3: Storekeeper Operational Flow (deprecated — prefer /api/v1/storekeeper/*) ──
+# ── Phase 3: Barcode Resolution ──
 
 @router.post("/scan/resolve")
 async def resolve_scan(
@@ -308,161 +301,6 @@ async def resolve_scan(
     async with container.session_factory() as session:
         service = BarcodeResolutionService(session)
         return await service.resolve(tenant_id=tenant_id, payload=body.get("payload", ""))
-
-
-@router.get("/storekeeper/issue-queue", deprecated=True)
-async def get_issue_queue(
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    user_id: uuid.UUID = Depends(get_current_user_id),
-):
-    """Get pending material issue queue for storekeeper dashboard."""
-    container = get_container(request)
-    async with container.session_factory() as session:
-        from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
-        service = StorekeeperService(session)
-        queue = await service.get_issue_queue(tenant_id=tenant_id)
-        return queue
-
-
-@router.get("/storekeeper/shortage-queue")
-async def get_shortage_queue(
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    user_id: uuid.UUID = Depends(get_current_user_id),
-):
-    """Get shortage queue for storekeeper dashboard."""
-    container = get_container(request)
-    async with container.session_factory() as session:
-        from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
-        service = StorekeeperService(session)
-        queue = await service.get_shortage_queue(tenant_id=tenant_id)
-        return queue
-
-
-@router.get("/storekeeper/partially-issued")
-async def get_partially_issued_wo(
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    user_id: uuid.UUID = Depends(get_current_user_id),
-):
-    """Get partially issued WOs for storekeeper dashboard."""
-    container = get_container(request)
-    async with container.session_factory() as session:
-        from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
-        service = StorekeeperService(session)
-        queue = await service.get_partially_issued_wo(tenant_id=tenant_id)
-        return queue
-
-
-@router.get("/storekeeper/pending-reservations", deprecated=True)
-async def get_pending_reservations(
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    user_id: uuid.UUID = Depends(get_current_user_id),
-):
-    """Deprecated wrapper for canonical /storekeeper/pending-reservations."""
-    container = get_container(request)
-    async with container.session_factory() as session:
-        from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
-        service = StorekeeperService(session)
-        return await service.get_pending_reservations(tenant_id=tenant_id)
-
-
-@router.get("/storekeeper/pending-returns", deprecated=True)
-async def get_pending_returns(
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    user_id: uuid.UUID = Depends(get_current_user_id),
-):
-    """Deprecated wrapper for canonical /storekeeper/pending-returns."""
-    container = get_container(request)
-    async with container.session_factory() as session:
-        from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
-        service = StorekeeperService(session)
-        return await service.get_pending_returns(tenant_id=tenant_id)
-
-
-@router.get("/storekeeper/inventory-alerts", deprecated=True)
-async def get_inventory_alerts(
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    user_id: uuid.UUID = Depends(get_current_user_id),
-):
-    """Deprecated wrapper for canonical /storekeeper/inventory-alerts."""
-    container = get_container(request)
-    async with container.session_factory() as session:
-        from backend.app.application.inventory.services.storekeeper_service import StorekeeperService
-        service = StorekeeperService(session)
-        return await service.get_inventory_alerts(tenant_id=tenant_id)
-
-
-@router.post("/storekeeper/issue")
-async def issue_material(
-    body: IssueMaterialCommand,
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    user_id: uuid.UUID = Depends(get_current_user_id),
-):
-    """Issue material to work order."""
-    container = get_container(request)
-    async with container.session_factory() as session:
-        handler = StorekeeperHandler(session)
-        command = body.model_copy(update={"tenant_id": tenant_id, "issued_by": user_id})
-        await handler.handle_issue_material(command)
-        await session.commit()
-        return {"status": "success"}
-
-
-@router.post("/storekeeper/partial-issue")
-async def partial_issue_material(
-    body: PartialIssueCommand,
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    user_id: uuid.UUID = Depends(get_current_user_id),
-):
-    """Partially issue material to work order."""
-    container = get_container(request)
-    async with container.session_factory() as session:
-        handler = StorekeeperHandler(session)
-        command = body.model_copy(update={"tenant_id": tenant_id, "issued_by": user_id})
-        await handler.handle_partial_issue(command)
-        await session.commit()
-        return {"status": "success"}
-
-
-@router.post("/storekeeper/reject")
-async def reject_issue(
-    body: RejectIssueCommand,
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    user_id: uuid.UUID = Depends(get_current_user_id),
-):
-    """Reject material issue request."""
-    container = get_container(request)
-    async with container.session_factory() as session:
-        handler = StorekeeperHandler(session)
-        command = body.model_copy(update={"tenant_id": tenant_id, "rejected_by": user_id})
-        await handler.handle_reject_issue(command)
-        await session.commit()
-        return {"status": "success"}
-
-
-@router.post("/storekeeper/return")
-async def return_material(
-    body: ReturnMaterialCommand,
-    request: Request,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    user_id: uuid.UUID = Depends(get_current_user_id),
-):
-    """Return issued material back to inventory."""
-    container = get_container(request)
-    async with container.session_factory() as session:
-        handler = StorekeeperHandler(session)
-        command = body.model_copy(update={"tenant_id": tenant_id, "returned_by": user_id})
-        await handler.handle_return_material(command)
-        await session.commit()
-        return {"status": "success"}
 
 
 # ── Phase 10: Inventory Traceability ───────────────────────────────────────
