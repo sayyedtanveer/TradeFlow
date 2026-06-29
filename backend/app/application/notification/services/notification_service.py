@@ -16,7 +16,7 @@ class NotificationService:
     - Create notifications for operational events
     - Get user notifications
     - Mark notifications as read
-    - Notification types: MATERIAL_SHORTAGE, WO_OVERDUE, QC_REJECTED, DELIVERY_READY
+    - Notification types: LOW_STOCK, ORDER_STATUS, DELIVERY_READY
     """
 
     def __init__(self, session: AsyncSession):
@@ -136,64 +136,29 @@ class NotificationService:
         )
         await self._session.execute(stmt)
 
-    async def notify_material_shortage(
+    async def notify_low_stock(
         self,
         *,
         tenant_id: uuid.UUID,
         user_id: uuid.UUID,
-        work_order_id: uuid.UUID,
-        material_name: str,
-        shortage_quantity: float,
+        product_name: str,
+        current_quantity: float,
+        threshold: float,
+        warehouse_name: str = "",
     ) -> uuid.UUID:
-        """Create a material shortage notification."""
+        """Create a low stock notification."""
+        message = f"Low stock alert: {product_name} is at {current_quantity} units"
+        if warehouse_name:
+            message += f" in {warehouse_name}"
+        message += f" (threshold: {threshold})"
         return await self.create_notification(
             tenant_id=tenant_id,
             user_id=user_id,
-            notification_type="MATERIAL_SHORTAGE",
-            title="Material Shortage Alert",
-            message=f"Material shortage for {material_name}: {shortage_quantity} units required but not available.",
-            reference_type="work_order",
-            reference_id=work_order_id,
-        )
-
-    async def notify_wo_overdue(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        user_id: uuid.UUID,
-        work_order_id: uuid.UUID,
-        wo_number: str,
-        due_date: datetime,
-    ) -> uuid.UUID:
-        """Create a work order overdue notification."""
-        return await self.create_notification(
-            tenant_id=tenant_id,
-            user_id=user_id,
-            notification_type="WO_OVERDUE",
-            title="Work Order Overdue",
-            message=f"Work Order {wo_number} is overdue. Due date: {due_date.strftime('%Y-%m-%d')}",
-            reference_type="work_order",
-            reference_id=work_order_id,
-        )
-
-    async def notify_qc_rejected(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        user_id: uuid.UUID,
-        work_order_id: uuid.UUID,
-        wo_number: str,
-        reason: str,
-    ) -> uuid.UUID:
-        """Create a QC rejection notification."""
-        return await self.create_notification(
-            tenant_id=tenant_id,
-            user_id=user_id,
-            notification_type="QC_REJECTED",
-            title="QC Rejection Alert",
-            message=f"Work Order {wo_number} failed QC inspection. Reason: {reason}",
-            reference_type="work_order",
-            reference_id=work_order_id,
+            notification_type="LOW_STOCK",
+            title="Low Stock Alert",
+            message=message,
+            reference_type="inventory",
+            reference_id=None,
         )
 
     async def notify_delivery_ready(

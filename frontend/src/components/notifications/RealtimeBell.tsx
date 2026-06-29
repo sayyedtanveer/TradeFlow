@@ -123,12 +123,6 @@ export const RealtimeBell: React.FC = () => {
       return
     }
 
-    if (referenceType === 'work_order' && referenceId) {
-      navigate(`/work-orders/${referenceId}`)
-      setIsOpen(false)
-      return
-    }
-
     if (referenceType === 'purchase_order' && referenceId) {
       navigate(`/procurement/purchase-orders/${referenceId}`)
       setIsOpen(false)

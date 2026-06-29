@@ -151,7 +151,6 @@ class SalesOrderLineResponse(BaseModel):
     allocated_quantity: Decimal
     shipped_quantity: Decimal
     backorder_quantity: Decimal
-    work_order_id: Optional[UUID] = None
     status: str
     created_at: datetime
     updated_at: datetime
@@ -270,6 +269,24 @@ class CancelOrderRequest(BaseModel):
     """Request to cancel order."""
     reason: Optional[str] = None
     cancelled_by: Optional[str] = None
+
+
+# ==================== ADMIN ORDER WORKFLOW SCHEMAS ====================
+
+
+class AssignWarehouseRequest(BaseModel):
+    """Request to manually assign a warehouse to an order (Admin only)."""
+    warehouse_id: UUID = Field(..., description="ID of the warehouse to assign")
+
+
+class HoldOrderRequest(BaseModel):
+    """Request to place an order on hold (Admin only)."""
+    reason: str = Field(..., min_length=1, max_length=500, description="Reason for placing order on hold")
+
+
+class AdminCancelOrderRequest(BaseModel):
+    """Request to cancel an order via admin workflow."""
+    reason: Optional[str] = Field(None, max_length=500, description="Reason for cancellation")
 
 
 class OrderStatusResponse(BaseModel):

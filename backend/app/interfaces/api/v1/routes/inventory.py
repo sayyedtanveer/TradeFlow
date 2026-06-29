@@ -42,12 +42,17 @@ from backend.app.interfaces.api.v1.dependencies.permissions import require_permi
 from backend.app.interfaces.api.v1.schemas.inventory_schemas import (
     AdjustStockRequest,
     CreateMaterialRequest,
+    InventoryAdjustRequest,
+    InventorySummaryItem,
+    InventorySummaryResponse,
+    InventoryUploadRequest,
     MaterialListResponse,
     MaterialResponse,
     StockResponse,
     TransactionRequest,
     TransactionResponse,
     UpdateMaterialRequest,
+    WarehouseStockItem,
 )
 
 router = APIRouter(prefix="/inventory", tags=["Inventory"])
@@ -128,6 +133,7 @@ async def list_materials(
     category: Optional[str] = Query(None),
     material_type: Optional[str] = Query(None, description="Filter by raw or finished"),
     is_active: Optional[bool] = Query(None),
+    warehouse_id: Optional[uuid.UUID] = Query(None, description="Filter by warehouse"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=500),
 ):
@@ -143,6 +149,7 @@ async def list_materials(
                 category=category,
                 material_type=material_type,
                 is_active=is_active,
+                warehouse_id=warehouse_id,
                 page=page,
                 page_size=page_size,
             )
@@ -391,13 +398,14 @@ async def create_transaction(
 @router.get(
     "/transactions",
     response_model=List[TransactionResponse],
-    summary="List all transactions, optionally filtered by material",
+    summary="List all transactions, optionally filtered by material and/or warehouse",
     dependencies=[Depends(require_permission("inventory:read"))],
 )
 async def list_transactions(
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
     material_id: Optional[uuid.UUID] = Query(None),
+    warehouse_id: Optional[uuid.UUID] = Query(None, description="Filter by warehouse"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
 ):
@@ -410,9 +418,194 @@ async def list_transactions(
             GetTransactionsQuery(
                 tenant_id=tenant_id,
                 material_id=material_id,
+                warehouse_id=warehouse_id,
                 page=page,
                 page_size=page_size,
             )
         )
 
     return [TransactionResponse.model_validate(tx) for tx in results]
+
+
+# ── Warehouse-Scoped Inventory Endpoints ───────────────────────────────────
+
+
+@router.get(
+    "/summary",
+    response_model=InventorySummaryResponse,
+    summary="Get aggregated inventory across all warehouses",
+    dependencies=[Depends(require_permission("inventory:read"))],
+)
+async def get_inventory_summary(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    material_id: Optional[uuid.UUID] = Query(None, description="Filter by specific material"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    """
+    Returns aggregated stock across all warehouses.
+    For each material, shows total stock and per-warehouse breakdown.
+    Requirement 8.6: Aggregated stock across all warehouses and per-warehouse breakdown.
+    """
+    from decimal import Decimal as D
+    from sqlalchemy import func, select
+
+    from backend.app.infrastructure.persistence.models.stock_level_model import StockLevelModel
+    from backend.app.infrastructure.persistence.models.material_model import MaterialModel
+
+    container = get_container(request)
+    async with container.session_factory() as session:
+        # Get materials (optionally filtered)
+        mat_stmt = select(MaterialModel).where(
+            MaterialModel.tenant_id == tenant_id,
+            MaterialModel.is_deleted.is_(False),
+        )
+        if material_id is not None:
+            mat_stmt = mat_stmt.where(MaterialModel.id == material_id)
+
+        # Count total
+        from sqlalchemy import func as sqlfunc
+        count_stmt = select(sqlfunc.count()).select_from(
+            mat_stmt.subquery()
+        )
+        count_result = await session.execute(count_stmt)
+        total = count_result.scalar_one()
+
+        # Paginate materials
+        offset = (page - 1) * page_size
+        mat_stmt = mat_stmt.offset(offset).limit(page_size).order_by(MaterialModel.name)
+        mat_result = await session.execute(mat_stmt)
+        materials = mat_result.scalars().all()
+
+        # For each material, get per-warehouse stock levels
+        items = []
+        for mat in materials:
+            # Get stock levels grouped by warehouse
+            wh_stmt = select(
+                StockLevelModel.warehouse_id,
+                func.sum(StockLevelModel.quantity).label("total_qty"),
+            ).where(
+                StockLevelModel.tenant_id == tenant_id,
+                StockLevelModel.material_id == mat.id,
+                StockLevelModel.is_deleted.is_(False),
+            ).group_by(StockLevelModel.warehouse_id)
+
+            wh_result = await session.execute(wh_stmt)
+            wh_rows = wh_result.all()
+
+            per_warehouse = []
+            for row in wh_rows:
+                if row.warehouse_id is not None:
+                    per_warehouse.append(
+                        WarehouseStockItem(
+                            warehouse_id=row.warehouse_id,
+                            quantity=D(str(row.total_qty or 0)),
+                        )
+                    )
+
+            items.append(
+                InventorySummaryItem(
+                    material_id=mat.id,
+                    material_code=mat.code,
+                    material_name=mat.name,
+                    total_stock=D(str(mat.current_stock)),
+                    reserved_stock=D(str(mat.reserved_stock)),
+                    available_stock=D(str(mat.current_stock)) - D(str(mat.reserved_stock)),
+                    per_warehouse=per_warehouse,
+                )
+            )
+
+    return InventorySummaryResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.post(
+    "/upload",
+    response_model=MaterialResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload/add stock (warehouse-scoped)",
+    dependencies=[Depends(require_permission("inventory:write"))],
+)
+async def upload_inventory(
+    body: InventoryUploadRequest,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Add stock to a material in a specific warehouse.
+    Requires warehouse_id — all new inventory uploads must be warehouse-scoped.
+    Requirements: 4.3, 8.1, 8.2
+    """
+    container = get_container(request)
+    async with container.session_factory() as session:
+        material_repo = MaterialRepository(session)
+        tx_repo = TransactionRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        handler = AddStockHandler(material_repo=material_repo, tx_repo=tx_repo, uow=uow)
+        try:
+            result = await handler.handle(
+                AddStockCommand(
+                    tenant_id=tenant_id,
+                    material_id=body.material_id,
+                    quantity=body.quantity,
+                    unit_id=body.unit_id,
+                    to_location_id=body.to_location_id,
+                    created_by=user_id,
+                    remarks=body.remarks,
+                    reference_id=body.reference_id,
+                    warehouse_id=body.warehouse_id,
+                )
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    return MaterialResponse.model_validate(result)
+
+
+@router.post(
+    "/adjust",
+    response_model=MaterialResponse,
+    summary="Adjust stock (warehouse-scoped)",
+    dependencies=[Depends(require_permission("inventory:write"))],
+)
+async def adjust_inventory(
+    body: InventoryAdjustRequest,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Adjust stock for a material in a specific warehouse.
+    Sets the stock to the specified new_quantity.
+    Requires warehouse_id — all new adjustments must be warehouse-scoped.
+    Requirements: 4.3, 8.1, 8.2
+    """
+    container = get_container(request)
+    async with container.session_factory() as session:
+        material_repo = MaterialRepository(session)
+        tx_repo = TransactionRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+        handler = AdjustStockHandler(material_repo=material_repo, tx_repo=tx_repo, uow=uow)
+        try:
+            result = await handler.handle(
+                AdjustStockCommand(
+                    tenant_id=tenant_id,
+                    material_id=body.material_id,
+                    new_quantity=body.new_quantity,
+                    unit_id=body.unit_id,
+                    location_id=body.location_id,
+                    created_by=user_id,
+                    remarks=body.remarks,
+                    warehouse_id=body.warehouse_id,
+                )
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    return MaterialResponse.model_validate(result)

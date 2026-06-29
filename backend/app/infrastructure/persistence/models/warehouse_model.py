@@ -180,3 +180,72 @@ class WarehouseProductThresholdModel(Base):
 
     def __repr__(self) -> str:
         return f"<WarehouseProductThresholdModel id={self.id} warehouse_id={self.warehouse_id} product_id={self.product_id}>"
+
+
+class WarehouseProductAssignmentModel(Base):
+    """SQLAlchemy model for the warehouse_product_assignments table.
+    
+    Tracks which products are available at which warehouses.
+    Used to:
+    - Ensure products exist in a warehouse before inventory operations
+    - Query available warehouses for a product (for order allocation)
+    - Maintain default reorder levels per warehouse-product combo
+    """
+
+    __tablename__ = "warehouse_product_assignments"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "warehouse_id",
+            "product_id",
+            name="uq_warehouse_product_assignment_tenant_wh_product",
+        ),
+        Index("ix_warehouse_product_assignments_tenant_id", "tenant_id"),
+        Index("ix_warehouse_product_assignments_warehouse_id", "warehouse_id"),
+        Index("ix_warehouse_product_assignments_product_id", "product_id"),
+        Index("ix_warehouse_product_assignments_is_available", "is_available"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    warehouse_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("warehouses.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("item_templates.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    is_available: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    default_reorder_level: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+
+    # Soft delete
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<WarehouseProductAssignmentModel id={self.id} warehouse_id={self.warehouse_id} product_id={self.product_id} is_available={self.is_available}>"

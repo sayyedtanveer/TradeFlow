@@ -210,7 +210,7 @@ export default function ProductDetailPage() {
                 <tr>
                   <td colSpan={6} className="py-10 text-center text-muted-foreground">
                     <div className="space-y-3">
-                      <p>No variants yet. Create one standard SKU or import variant rows before using this product in sales and production.</p>
+                      <p>No variants yet. Create one standard SKU or import variant rows before using this product in sales orders.</p>
                       <Button variant="outline" size="sm" onClick={() => navigate(`/products/${id}/edit`)}>
                         <Edit2 className="w-4 h-4 mr-1" />
                         Add Variant

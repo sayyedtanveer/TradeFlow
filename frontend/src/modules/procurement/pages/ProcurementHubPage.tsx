@@ -1,22 +1,19 @@
 import { Link } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Truck, ClipboardCheck, Factory, Building2, ListOrdered, ShieldAlert } from "lucide-react"
+import { Truck, ClipboardCheck, Building2 } from "lucide-react"
 
 const links = [
   { to: "/procurement/suppliers", title: "Suppliers", desc: "Vendor master & edit", icon: Building2 },
   { to: "/procurement/purchase-orders", title: "Purchase orders", desc: "Create, send, acknowledge", icon: Truck },
   { to: "/procurement/grn", title: "Goods receipt (GRN)", desc: "Receive against PO", icon: ClipboardCheck },
-  { to: "/procurement/quality", title: "Quality & quarantine", desc: "Inspections, NCR, quarantine stock", icon: ShieldAlert },
-  { to: "/procurement/mrp", title: "MRP requests", desc: "Reorder signals & run MRP", icon: ListOrdered },
-  { to: "/procurement/subcontract", title: "Subcontracting", desc: "Issue & receive", icon: Factory },
 ]
 
 export default function ProcurementHubPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Procurement & quality</h1>
-        <p className="text-muted-foreground">End-to-end supply chain: suppliers → PO → GRN → QC → inventory</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Procurement</h1>
+        <p className="text-muted-foreground">End-to-end supply chain: suppliers → PO → GRN → inventory</p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {links.map((l) => (

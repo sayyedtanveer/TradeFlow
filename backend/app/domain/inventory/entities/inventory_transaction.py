@@ -21,7 +21,6 @@ class ReferenceType(str, Enum):
     ADJUSTMENT = "adjustment"
     PURCHASE_ORDER = "purchase_order"
     SALES_ORDER = "sales_order"
-    WORK_ORDER = "work_order"
 
 
 class InventoryTransaction(BaseEntity):

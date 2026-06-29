@@ -15,10 +15,8 @@ from backend.app.application.documents.services.document_storage_service import 
 from backend.app.application.documents.services.document_generation_service import DocumentGenerationService
 from backend.app.infrastructure.persistence.repositories.document_repository import DocumentRepository
 from backend.app.infrastructure.persistence.models.tenant_model import TenantModel
-from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderModel
 from backend.app.infrastructure.persistence.models.purchase_order_model import PurchaseOrderModel
 from backend.app.infrastructure.persistence.models.finance_models import InvoiceModel
-from backend.app.infrastructure.persistence.models.delivery_model import DeliveryOrderModel
 from backend.app.interfaces.api.v1.dependencies.auth import get_current_tenant_id, get_current_user_id
 from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.interfaces.api.v1.schemas.document_schemas import (
@@ -53,119 +51,6 @@ def _get_document_services(request: Request, session: AsyncSession):
         document_repository,
     )
     return document_service, storage_service
-
-
-async def _build_work_order_context(
-    session: AsyncSession,
-    tenant_id: uuid.UUID,
-    entity_id: uuid.UUID,
-) -> dict:
-    """Build template context for Work Order PDF.
-    
-    Args:
-        session: Async SQLAlchemy session
-        tenant_id: Tenant UUID
-        entity_id: Work Order UUID
-        
-    Returns:
-        Template context dictionary
-    """
-    # Fetch work order with materials and job cards
-    stmt = (
-        select(WorkOrderModel)
-        .where(
-            WorkOrderModel.id == entity_id,
-            WorkOrderModel.tenant_id == tenant_id,
-            WorkOrderModel.is_deleted.is_(False),
-        )
-    )
-    result = await session.execute(stmt)
-    wo = result.scalar_one_or_none()
-    
-    if not wo:
-        raise HTTPException(status_code=404, detail="Work order not found")
-    
-    # Fetch tenant branding
-    tenant_stmt = select(TenantModel).where(TenantModel.id == tenant_id)
-    tenant_result = await session.execute(tenant_stmt)
-    tenant = tenant_result.scalar_one()
-    
-    # Build materials list
-    materials = []
-    if wo.materials:
-        for material in wo.materials:
-            materials.append({
-                "item_code": material.material.code if material.material else "",
-                "material_name": material.material.name if material.material else material.material_id,
-                "required_qty": float(material.required_quantity or 0),
-                "issued_qty": float(material.issued_quantity or 0),
-                "unit": material.unit.name if material.unit else "",
-            })
-    
-    # Build operations list
-    operations = []
-    if wo.job_cards:
-        for jc in wo.job_cards:
-            operations.append({
-                "sequence": jc.sequence,
-                "operation_name": jc.operation.name if jc.operation else f"Operation {jc.sequence}",
-                "status": jc.status,
-                "work_center": jc.operation.work_center if jc.operation else "",
-            })
-    
-    # Build template context
-    context = {
-        "tenant": {
-            "name": tenant.name,
-            "company_name": tenant.company_name or tenant.name,
-            "logo_url": tenant.logo_url or "",
-            "gst_number": tenant.gst_number or "",
-            "pan_number": tenant.pan_number or "",
-            "address": tenant.address or "",
-            "phone": tenant.phone or "",
-            "email": tenant.email or "",
-            "footer_text": tenant.footer_text or "",
-        },
-        "work_order": {
-            "wo_number": wo.wo_number,
-            "date": wo.created_at.strftime("%Y-%m-%d") if wo.created_at else "",
-            "sales_order_number": wo.sales_order.order_number if wo.sales_order else "",
-            "client": wo.client.name if wo.client else "N/A",
-            "product": wo.product.name if wo.product else "N/A",
-            "quantity": float(wo.planned_quantity or 0),
-            "priority": wo.priority,
-            "due_date": wo.due_date.strftime("%Y-%m-%d") if wo.due_date else "",
-            "status": wo.status,
-            "notes": wo.notes or "",
-        },
-        "materials": materials,
-        "operations": operations,
-        "signatures": {
-            "planner": {
-                "name": "",
-                "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-                "signature_image_url": tenant.signature_image_url or "",
-            },
-            "storekeeper": {
-                "name": "",
-                "timestamp": "",
-                "signature_image_url": "",
-            },
-            "supervisor": {
-                "name": "",
-                "timestamp": "",
-                "signature_image_url": "",
-            },
-            "qc": {
-                "name": "",
-                "timestamp": "",
-                "signature_image_url": "",
-            },
-        },
-        "generated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-    }
-    
-    return context
 
 
 async def _build_purchase_order_context(
@@ -447,227 +332,6 @@ async def _build_delivery_challan_context(
     return context
 
 
-async def _build_qc_report_context(
-    session: AsyncSession,
-    tenant_id: uuid.UUID,
-    entity_id: uuid.UUID,
-) -> dict:
-    """Build template context for QC Report PDF."""
-    from backend.app.infrastructure.persistence.models.quality_model import QualityInspectionModel, InspectionDetailModel, NonConformanceReportModel
-    
-    stmt = select(QualityInspectionModel).where(
-        QualityInspectionModel.id == entity_id,
-        QualityInspectionModel.tenant_id == tenant_id,
-    )
-    result = await session.execute(stmt)
-    inspection = result.scalar_one_or_none()
-    
-    if not inspection:
-        raise HTTPException(status_code=404, detail="Quality inspection not found")
-    
-    details_stmt = select(InspectionDetailModel).where(InspectionDetailModel.inspection_id == entity_id)
-    details_result = await session.execute(details_stmt)
-    details = details_result.scalars().all()
-    
-    ncr_stmt = select(NonConformanceReportModel).where(NonConformanceReportModel.inspection_id == entity_id)
-    ncr_result = await session.execute(ncr_stmt)
-    ncr = ncr_result.scalar_one_or_none()
-    
-    tenant_stmt = select(TenantModel).where(TenantModel.id == tenant_id)
-    tenant_result = await session.execute(tenant_stmt)
-    tenant = tenant_result.scalar_one()
-    
-    parameters = []
-    for detail in details:
-        parameters.append({
-            "name": detail.parameter,
-            "specification": "",
-            "tolerance_min": float(detail.tolerance_min) if detail.tolerance_min else None,
-            "tolerance_max": float(detail.tolerance_max) if detail.tolerance_max else None,
-            "measured_value": detail.measured_value,
-            "unit": detail.unit or "",
-            "is_passed": detail.is_passed,
-        })
-    
-    context = {
-        "tenant": {
-            "name": tenant.name,
-            "company_name": tenant.company_name or tenant.name,
-            "logo_url": tenant.logo_url or "",
-            "gst_number": tenant.gst_number or "",
-            "pan_number": tenant.pan_number or "",
-            "address": tenant.address or "",
-            "phone": tenant.phone or "",
-            "email": tenant.email or "",
-            "footer_text": tenant.footer_text or "",
-        },
-        "qc_report": {
-            "report_number": f"QC-{inspection.id}",
-            "inspection_date": inspection.inspection_date.strftime("%Y-%m-%d") if inspection.inspection_date else "",
-            "reference_type": inspection.reference_type,
-            "reference_number": inspection.reference_id,
-            "inspector": "",
-            "result": inspection.result,
-            "remarks": inspection.remarks or "",
-        },
-        "parameters": parameters,
-        "ncr": {
-            "ncr_type": ncr.ncr_type if ncr else "",
-            "reason": ncr.reason if ncr else "",
-            "action_taken": ncr.action_taken if ncr else "",
-        } if ncr else None,
-        "signatures": {
-            "inspector": {
-                "name": "",
-                "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-                "signature_image_url": tenant.signature_image_url or "",
-            },
-            "qc_manager": {"name": "", "timestamp": "", "signature_image_url": ""},
-            "production_manager": {"name": "", "timestamp": "", "signature_image_url": ""},
-        },
-        "generated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
-    }
-    
-    return context
-
-
-async def _build_material_issue_slip_context(
-    session: AsyncSession,
-    tenant_id: uuid.UUID,
-    entity_id: uuid.UUID,
-) -> dict:
-    """Build template context for Material Issue Slip PDF."""
-    from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderModel, WorkOrderMaterialModel
-    from backend.app.infrastructure.persistence.models.material_model import MaterialModel
-    
-    # entity_id is the work_order_id
-    wo_stmt = select(WorkOrderModel).where(
-        WorkOrderModel.id == entity_id,
-        WorkOrderModel.tenant_id == tenant_id,
-        WorkOrderModel.is_deleted.is_(False),
-    )
-    wo_result = await session.execute(wo_stmt)
-    wo = wo_result.scalar_one_or_none()
-    
-    if not wo:
-        raise HTTPException(status_code=404, detail="Work order not found")
-    
-    mat_stmt = select(WorkOrderMaterialModel).where(
-        WorkOrderMaterialModel.work_order_id == entity_id
-    )
-    mat_result = await session.execute(mat_stmt)
-    materials = mat_result.scalars().all()
-    
-    tenant_stmt = select(TenantModel).where(TenantModel.id == tenant_id)
-    tenant_result = await session.execute(tenant_stmt)
-    tenant = tenant_result.scalar_one()
-    
-    items = []
-    for material in materials:
-        material_info = None
-        if material.material_id:
-            m_stmt = select(MaterialModel).where(MaterialModel.id == material.material_id)
-            m_result = await session.execute(m_stmt)
-            material_info = m_result.scalar_one_or_none()
-        
-        items.append({
-            "item_code": material_info.code if material_info else "",
-            "material_name": material_info.name if material_info else str(material.material_id),
-            "required_quantity": float(material.required_quantity or 0),
-            "issued_quantity": float(material.issued_quantity or 0),
-            "unit": material_info.unit.name if material_info and material_info.unit else "",
-        })
-    
-    context = {
-        "tenant": {
-            "name": tenant.name,
-            "company_name": tenant.company_name or tenant.name,
-            "logo_url": tenant.logo_url or "",
-            "address": tenant.address or "",
-            "phone": tenant.phone or "",
-            "email": tenant.email or "",
-        },
-        "issue_slip": {
-            "slip_number": f"MIS-{wo.wo_number}",
-            "date": datetime.utcnow().strftime("%Y-%m-%d"),
-            "work_order_number": wo.wo_number,
-            "product": wo.product.name if wo.product else "",
-            "status": wo.status,
-            "issued_by": "",
-            "storekeeper_sign": "",
-        },
-        "items": items,
-    }
-    
-    return context
-
-
-async def _build_fg_receipt_note_context(
-    session: AsyncSession,
-    tenant_id: uuid.UUID,
-    entity_id: uuid.UUID,
-) -> dict:
-    """Build template context for FG Receipt Note PDF."""
-    from backend.app.infrastructure.persistence.models.quality_model import QualityInspectionModel
-    
-    # entity_id is the work_order_id
-    wo_stmt = select(WorkOrderModel).where(
-        WorkOrderModel.id == entity_id,
-        WorkOrderModel.tenant_id == tenant_id,
-        WorkOrderModel.is_deleted.is_(False),
-    )
-    wo_result = await session.execute(wo_stmt)
-    wo = wo_result.scalar_one_or_none()
-    
-    if not wo:
-        raise HTTPException(status_code=404, detail="Work order not found")
-    
-    # Get QC inspection for this WO
-    qc_stmt = select(QualityInspectionModel).where(
-        QualityInspectionModel.reference_id == entity_id,
-        QualityInspectionModel.reference_type == "work_order",
-        QualityInspectionModel.tenant_id == tenant_id,
-    ).order_by(QualityInspectionModel.inspection_date.desc())
-    qc_result = await session.execute(qc_stmt)
-    inspection = qc_result.scalar_one_or_none()
-    
-    tenant_stmt = select(TenantModel).where(TenantModel.id == tenant_id)
-    tenant_result = await session.execute(tenant_stmt)
-    tenant = tenant_result.scalar_one()
-    
-    context = {
-        "tenant": {
-            "name": tenant.name,
-            "company_name": tenant.company_name or tenant.name,
-            "logo_url": tenant.logo_url or "",
-            "address": tenant.address or "",
-            "phone": tenant.phone or "",
-            "email": tenant.email or "",
-        },
-        "fg_receipt": {
-            "receipt_number": f"FGR-{wo.wo_number}",
-            "date": datetime.utcnow().strftime("%Y-%m-%d"),
-            "work_order_number": wo.wo_number,
-            "product_name": wo.product.name if wo.product else "",
-            "product_code": wo.product.code if wo.product else "",
-            "planned_quantity": float(wo.planned_quantity or 0),
-            "produced_quantity": float(wo.produced_quantity or 0),
-            "scrap_quantity": float(wo.scrap_quantity or 0),
-            "qc_status": inspection.result if inspection else "PENDING",
-            "qc_inspector": str(inspection.inspector_id) if inspection and inspection.inspector_id else "",
-            "qc_date": inspection.inspection_date.strftime("%Y-%m-%d") if inspection and inspection.inspection_date else "",
-            "remarks": inspection.remarks if inspection else "",
-        },
-        "signatures": {
-            "qc_inspector": {"name": "", "timestamp": "", "signature_image_url": ""},
-            "storekeeper": {"name": "", "timestamp": "", "signature_image_url": ""},
-            "production_manager": {"name": "", "timestamp": "", "signature_image_url": ""},
-        },
-    }
-    
-    return context
-
-
 @router.get("/test/pdf")
 async def test_pdf_generation(
     request: Request,
@@ -785,7 +449,7 @@ async def generate_document(
     """Generate a document PDF for the given entity.
     
     Args:
-        document_type: Type of document (work_order, purchase_order, etc.)
+        document_type: Type of document (purchase_order, invoice, delivery_challan)
         entity_id: Entity UUID the document is for
         request: FastAPI Request
         body: Request body with force_regenerate flag
@@ -802,23 +466,14 @@ async def generate_document(
         document_service, _ = _get_document_services(request, session)
         
         # Build template context based on document type
-        if document_type == "work_order":
-            template_context = await _build_work_order_context(session, tenant_id, entity_id)
-        elif document_type == "purchase_order":
+        if document_type == "purchase_order":
             template_context = await _build_purchase_order_context(session, tenant_id, entity_id)
         elif document_type == "invoice":
             template_context = await _build_invoice_context(session, tenant_id, entity_id)
         elif document_type == "delivery_challan":
             template_context = await _build_delivery_challan_context(session, tenant_id, entity_id)
-        elif document_type == "qc_report":
-            template_context = await _build_qc_report_context(session, tenant_id, entity_id)
-        elif document_type == "material_issue_slip":
-            template_context = await _build_material_issue_slip_context(session, tenant_id, entity_id)
-        elif document_type == "fg_receipt_note":
-            template_context = await _build_fg_receipt_note_context(session, tenant_id, entity_id)
         else:
-            # TODO: Implement other document types
-            template_context = {}
+            raise HTTPException(status_code=400, detail=f"Unknown document type: {document_type}")
         
         try:
             document = await document_service.generate_document(
@@ -832,8 +487,7 @@ async def generate_document(
             
             # Send notification about document generation
             notification_service = container.notification_service
-            entity_number = template_context.get("work_order", {}).get("wo_number") or \
-                           template_context.get("purchase_order", {}).get("po_number") or \
+            entity_number = template_context.get("purchase_order", {}).get("po_number") or \
                            template_context.get("invoice", {}).get("invoice_number") or \
                            str(entity_id)
             await notification_service.notify_document_generated(
@@ -901,7 +555,7 @@ async def get_document_html(
     Users can view the HTML in browser and use browser's print functionality.
 
     Args:
-        document_type: Type of document (work_order, purchase_order, etc.)
+        document_type: Type of document (purchase_order, invoice, delivery_challan)
         entity_id: Entity UUID the document is for
         request: FastAPI Request
         tenant_id: Current tenant UUID
@@ -917,20 +571,12 @@ async def get_document_html(
 
         try:
             # Build template context based on document type
-            if document_type == "work_order":
-                template_context = await _build_work_order_context(session, tenant_id, entity_id)
-            elif document_type == "purchase_order":
+            if document_type == "purchase_order":
                 template_context = await _build_purchase_order_context(session, tenant_id, entity_id)
             elif document_type == "invoice":
                 template_context = await _build_invoice_context(session, tenant_id, entity_id)
             elif document_type == "delivery_challan":
                 template_context = await _build_delivery_challan_context(session, tenant_id, entity_id)
-            elif document_type == "qc_report":
-                template_context = await _build_qc_report_context(session, tenant_id, entity_id)
-            elif document_type == "material_issue_slip":
-                template_context = await _build_material_issue_slip_context(session, tenant_id, entity_id)
-            elif document_type == "fg_receipt_note":
-                template_context = await _build_fg_receipt_note_context(session, tenant_id, entity_id)
             else:
                 raise HTTPException(status_code=400, detail=f"Unknown document type: {document_type}")
 

@@ -1,8 +1,15 @@
-"""Inventory Reservation database model."""
+"""Inventory Reservation database model.
+
+Tracks inventory reservations for sales orders and other references.
+Reservations prevent overselling by earmarking stock for confirmed orders.
+
+Requirements: 5.7, 6.3, 6.13
+"""
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -17,6 +24,8 @@ class InventoryReservationModel(Base):
         Index("ix_ir_tenant_ref", "tenant_id", "reference_type", "reference_id"),
         Index("ix_ir_tenant_material", "tenant_id", "material_id"),
         Index("ix_ir_status", "status"),
+        Index("ix_ir_tenant_warehouse", "tenant_id", "warehouse_id"),
+        Index("ix_ir_order", "order_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -28,12 +37,18 @@ class InventoryReservationModel(Base):
     material_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("materials.id", ondelete="RESTRICT"), nullable=False
     )
-    batch_id: Mapped[uuid.UUID | None] = mapped_column(
+    batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("batches.id", ondelete="SET NULL"), nullable=True
+    )
+    warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("warehouses.id", ondelete="SET NULL"), nullable=True
+    )
+    order_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True
     )
     quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="RESERVED")
-    unit_id: Mapped[uuid.UUID] = mapped_column(
+    unit_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("units_of_measure.id", ondelete="SET NULL"), nullable=True
     )
     issued_quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False, default=0)

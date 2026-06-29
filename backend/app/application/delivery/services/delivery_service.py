@@ -5,7 +5,7 @@ Provides operational queue-first dashboard for delivery team with:
 - Dispatch Queue: Orders ready for dispatch
 - Delivery Queue: Orders in transit
 - Completed Queue: Recently delivered orders
-- Integration with WorkflowOrchestrationService for sales order updates
+- Direct sales order status updates on dispatch/delivery
 """
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.infrastructure.persistence.models.delivery_model import DeliveryOrderModel
 from backend.app.infrastructure.persistence.models.sales_models import SalesOrderModel
-from backend.app.application.manufacturing.services.workflow_orchestration_service import WorkflowOrchestrationService
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,6 @@ class DeliveryService:
     
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.workflow_service = WorkflowOrchestrationService(session)
     
     async def get_delivery_dashboard(
         self,
@@ -268,12 +266,20 @@ class DeliveryService:
         do.tracking_number = tracking_number
         do.updated_at = datetime.now(timezone.utc)
         
-        # Update linked sales order to SHIPPED if exists
+        # Update linked sales order status if exists
         if do.sales_order_id:
-            await self.workflow_service.on_order_delivered(
-                tenant_id=tenant_id,
-                sales_order_id=do.sales_order_id,
+            so_stmt = select(SalesOrderModel).where(
+                and_(
+                    SalesOrderModel.id == do.sales_order_id,
+                    SalesOrderModel.tenant_id == tenant_id,
+                    SalesOrderModel.is_deleted.is_(False),
+                )
             )
+            so_result = await self.session.execute(so_stmt)
+            sales_order = so_result.scalar_one_or_none()
+            if sales_order:
+                sales_order.status = "DISPATCHED"
+                sales_order.updated_at = datetime.now(timezone.utc)
         
         return {
             "delivery_order_id": str(delivery_order_id),
@@ -317,12 +323,20 @@ class DeliveryService:
         do.remarks = delivery_notes
         do.updated_at = datetime.now(timezone.utc)
         
-        # Update linked sales order to DELIVERED if exists
+        # Update linked sales order status if exists
         if do.sales_order_id:
-            await self.workflow_service.on_order_delivered(
-                tenant_id=tenant_id,
-                sales_order_id=do.sales_order_id,
+            so_stmt = select(SalesOrderModel).where(
+                and_(
+                    SalesOrderModel.id == do.sales_order_id,
+                    SalesOrderModel.tenant_id == tenant_id,
+                    SalesOrderModel.is_deleted.is_(False),
+                )
             )
+            so_result = await self.session.execute(so_stmt)
+            sales_order = so_result.scalar_one_or_none()
+            if sales_order:
+                sales_order.status = "DELIVERED"
+                sales_order.updated_at = datetime.now(timezone.utc)
         
         return {
             "delivery_order_id": str(delivery_order_id),

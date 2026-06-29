@@ -410,16 +410,6 @@ export const financeService = {
     return res.data
   },
 
-  async getProductionSummary() {
-    const res = await apiClient.get(`${REPORTS_BASE}/production/summary`)
-    return res.data
-  },
-
-  async getProductionEfficiency() {
-    const res = await apiClient.get(`${REPORTS_BASE}/production/efficiency`)
-    return res.data
-  },
-
   async getSalesSummary() {
     const res = await apiClient.get(`${REPORTS_BASE}/sales/summary`)
     return res.data
@@ -432,11 +422,6 @@ export const financeService = {
 
   async getProcurementSummary() {
     const res = await apiClient.get(`${REPORTS_BASE}/procurement/summary`)
-    return res.data
-  },
-
-  async getQualitySummary() {
-    const res = await apiClient.get(`${REPORTS_BASE}/quality/summary`)
     return res.data
   },
 

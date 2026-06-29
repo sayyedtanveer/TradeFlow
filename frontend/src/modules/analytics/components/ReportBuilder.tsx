@@ -7,7 +7,7 @@ import { analyticsAPI } from '../../../services/api';
 interface ReportConfig {
   name: string;
   description: string;
-  type: 'sales' | 'production' | 'inventory' | 'finance';
+  type: 'sales' | 'inventory' | 'finance';
   metrics: string[];
   filters: Record<string, any>;
   grouping: string;
@@ -72,7 +72,6 @@ export const ReportBuilder: React.FC = () => {
 
   const metricOptions = {
     sales: ['revenue', 'order_count', 'average_order_value'],
-    production: ['planned_qty', 'produced_qty', 'scrap_rate', 'efficiency'],
     inventory: ['stock_level', 'inventory_value', 'turnover_rate', 'stockouts'],
     finance: ['ar_total', 'ap_total', 'cash_position', 'dso'],
   };
@@ -150,7 +149,6 @@ export const ReportBuilder: React.FC = () => {
                 className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="sales">Sales</option>
-                <option value="production">Production</option>
                 <option value="inventory">Inventory</option>
                 <option value="finance">Finance</option>
               </select>

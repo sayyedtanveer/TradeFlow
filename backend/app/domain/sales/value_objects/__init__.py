@@ -2,7 +2,13 @@
 
 from .money import Money
 from .order_number import OrderNumber
-from .order_status import LineStatus, OrderStatus, PaymentStatus
+from .order_status import (
+    LineStatus,
+    OrderStatus,
+    PaymentStatus,
+    ORDER_STATUS_TRANSITIONS,
+    get_allowed_transitions,
+)
 
 __all__ = [
     "OrderNumber",
@@ -10,5 +16,6 @@ __all__ = [
     "PaymentStatus",
     "LineStatus",
     "Money",
+    "ORDER_STATUS_TRANSITIONS",
+    "get_allowed_transitions",
 ]
-

@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { authService } from "@/services/auth.service"
 import { useAuthStore } from "@/app/store/authStore"
 import { getPostLoginPath } from "@/lib/roles.config"
@@ -20,6 +20,7 @@ export function useAuth() {
   const { clearTenant, setTenantInfo } = useTenantStore()
   const navigate = useNavigate()
   const { toast } = useToast()
+  const queryClient = useQueryClient()
 
   // Mutation for login
   const loginMutation = useMutation({
@@ -35,7 +36,14 @@ export function useAuth() {
         setPermissions(meResult.permissions ?? [])
         setSupplierAndClient(meResult.user.supplier_id ?? null, meResult.user.client_id ?? null)
         setTenantInfo(meResult.tenant.name, meResult.tenant.slug, meResult.tenant.plan)
-        
+
+        // Ensure role-based UI modules are refreshed now that user role is known
+        try {
+          await queryClient.invalidateQueries({ queryKey: ["system-map"] })
+        } catch (e) {
+          // ignore – best-effort refresh
+        }
+
         toast({ title: "Welcome back!" })
 
         const home = getPostLoginPath(meResult.user.role)

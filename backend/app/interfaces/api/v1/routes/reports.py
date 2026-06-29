@@ -13,13 +13,18 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
     get_current_tenant_id,
     get_current_role,
 )
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.application.finance.reporting_service import ReportingService
 from backend.app.application.documents.services.document_generation_service import DocumentGenerationService
 from backend.app.application.documents.services.template_service import TemplateService
 from backend.app.application.documents.services.pdf_generation_service import PDFGenerationService
 from backend.app.application.documents.services.document_storage_service import DocumentStorageService
 
-router = APIRouter(prefix="/reports", tags=["Reports & Analytics"])
+router = APIRouter(
+    prefix="/reports",
+    tags=["Reports & Analytics"],
+    dependencies=[Depends(require_permission("reports:read"))],
+)
 
 
 async def _get_db_session(request: Request):

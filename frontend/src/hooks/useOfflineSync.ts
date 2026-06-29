@@ -283,14 +283,8 @@ export const useOfflineSync = (options: SyncOptions = {}) => {
  */
 function getEndpointForAction(action: string, _resource: string): string {
   switch (action) {
-    case 'issue_material':
-      return `/api/v1/work-orders/${'resourceId'}/materials/issue`
     case 'receive_goods':
       return `/api/v1/supply-chain/grn`
-    case 'complete_operation':
-      return `/api/v1/work-orders/${'resourceId'}/job-cards/${'jobCardId'}/complete`
-    case 'record_production':
-      return `/api/v1/work-orders/${'resourceId'}/production`
     default:
       return '/api/v1/unknown'
   }

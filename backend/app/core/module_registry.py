@@ -26,6 +26,12 @@ class ModuleRegistry:
     _modules: Dict[str, ModuleDefinition] = {}
     _locked: bool = False
 
+    @staticmethod
+    def _normalize_role(role: Optional[str]) -> Optional[str]:
+        if role is None:
+            return None
+        return role.strip().upper()
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(ModuleRegistry, cls).__new__(cls)
@@ -67,9 +73,11 @@ class ModuleRegistry:
         """
         Returns the visible modules and their connections based on the user's role.
         """
+        normalized_role = self._normalize_role(user_role)
         accessible_modules = []
         for mod in self._modules.values():
-            if not user_role or user_role in mod.roles:
+            normalized_roles = {self._normalize_role(role) for role in mod.roles if role}
+            if not normalized_role or normalized_role in normalized_roles:
                 accessible_modules.append({
                     "id": mod.id,
                     "name": mod.name,

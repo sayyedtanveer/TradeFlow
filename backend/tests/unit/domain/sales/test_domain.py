@@ -113,19 +113,23 @@ class TestOrderStatus:
     """Tests for OrderStatus enum."""
 
     def test_all_statuses_defined(self):
-        """Test that all required statuses exist."""
-        assert OrderStatus.DRAFT
-        assert OrderStatus.CONFIRMED
-        assert OrderStatus.PRODUCTION
-        assert OrderStatus.READY
-        assert OrderStatus.SHIPPED
-        assert OrderStatus.DELIVERED
+        """Test that all required distribution statuses exist."""
+        assert OrderStatus.PENDING_INVENTORY_VALIDATION
+        assert OrderStatus.PENDING_MANUAL_ASSIGNMENT
+        assert OrderStatus.ASSIGNED
+        assert OrderStatus.ACCEPTED
+        assert OrderStatus.PICKING
+        assert OrderStatus.PACKING
+        assert OrderStatus.READY_FOR_DISPATCH
+        assert OrderStatus.DISPATCHED
+        assert OrderStatus.INVOICED
+        assert OrderStatus.ON_HOLD
         assert OrderStatus.CANCELLED
 
     def test_status_value(self):
         """Test status string values."""
-        assert OrderStatus.DRAFT.value == "DRAFT"
-        assert OrderStatus.CONFIRMED.value == "CONFIRMED"
+        assert OrderStatus.PENDING_INVENTORY_VALIDATION.value == "PENDING_INVENTORY_VALIDATION"
+        assert OrderStatus.ASSIGNED.value == "ASSIGNED"
         assert OrderStatus.CANCELLED.value == "CANCELLED"
 
 
@@ -386,7 +390,7 @@ class TestSalesOrder:
         )
         
         assert order.id == order_id
-        assert order.status == OrderStatus.DRAFT
+        assert order.status == OrderStatus.PENDING_INVENTORY_VALIDATION
         assert order.payment_status == PaymentStatus.PENDING
         assert len(order.lines) == 0
 
@@ -540,7 +544,7 @@ class TestSalesOrder:
             order.apply_discount(Decimal("2000.00"))
 
     def test_status_transitions(self):
-        """Test valid status transitions."""
+        """Test valid status transitions in the distribution workflow."""
         order = SalesOrder(
             id=uuid4(),
             tenant_id=uuid4(),
@@ -550,28 +554,17 @@ class TestSalesOrder:
             delivery_date=date.today() + timedelta(days=30),
         )
         
-        # DRAFT -> CONFIRMED
-        assert order.can_transition_to(OrderStatus.CONFIRMED) is True
-        assert order.can_transition_to(OrderStatus.SHIPPED) is False
-        order.add_line(
-            SalesOrderLine(
-                id=uuid4(),
-                order_id=order.id,
-                product_id=uuid4(),
-                product_type="variant",
-                uom_id=uuid4(),
-                quantity=Decimal("1.00"),
-                unit_price=Decimal("100.00"),
-            )
-        )
+        # PENDING_INVENTORY_VALIDATION -> ASSIGNED
+        assert order.can_transition_to(OrderStatus.ASSIGNED) is True
+        assert order.can_transition_to(OrderStatus.DISPATCHED) is False
 
-        order.confirm()
-        assert order.status == OrderStatus.CONFIRMED
+        order.assign_to_warehouse(uuid4())
+        assert order.status == OrderStatus.ASSIGNED
         
-        # CONFIRMED -> PRODUCTION
-        assert order.can_transition_to(OrderStatus.PRODUCTION) is True
-        order.transition_to_production()
-        assert order.status == OrderStatus.PRODUCTION
+        # ASSIGNED -> ACCEPTED
+        assert order.can_transition_to(OrderStatus.ACCEPTED) is True
+        order.accept()
+        assert order.status == OrderStatus.ACCEPTED
 
     def test_invalid_status_transition_fails(self):
         """Test that invalid transitions fail."""
@@ -584,12 +577,12 @@ class TestSalesOrder:
             delivery_date=date.today() + timedelta(days=30),
         )
         
-        # Try to ship from DRAFT (invalid)
+        # Try to dispatch from PENDING_INVENTORY_VALIDATION (invalid)
         with pytest.raises(ValueError):
-            order.ship()
+            order.dispatch()
 
     def test_cannot_add_line_to_non_draft_order(self):
-        """Test that lines can only be added to DRAFT orders."""
+        """Test that lines can only be added to orders in PENDING_INVENTORY_VALIDATION."""
         order = SalesOrder(
             id=uuid4(),
             tenant_id=uuid4(),
@@ -610,9 +603,10 @@ class TestSalesOrder:
             unit_price=Decimal("100.00"),
         )
         order.add_line(line1)
-        order.confirm()
+        # Transition to ASSIGNED (beyond initial state)
+        order.assign_to_warehouse(uuid4())
         
-        # Try to add line after confirmation (should fail)
+        # Try to add line after assignment (should fail)
         line2 = SalesOrderLine(
             id=uuid4(),
             order_id=order.id,

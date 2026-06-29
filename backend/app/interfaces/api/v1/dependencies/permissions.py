@@ -34,7 +34,10 @@ def require_permission(permission: str) -> Callable:
         if not allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Permission denied: '{permission}' required",
+                detail=(
+                    f"Permission denied: role '{role}' does not have the required "
+                    f"permission '{permission}'. Access to {request.method} {request.url.path} is forbidden."
+                ),
             )
     return _check
 
@@ -46,11 +49,17 @@ def require_role(required_role: Role) -> Callable:
     Usage:
         @router.delete("/tenants/{id}", dependencies=[Depends(require_role(Role.ADMIN))])
     """
-    async def _check(role: str = Depends(get_current_role)) -> None:
+    async def _check(
+        request: Request,
+        role: str = Depends(get_current_role),
+    ) -> None:
         try:
             user_role = Role(role)
         except ValueError:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unknown role")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Unknown role '{role}'. Access denied.",
+            )
 
         role_hierarchy = {
             Role.ADMIN: 100,
@@ -62,6 +71,7 @@ def require_role(required_role: Role) -> Callable:
             Role.OPERATOR: 30,
             Role.QC: 28,
             Role.WORKER: 25,
+            Role.WAREHOUSE_USER: 20,
             Role.VIEWER: 10,
             Role.CLIENT: 8,
             Role.SUPPLIER: 5,
@@ -69,6 +79,10 @@ def require_role(required_role: Role) -> Callable:
         if role_hierarchy.get(user_role, 0) < role_hierarchy.get(required_role, 100):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Role '{required_role.value}' or higher required",
+                detail=(
+                    f"Permission denied: role '{required_role.value}' or higher required. "
+                    f"Current role '{user_role.value}' does not have sufficient privileges "
+                    f"for {request.method} {request.url.path}."
+                ),
             )
     return _check

@@ -62,6 +62,7 @@ class AdjustStockRequest(BaseModel):
     new_quantity: Decimal = Field(..., ge=0, description="New absolute stock quantity")
     unit_id: Optional[uuid.UUID] = None
     location_id: Optional[uuid.UUID] = None
+    warehouse_id: uuid.UUID = Field(..., description="Warehouse to adjust stock in (required)")
     remarks: Optional[str] = Field(None, max_length=500)
 
 
@@ -228,3 +229,55 @@ class SerialNumberResponse(BaseModel):
 class SerialNumberListResponse(BaseModel):
     items: List[SerialNumberResponse]
     total: int
+
+
+# ── Warehouse-Scoped Inventory Schemas ────────────────────────────────────
+
+
+class InventoryUploadRequest(BaseModel):
+    """Bulk stock upload — requires warehouse_id for warehouse scoping."""
+    material_id: uuid.UUID
+    quantity: Decimal = Field(..., gt=0, description="Quantity to upload/add (must be positive)")
+    warehouse_id: uuid.UUID = Field(..., description="Target warehouse (required)")
+    unit_id: Optional[uuid.UUID] = None
+    to_location_id: Optional[uuid.UUID] = None
+    remarks: Optional[str] = Field(None, max_length=500)
+    reference_id: Optional[uuid.UUID] = None
+
+
+class InventoryAdjustRequest(BaseModel):
+    """Stock adjustment — requires warehouse_id for warehouse scoping."""
+    material_id: uuid.UUID
+    new_quantity: Decimal = Field(..., ge=0, description="New absolute stock quantity")
+    warehouse_id: uuid.UUID = Field(..., description="Target warehouse (required)")
+    unit_id: Optional[uuid.UUID] = None
+    location_id: Optional[uuid.UUID] = None
+    remarks: Optional[str] = Field(None, max_length=500)
+
+
+class WarehouseStockItem(BaseModel):
+    """Stock level for a product in a specific warehouse."""
+    warehouse_id: uuid.UUID
+    warehouse_name: Optional[str] = None
+    quantity: Decimal
+
+
+class InventorySummaryItem(BaseModel):
+    """Aggregated stock for a material across all warehouses."""
+    material_id: uuid.UUID
+    material_code: str
+    material_name: str
+    total_stock: Decimal
+    reserved_stock: Decimal
+    available_stock: Decimal
+    per_warehouse: List[WarehouseStockItem]
+
+    model_config = {"from_attributes": True}
+
+
+class InventorySummaryResponse(BaseModel):
+    """Paginated inventory summary across all warehouses."""
+    items: List[InventorySummaryItem]
+    total: int
+    page: int
+    page_size: int

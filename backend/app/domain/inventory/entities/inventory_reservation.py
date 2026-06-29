@@ -1,4 +1,12 @@
-"""Inventory Reservation entity for tracking material reservations and lifecycle."""
+"""Inventory Reservation entity for tracking material reservations and lifecycle.
+
+Implements the inventory reservation system for sales orders:
+- Reserves ordered quantities upon order confirmation to prevent overselling
+- Releases reservations on order cancellation
+- Available quantity = current_stock - reserved_quantity
+
+Requirements: 5.7, 6.3, 6.13
+"""
 from __future__ import annotations
 
 import uuid
@@ -16,22 +24,29 @@ class ReservationStatus(str, enum.Enum):
     CONSUMED = "CONSUMED"
     REJECTED = "REJECTED"
     RETURNED = "RETURNED"
+    RELEASED = "RELEASED"
 
 
 class InventoryReservation:
-    """Represents a material reservation with full lifecycle tracking."""
+    """Represents a material reservation with full lifecycle tracking.
+
+    A reservation earmarks inventory for a specific sales order line to prevent
+    overselling. Reservations are warehouse-scoped when a warehouse is assigned.
+    """
 
     def __init__(
         self,
         id: uuid.UUID,
         tenant_id: uuid.UUID,
-        reference_type: str,  # "work_order", "sales_order", etc.
+        reference_type: str,  # "sales_order_line", "purchase_order", etc.
         reference_id: uuid.UUID,
         material_id: uuid.UUID,
         quantity: Decimal,
         status: ReservationStatus,
         unit_id: Optional[uuid.UUID] = None,
         batch_id: Optional[uuid.UUID] = None,
+        warehouse_id: Optional[uuid.UUID] = None,
+        order_id: Optional[uuid.UUID] = None,
         issued_quantity: Decimal = Decimal("0"),
         consumed_quantity: Decimal = Decimal("0"),
         returned_quantity: Decimal = Decimal("0"),
@@ -47,6 +62,8 @@ class InventoryReservation:
         self.status = status
         self.unit_id = unit_id
         self.batch_id = batch_id
+        self.warehouse_id = warehouse_id
+        self.order_id = order_id
         self.issued_quantity = issued_quantity
         self.consumed_quantity = consumed_quantity
         self.returned_quantity = returned_quantity
@@ -72,7 +89,7 @@ class InventoryReservation:
         self.updated_at = datetime.now(timezone.utc)
 
     def consume(self, quantity: Decimal) -> None:
-        """Consume material from reservation (during production)."""
+        """Consume material from reservation (during fulfilment)."""
         if self.status not in (
             ReservationStatus.ISSUED,
             ReservationStatus.PARTIALLY_ISSUED,
@@ -130,3 +147,27 @@ class InventoryReservation:
     def is_fully_issued(self) -> bool:
         """Check if reservation is fully issued."""
         return self.issued_quantity >= self.quantity
+
+    def release(self) -> None:
+        """Release the reservation (e.g., on order cancellation).
+
+        Transitions to RELEASED status, making the reserved quantity
+        available for other orders.
+        """
+        if self.status == ReservationStatus.RELEASED:
+            return  # Already released, idempotent
+        if self.status in (ReservationStatus.CONSUMED, ReservationStatus.ISSUED):
+            raise ValueError(
+                f"Cannot release reservation in {self.status} status — "
+                "stock has already been issued/consumed"
+            )
+        self.status = ReservationStatus.RELEASED
+        self.updated_at = datetime.now(timezone.utc)
+
+    @property
+    def is_active(self) -> bool:
+        """Check if this reservation is still holding stock."""
+        return self.status in (
+            ReservationStatus.RESERVED,
+            ReservationStatus.PARTIALLY_ISSUED,
+        )

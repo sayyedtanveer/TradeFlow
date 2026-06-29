@@ -131,7 +131,7 @@ export const ROLE_CONFIG: Record<
   },
   [UserRole.PLANNER]: {
     label: "Planner",
-    description: "Planning & BOM",
+    description: "Planning & procurement",
     icon: Users,
     color: "text-indigo-600",
     sortOrder: 4,
@@ -145,14 +145,14 @@ export const ROLE_CONFIG: Record<
   },
   [UserRole.OPERATOR]: {
     label: "Operator",
-    description: "Warehouse & production ops",
+    description: "Warehouse ops",
     icon: Wrench,
     color: "text-green-600",
     sortOrder: 6,
   },
   [UserRole.QC]: {
     label: "Quality",
-    description: "Inspections & NCR",
+    description: "Inspections",
     icon: Shield,
     color: "text-amber-600",
     sortOrder: 7,
@@ -173,7 +173,7 @@ export const ROLE_CONFIG: Record<
   },
   [UserRole.WORKER]: {
     label: "Worker",
-    description: "Shop floor",
+    description: "Warehouse floor",
     icon: Wrench,
     color: "text-orange-600",
     sortOrder: 10,

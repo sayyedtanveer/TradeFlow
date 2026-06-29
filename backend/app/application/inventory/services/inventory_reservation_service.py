@@ -13,10 +13,6 @@ from backend.app.domain.inventory.entities.inventory_reservation import (
     InventoryReservation,
     ReservationStatus,
 )
-from backend.app.domain.inventory.entities.material_shortage import (
-    MaterialShortage,
-    ShortageStatus,
-)
 
 
 class InventoryReservationService:
@@ -25,54 +21,11 @@ class InventoryReservationService:
     Responsibilities:
     - Handle partial reservations
     - Track reservation states
-    - Create shortage records when needed
     """
 
     def __init__(self, session: AsyncSession):
         self._session = session
         self._inventory = InventoryService(session)
-
-    async def reserve_for_work_order(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        work_order_id: uuid.UUID,
-        material_id: uuid.UUID,
-        required_quantity: Decimal,
-        unit_id: Optional[uuid.UUID],
-        created_by: uuid.UUID,
-    ) -> tuple[Decimal, Decimal, Optional[uuid.UUID]]:
-        """Reserve material for work order with partial reservation handling.
-
-        Returns: (reserved_qty, shortage_qty, shortage_record_id)
-        """
-        # Reserve available stock
-        reserved_qty, shortage_qty = await self._inventory.reserve_for_work_order(
-            tenant_id=tenant_id,
-            material_id=material_id,
-            quantity=required_quantity,
-            work_order_id=work_order_id,
-            unit_id=unit_id,
-            created_by=created_by,
-        )
-
-        shortage_record_id = None
-
-        # Create shortage record if shortage exists
-        if shortage_qty > 0:
-            await self._inventory.create_shortage_record(
-                tenant_id=tenant_id,
-                work_order_id=work_order_id,
-                material_id=material_id,
-                required_quantity=required_quantity,
-                shortage_quantity=shortage_qty,
-                created_by=created_by,
-            )
-            # Note: We would return the actual shortage record ID after model creation
-            # For now, we'll return None as placeholder
-            shortage_record_id = None
-
-        return reserved_qty, shortage_qty, shortage_record_id
 
     async def get_reservation_audit_trail(
         self,
@@ -108,6 +61,8 @@ class InventoryReservationService:
                     reference_id=model.reference_id,
                     material_id=model.material_id,
                     batch_id=model.batch_id,
+                    warehouse_id=getattr(model, 'warehouse_id', None),
+                    order_id=getattr(model, 'order_id', None),
                     quantity=Decimal(str(model.quantity)),
                     status=ReservationStatus(model.status),
                     unit_id=model.unit_id,
@@ -119,15 +74,3 @@ class InventoryReservationService:
                 )
             )
         return reservations
-
-    async def get_shortages_for_work_order(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        work_order_id: uuid.UUID,
-    ) -> list[MaterialShortage]:
-        """Get all shortage records for a work order."""
-        return await self._inventory.get_shortages_for_work_order(
-            tenant_id=tenant_id,
-            work_order_id=work_order_id,
-        )

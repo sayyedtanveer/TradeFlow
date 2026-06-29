@@ -123,6 +123,7 @@ class SalesOrderModel(Base):
         Index("ix_sales_order_order_date", "order_date"),
         Index("ix_sales_order_delivery_date", "delivery_date"),
         Index("ix_sales_order_is_deleted", "is_deleted"),
+        Index("ix_sales_order_assigned_warehouse_id", "assigned_warehouse_id"),
     )
 
     # Primary and tenant
@@ -148,7 +149,9 @@ class SalesOrderModel(Base):
     delivery_date: Mapped[str] = mapped_column(nullable=False)
 
     # Status fields
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="DRAFT")
+    status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="PENDING_INVENTORY_VALIDATION"
+    )
     payment_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="PENDING"
     )
@@ -183,6 +186,23 @@ class SalesOrderModel(Base):
         DateTime(timezone=True), nullable=True
     )
     approval_notes: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+
+    # Distribution workflow fields
+    assigned_warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("warehouses.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    assigned_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    accepted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dispatched_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    hold_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     # Status flags
     is_active: Mapped[bool] = mapped_column(

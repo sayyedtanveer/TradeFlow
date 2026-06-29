@@ -11,8 +11,6 @@ class MetricType(str, Enum):
     """Supported metric types."""
     REVENUE = "revenue"
     ORDERS = "orders"
-    PRODUCTION_QTY = "production_qty"
-    SCRAP_QTY = "scrap_qty"
     INVENTORY_VALUE = "inventory_value"
     AVERAGE_COST = "average_cost"
 
@@ -59,49 +57,6 @@ class ReportGenerator:
                 "average_order_value": self._safe_divide(
                     sum(d.get("revenue", 0) for d in aggregated),
                     sum(d.get("order_count", 0) for d in aggregated),
-                ),
-            },
-        }
-
-    async def generate_production_report(
-        self,
-        tenant_id: UUID,
-        start_date: datetime,
-        end_date: datetime,
-        grouping: Optional[str] = None,
-        filters: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """Generate production report with WO status and metrics."""
-        filters = filters or {}
-        
-        work_orders = await self.repository.get_work_orders(
-            tenant_id=tenant_id,
-            start_date=start_date,
-            end_date=end_date,
-            filters=filters,
-        )
-
-        total_planned = sum(wo.get("planned_qty", 0) for wo in work_orders)
-        total_produced = sum(wo.get("produced_qty", 0) for wo in work_orders)
-        total_scrap = sum(wo.get("scrap_qty", 0) for wo in work_orders)
-
-        aggregated = self._aggregate_data(work_orders, grouping or {"by": "status"})
-
-        return {
-            "report_type": "production",
-            "period": {
-                "start": start_date.isoformat(),
-                "end": end_date.isoformat(),
-            },
-            "data": aggregated,
-            "summary": {
-                "total_planned": total_planned,
-                "total_produced": total_produced,
-                "total_scrap": total_scrap,
-                "completion_rate": self._safe_divide(total_produced, total_planned),
-                "scrap_rate": self._safe_divide(total_scrap, total_planned),
-                "efficiency": self._safe_divide(
-                    total_produced, total_planned + total_scrap
                 ),
             },
         }
@@ -259,10 +214,6 @@ class MetricsCalculator:
             return await self._calculate_sales_metric(
                 tenant_id, metric_key, start_date, end_date
             )
-        elif metric_key.startswith("production_"):
-            return await self._calculate_production_metric(
-                tenant_id, metric_key, start_date, end_date
-            )
         elif metric_key.startswith("inventory_"):
             return await self._calculate_inventory_metric(
                 tenant_id, metric_key, start_date, end_date
@@ -288,25 +239,6 @@ class MetricsCalculator:
             return sum(d.get("revenue", 0) for d in data) / len(data) if data else 0
         else:
             raise ValueError(f"Unknown sales metric: {metric_key}")
-
-    async def _calculate_production_metric(
-        self, tenant_id: UUID, metric_key: str, start_date: datetime, end_date: datetime
-    ) -> float:
-        """Calculate production metrics."""
-        data = await self.repository.get_work_orders(tenant_id, start_date, end_date)
-        
-        if metric_key == "production_total_qty":
-            return sum(d.get("produced_qty", 0) for d in data)
-        elif metric_key == "production_scrap_rate":
-            total_qty = sum(d.get("produced_qty", 0) for d in data)
-            total_scrap = sum(d.get("scrap_qty", 0) for d in data)
-            return total_scrap / total_qty if total_qty > 0 else 0
-        elif metric_key == "production_completion_rate":
-            total_planned = sum(d.get("planned_qty", 0) for d in data)
-            total_produced = sum(d.get("produced_qty", 0) for d in data)
-            return total_produced / total_planned if total_planned > 0 else 0
-        else:
-            raise ValueError(f"Unknown production metric: {metric_key}")
 
     async def _calculate_inventory_metric(
         self, tenant_id: UUID, metric_key: str, start_date: datetime, end_date: datetime

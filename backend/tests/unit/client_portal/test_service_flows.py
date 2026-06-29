@@ -262,14 +262,13 @@ async def test_dashboard_tracking_credit_profile_and_notification_flows(monkeypa
         id=uuid.uuid4(),
         tenant_id=tenant_id,
         user_id=user.id,
-        type="ORDER_SHIPPED",
+        notification_type="ORDER_SHIPPED",
         title="Shipped",
         message="On the way",
         reference_type="sales_order",
         reference_id=order.id,
         is_read=False,
-        sent_at=datetime.now(timezone.utc),
-        email_sent=False,
+        created_at=datetime.now(timezone.utc),
     )
     session = FakeSession(
         scalar_values=[4, 2, Decimal("220.00"), Decimal("80.00"), 1, 1, note],

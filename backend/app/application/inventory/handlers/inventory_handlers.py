@@ -274,6 +274,7 @@ class AddStockHandler:
             reference_id=cmd.reference_id,
             remarks=cmd.remarks,
             created_by=cmd.created_by,
+            warehouse_id=cmd.warehouse_id,
         )
         await self._uow.commit()
         updated = await self._material_repo.get_by_id(cmd.material_id, cmd.tenant_id)
@@ -310,6 +311,7 @@ class RemoveStockHandler:
             reference_id=cmd.reference_id,
             remarks=cmd.remarks,
             created_by=cmd.created_by,
+            warehouse_id=cmd.warehouse_id,
         )
         await self._uow.commit()
         updated = await self._material_repo.get_by_id(cmd.material_id, cmd.tenant_id)
@@ -345,6 +347,7 @@ class AdjustStockHandler:
             location_id=cmd.location_id,
             remarks=cmd.remarks or f"Adjusted to {cmd.new_quantity}",
             created_by=cmd.created_by,
+            warehouse_id=cmd.warehouse_id,
         )
         await self._uow.commit()
         updated = await self._material_repo.get_by_id(cmd.material_id, cmd.tenant_id)

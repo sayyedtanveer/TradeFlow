@@ -36,10 +36,6 @@ export const analyticsAPI = {
     const response = await (await import('./api-client')).apiClient.get('/analytics/inventory', { params: { start, end } });
     return response.data;
   },
-  generateProductionReport: async (start: string, end: string) => {
-    const response = await (await import('./api-client')).apiClient.get('/analytics/production', { params: { start, end } });
-    return response.data;
-  },
   generateSalesReport: async (start: string, end: string) => {
     const response = await (await import('./api-client')).apiClient.get('/analytics/sales', { params: { start, end } });
     return response.data;

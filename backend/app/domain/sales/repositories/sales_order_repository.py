@@ -79,6 +79,12 @@ class SalesOrderRepository(BaseRepository):
             deleted_at=model.deleted_at,
             created_at=model.created_at,
             updated_at=model.updated_at,
+            # Distribution workflow fields
+            assigned_warehouse_id=getattr(model, "assigned_warehouse_id", None),
+            assigned_at=getattr(model, "assigned_at", None),
+            accepted_at=getattr(model, "accepted_at", None),
+            dispatched_at=getattr(model, "dispatched_at", None),
+            hold_reason=getattr(model, "hold_reason", None),
         )
 
     async def _enrich_orders(
@@ -172,7 +178,7 @@ class SalesOrderRepository(BaseRepository):
             client_id=entity.client_id,
             order_date=entity.order_date.isoformat(),
             delivery_date=entity.delivery_date.isoformat(),
-            status=entity.status.name,
+            status=entity.status.value,
             payment_status=entity.payment_status.name,
             subtotal=entity.subtotal,
             discount_amount=entity.discount_amount,
@@ -190,6 +196,12 @@ class SalesOrderRepository(BaseRepository):
             deleted_at=entity.deleted_at,
             created_at=entity.created_at,
             updated_at=entity.updated_at,
+            # Distribution workflow fields
+            assigned_warehouse_id=entity.assigned_warehouse_id,
+            assigned_at=entity.assigned_at,
+            accepted_at=entity.accepted_at,
+            dispatched_at=entity.dispatched_at,
+            hold_reason=entity.hold_reason,
             lines=[
                 SalesOrderLineModel(
                     id=line.id,
@@ -491,7 +503,7 @@ class SalesOrderRepository(BaseRepository):
             )
             .where(
                 self._model_class().tenant_id == tenant_id,
-                self._model_class().status == OrderStatus.DRAFT.name,
+                self._model_class().status == OrderStatus.PENDING_INVENTORY_VALIDATION.value,
                 self._model_class().is_active.is_(True),
                 self._model_class().is_deleted.is_(False),
             )

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Request, status
 
 from backend.app.interfaces.api.v1.dependencies.auth import get_current_tenant_id, get_current_user_id
 from backend.app.interfaces.api.v1.dependencies.auth import get_container
+from backend.app.interfaces.api.v1.dependencies.permissions import require_permission
 from backend.app.application.delivery.commands.delivery_commands import (
     CreateDispatchCommand,
     UpdateShipmentStatusCommand,
@@ -17,7 +18,11 @@ from backend.app.application.delivery.commands.delivery_commands import (
 from backend.app.application.delivery.handlers.delivery_dashboard_handler import DeliveryDashboardHandler
 
 
-router = APIRouter(prefix="/delivery", tags=["Delivery Dashboard"])
+router = APIRouter(
+    prefix="/delivery",
+    tags=["Delivery Dashboard"],
+    dependencies=[Depends(require_permission("warehouse:fulfilment"))],
+)
 
 
 @router.get("/dispatch-queue")

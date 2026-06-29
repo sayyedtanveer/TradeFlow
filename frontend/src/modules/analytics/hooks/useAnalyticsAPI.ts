@@ -86,22 +86,6 @@ class AnalyticsService {
     return response.json();
   }
 
-  async generateProductionReport(
-    startDate: string,
-    endDate: string,
-    grouping?: string
-  ): Promise<any> {
-    const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
-    if (grouping) params.append('grouping', grouping);
-
-    const response = await fetch(`${this.baseUrl}/production-report?${params}`, {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem('token')}`,
-      },
-    });
-    return response.json();
-  }
-
   async generateInventoryReport(
     startDate: string,
     endDate: string,

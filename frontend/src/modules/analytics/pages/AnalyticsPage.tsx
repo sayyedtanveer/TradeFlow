@@ -3,18 +3,16 @@
 import React, { useState } from 'react';
 import { ReportBuilder } from '../components/ReportBuilder';
 import { SalesDashboard } from './SalesDashboard';
-import { ProductionDashboard } from './ProductionDashboard';
 import { InventoryDashboard } from './InventoryDashboard';
 import { FinanceDashboard } from './FinanceDashboard';
 
 export const AnalyticsPage: React.FC = () => {
   const [activeView, setActiveView] = useState<
-    'sales' | 'production' | 'inventory' | 'finance' | 'builder'
+    'sales' | 'inventory' | 'finance' | 'builder'
   >('sales');
 
   const dashboards = [
     { id: 'sales', label: 'Sales', icon: '📊' },
-    { id: 'production', label: 'Production', icon: '🏭' },
     { id: 'inventory', label: 'Inventory', icon: '📦' },
     { id: 'finance', label: 'Finance', icon: '💰' },
     { id: 'builder', label: 'Report Builder', icon: '🔨' },
@@ -52,7 +50,6 @@ export const AnalyticsPage: React.FC = () => {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeView === 'sales' && <SalesDashboard />}
-        {activeView === 'production' && <ProductionDashboard />}
         {activeView === 'inventory' && <InventoryDashboard />}
         {activeView === 'finance' && <FinanceDashboard />}
         {activeView === 'builder' && <ReportBuilder />}

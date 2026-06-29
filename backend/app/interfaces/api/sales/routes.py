@@ -1,4 +1,4 @@
-"""Sales API routes (FastAPI endpoints) with full Dependency Injection."""
+﻿"""Sales API routes (FastAPI endpoints) with full Dependency Injection."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 
 from backend.app.domain.sales.repositories.client_repository import ClientRepository
 from backend.app.domain.sales.repositories.sales_order_repository import SalesOrderRepository
@@ -45,6 +45,9 @@ from backend.app.interfaces.api.sales.schemas import (
     ShipOrderRequest,
     CancelOrderRequest,
     OrderStatusResponse,
+    AssignWarehouseRequest,
+    HoldOrderRequest,
+    AdminCancelOrderRequest,
 )
 from backend.app.application.sales import (
     # Commands
@@ -66,6 +69,10 @@ from backend.app.application.sales import (
     CancelSalesOrderCommand,
     ShipOrderCommand,
     DeliverOrderCommand,
+    AssignWarehouseCommand,
+    PlaceOrderOnHoldCommand,
+    ReleaseOrderHoldCommand,
+    AdminCancelOrderCommand,
     # Queries
     GetClientByIdQuery,
     GetClientByCodeQuery,
@@ -100,6 +107,10 @@ from backend.app.application.sales import (
     CancelSalesOrderCommandHandler,
     ShipOrderCommandHandler,
     DeliverOrderCommandHandler,
+    AssignWarehouseCommandHandler,
+    PlaceOrderOnHoldCommandHandler,
+    ReleaseOrderHoldCommandHandler,
+    AdminCancelOrderCommandHandler,
     GetClientByIdQueryHandler,
     GetClientByCodeQueryHandler,
     ListClientsQueryHandler,
@@ -250,43 +261,9 @@ async def _notify_order_action_owner(
     order_number = str(order.order_number)
 
     if order_status in {"PRODUCTION", "PROCESSING"}:
-        work_order_ids = {
-            line.work_order_id
-            for line in getattr(order, "lines", [])
-            if getattr(line, "work_order_id", None)
-        }
-        if work_order_ids:
-            for work_order_id in work_order_ids:
-                await notification_service.broadcast_to_permission(
-                    tenant_id=tenant_id,
-                    permission="manufacturing:write",
-                    notification_type="WORK_ORDER_ACTION_REQUIRED",
-                    title=f"Production action required for {order_number}",
-                    message=f"Sales order {order_number} was approved and needs production work order execution.",
-                    reference_type="work_order",
-                    reference_id=work_order_id,
-                )
-            await _notify_purchase_order_owners(
-                session=session,
-                container=container,
-                tenant_id=tenant_id,
-                work_order_ids=work_order_ids,
-                order_number=order_number,
-            )
-            return
-
-        await notification_service.broadcast_to_permission(
-            tenant_id=tenant_id,
-            permission="manufacturing:write",
-            notification_type="PRODUCTION_ACTION_REQUIRED",
-            title=f"Production action required for {order_number}",
-            message=f"Sales order {order_number} was approved and is waiting for production execution.",
-            reference_type="sales_order",
-            reference_id=order.id,
-        )
-        return
-
-    if order_status in {"READY", "CONFIRMED"}:
+        # Manufacturing statuses no longer used in TradeFlow distribution system
+        pass
+    elif order_status in {"READY", "CONFIRMED"}:
         await notification_service.broadcast_to_permission(
             tenant_id=tenant_id,
             permission="inventory:write",
@@ -296,62 +273,6 @@ async def _notify_order_action_owner(
             reference_type="sales_order",
             reference_id=order.id,
         )
-
-
-async def _notify_purchase_order_owners(
-    *,
-    session,
-    container,
-    tenant_id: UUID,
-    work_order_ids: set[UUID],
-    order_number: str,
-) -> None:
-    """Notify only the supplier users linked to auto-created shortage POs."""
-    if not work_order_ids:
-        return
-
-    from backend.app.infrastructure.persistence.models.purchase_order_model import PurchaseOrderModel
-
-    notification_service = NotificationService(
-        session,
-        email_service=getattr(container, "email_service", None),
-        connection_manager=getattr(container, "connection_manager", None),
-    )
-    filters = [
-        PurchaseOrderModel.notes.ilike(f"%{work_order_id}%")
-        for work_order_id in work_order_ids
-    ]
-    purchase_orders = (
-        await session.execute(
-            select(PurchaseOrderModel.id, PurchaseOrderModel.po_number, PurchaseOrderModel.supplier_id).where(
-                PurchaseOrderModel.tenant_id == tenant_id,
-                PurchaseOrderModel.is_deleted.is_(False),
-                or_(*filters),
-            )
-        )
-    ).all()
-
-    for po_id, po_number, supplier_id in purchase_orders:
-        supplier_user_ids = (
-            await session.execute(
-                select(UserModel.id).where(
-                    UserModel.tenant_id == tenant_id,
-                    UserModel.supplier_id == supplier_id,
-                    UserModel.is_active.is_(True),
-                    UserModel.is_deleted.is_(False),
-                )
-            )
-        ).scalars().all()
-        for supplier_user_id in supplier_user_ids:
-            await notification_service.send(
-                tenant_id=tenant_id,
-                user_id=supplier_user_id,
-                notification_type="SUPPLIER_PO_ACTION_REQUIRED",
-                title=f"Purchase order {po_number} needs supplier action",
-                message=f"Sales order {order_number} created a material shortage PO. Please review and acknowledge it.",
-                reference_type="purchase_order",
-                reference_id=po_id,
-            )
 
 
 async def _notify_sales_order_submitted(session, container, tenant_id: UUID, order) -> None:
@@ -890,15 +811,13 @@ async def approve_order(
 
         from backend.app.domain.sales.services.credit_validation_service import CreditValidationService
         from backend.app.domain.sales.services.inventory_reservation_service import InventoryReservationService
-        from backend.app.application.sales.noop_manufacturing_service import NoOpManufacturingService
         from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
         from backend.app.application.inventory.services.stock_service import InventoryService as StockInventoryService
 
         credit_service = CreditValidationService(client_repo)
         stock_inventory = StockInventoryService(session)
         inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
-        mfg_integ = NoOpManufacturingService()
-        inv_service = InventoryReservationService(inv_integ, mfg_integ)
+        inv_service = InventoryReservationService(inv_integ)
         confirm_handler = ConfirmSalesOrderCommandHandler(order_repo, client_repo, credit_service, inv_service, uow)
 
         try:
@@ -992,7 +911,7 @@ async def confirm_order(
     tenant_id: UUID = Depends(get_current_tenant_id),
     user_id: UUID = Depends(get_current_user_id),
 ):
-    """Confirm order (DRAFT → CONFIRMED)."""
+    """Confirm order (DRAFT â†’ CONFIRMED)."""
     container = get_container(request)
     async with container.session_factory() as session:
         order_repo = SalesOrderRepository(session)
@@ -1001,17 +920,18 @@ async def confirm_order(
         
         from backend.app.domain.sales.services.credit_validation_service import CreditValidationService
         from backend.app.domain.sales.services.inventory_reservation_service import InventoryReservationService
-        from backend.app.application.sales.noop_manufacturing_service import NoOpManufacturingService
         from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
         from backend.app.application.inventory.services.stock_service import InventoryService as StockInventoryService
         
         credit_service = CreditValidationService(client_repo)
         stock_inventory = StockInventoryService(session)
         inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
-        mfg_integ = NoOpManufacturingService()
-        inv_service = InventoryReservationService(inv_integ, mfg_integ)
+        inv_service = InventoryReservationService(inv_integ)
 
-        handler = ConfirmSalesOrderCommandHandler(order_repo, client_repo, credit_service, inv_service, uow)
+        handler = ConfirmSalesOrderCommandHandler(
+            order_repo, client_repo, credit_service, inv_service, uow,
+            audit_service=container.audit_service,
+        )
         try:
             await handler.handle(
                 ConfirmSalesOrderCommand(
@@ -1056,14 +976,12 @@ async def ship_order(
         uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
         
         from backend.app.domain.sales.services.inventory_reservation_service import InventoryReservationService
-        from backend.app.application.sales.noop_manufacturing_service import NoOpManufacturingService
         from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
         from backend.app.application.inventory.services.stock_service import InventoryService as StockInventoryService
         
         stock_inventory = StockInventoryService(session)
         inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
-        mfg_integ = NoOpManufacturingService()
-        inv_service = InventoryReservationService(inv_integ, mfg_integ)
+        inv_service = InventoryReservationService(inv_integ)
         
         handler = ShipOrderCommandHandler(order_repo, inv_service, uow)
         try:
@@ -1181,7 +1099,11 @@ async def cancel_order(
     tenant_id: UUID = Depends(get_current_tenant_id),
     user_id: UUID = Depends(get_current_user_id),
 ):
-    """Cancel an order."""
+    """Cancel an order.
+
+    Returns HTTP 409 Conflict if the order's current status does not allow cancellation,
+    including the current status and the list of allowed transitions.
+    """
     container = get_container(request)
     async with container.session_factory() as session:
         order_repo = SalesOrderRepository(session)
@@ -1190,17 +1112,18 @@ async def cancel_order(
         
         from backend.app.domain.sales.services.credit_validation_service import CreditValidationService
         from backend.app.domain.sales.services.inventory_reservation_service import InventoryReservationService
-        from backend.app.application.sales.noop_manufacturing_service import NoOpManufacturingService
         from backend.app.application.sales.inventory_integration import SalesInventoryIntegrationService
         from backend.app.application.inventory.services.stock_service import InventoryService as StockInventoryService
         
         credit_service = CreditValidationService(client_repo)
         stock_inventory = StockInventoryService(session)
         inv_integ = SalesInventoryIntegrationService(stock_inventory, created_by=user_id)
-        mfg_integ = NoOpManufacturingService()
-        inv_service = InventoryReservationService(inv_integ, mfg_integ)
+        inv_service = InventoryReservationService(inv_integ)
 
-        handler = CancelSalesOrderCommandHandler(order_repo, credit_service, inv_service, uow)
+        handler = CancelSalesOrderCommandHandler(
+            order_repo, credit_service, inv_service, uow,
+            audit_service=container.audit_service,
+        )
         try:
             await handler.handle(
                 CancelSalesOrderCommand(
@@ -1215,8 +1138,195 @@ async def cancel_order(
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         except Exception as e:
+            # Let InvalidTransitionError propagate to the global handler (â†’ 409)
+            from backend.app.domain.sales.services.order_state_machine import InvalidTransitionError
+            if isinstance(e, InvalidTransitionError):
+                raise
             logger.exception(f"Error cancelling order {order_id}: {str(e)}")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Cancellation failed")
+
+
+# ==================== ADMIN ORDER WORKFLOW ENDPOINTS ====================
+# Requirements: 6.13, 6.15, 6.16, 2.1
+# These endpoints are Admin-only and use the OrderStateMachine for validation/audit.
+
+
+@router.post(
+    "/orders/{order_id}/assign-warehouse",
+    response_model=SalesOrderResponse,
+    dependencies=[Depends(require_permission("sales:admin_workflow"))],
+)
+async def assign_warehouse(
+    order_id: UUID,
+    body: AssignWarehouseRequest,
+    request: Request,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """Manually assign a warehouse to a PENDING_MANUAL_ASSIGNMENT order (Admin only).
+
+    Transitions order from PENDING_MANUAL_ASSIGNMENT -> ASSIGNED.
+    Returns HTTP 409 if the transition is invalid.
+    """
+    container = get_container(request)
+    async with container.session_factory() as session:
+        # Validate warehouse exists and is active
+        from backend.app.infrastructure.persistence.models.warehouse_model import WarehouseModel
+        warehouse = await session.get(WarehouseModel, body.warehouse_id)
+        if not warehouse or warehouse.tenant_id != tenant_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Warehouse not found")
+        if not warehouse.is_active:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Warehouse is deactivated")
+
+        order_repo = SalesOrderRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+
+        handler = AssignWarehouseCommandHandler(
+            order_repo, uow,
+            audit_service=container.audit_service,
+        )
+        # InvalidTransitionError propagates to global handler (-> 409)
+        await handler.handle(
+            AssignWarehouseCommand(
+                tenant_id=tenant_id,
+                sales_order_id=order_id,
+                warehouse_id=body.warehouse_id,
+                assigned_by=user_id,
+            )
+        )
+        order = await order_repo.get_by_id(order_id, tenant_id)
+        return order.to_dict() if order else None
+
+
+@router.post(
+    "/orders/{order_id}/hold",
+    response_model=SalesOrderResponse,
+    dependencies=[Depends(require_permission("sales:admin_workflow"))],
+)
+async def hold_order(
+    order_id: UUID,
+    body: HoldOrderRequest,
+    request: Request,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """Place an order on hold (Admin only).
+
+    Transitions order from ASSIGNED or ACCEPTED -> ON_HOLD.
+    Returns HTTP 409 if the transition is invalid.
+    """
+    container = get_container(request)
+    async with container.session_factory() as session:
+        order_repo = SalesOrderRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+
+        handler = PlaceOrderOnHoldCommandHandler(
+            order_repo, uow,
+            audit_service=container.audit_service,
+        )
+        # InvalidTransitionError propagates to global handler (-> 409)
+        await handler.handle(
+            PlaceOrderOnHoldCommand(
+                tenant_id=tenant_id,
+                sales_order_id=order_id,
+                hold_reason=body.reason,
+                held_by=user_id,
+            )
+        )
+        order = await order_repo.get_by_id(order_id, tenant_id)
+        return order.to_dict() if order else None
+
+
+@router.post(
+    "/orders/{order_id}/release-hold",
+    response_model=SalesOrderResponse,
+    dependencies=[Depends(require_permission("sales:admin_workflow"))],
+)
+async def release_hold(
+    order_id: UUID,
+    request: Request,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """Release an order from hold (Admin only).
+
+    Transitions order from ON_HOLD -> ASSIGNED.
+    Returns HTTP 409 if the transition is invalid.
+    """
+    container = get_container(request)
+    async with container.session_factory() as session:
+        order_repo = SalesOrderRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+
+        handler = ReleaseOrderHoldCommandHandler(
+            order_repo, uow,
+            audit_service=container.audit_service,
+        )
+        # InvalidTransitionError propagates to global handler (-> 409)
+        await handler.handle(
+            ReleaseOrderHoldCommand(
+                tenant_id=tenant_id,
+                sales_order_id=order_id,
+                released_by=user_id,
+            )
+        )
+        order = await order_repo.get_by_id(order_id, tenant_id)
+        return order.to_dict() if order else None
+
+
+@router.post(
+    "/orders/{order_id}/admin-cancel",
+    response_model=SalesOrderResponse,
+    dependencies=[Depends(require_permission("sales:admin_workflow"))],
+)
+async def admin_cancel_order(
+    order_id: UUID,
+    body: AdminCancelOrderRequest,
+    request: Request,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    user_id: UUID = Depends(get_current_user_id),
+):
+    """Admin cancels an order, releasing inventory reservations and notifying Client.
+
+    Transitions order from PENDING_MANUAL_ASSIGNMENT or ASSIGNED -> CANCELLED.
+    Releases all inventory reservations for the order.
+    Returns HTTP 409 if the transition is invalid.
+    """
+    container = get_container(request)
+    async with container.session_factory() as session:
+        order_repo = SalesOrderRepository(session)
+        uow = SQLAlchemyUnitOfWork(session=session, event_dispatcher=container.event_dispatcher)
+
+        from backend.app.application.inventory.services.stock_service import InventoryService as StockInventoryService
+
+        stock_service = StockInventoryService(session)
+
+        handler = AdminCancelOrderCommandHandler(
+            order_repo, stock_service, uow,
+            audit_service=container.audit_service,
+        )
+        # InvalidTransitionError propagates to global handler (-> 409)
+        await handler.handle(
+            AdminCancelOrderCommand(
+                tenant_id=tenant_id,
+                sales_order_id=order_id,
+                reason=body.reason,
+                cancelled_by=user_id,
+            )
+        )
+        order = await order_repo.get_by_id(order_id, tenant_id)
+        if order:
+            await _notify_client_order_status(
+                session,
+                container,
+                tenant_id,
+                order,
+                notification_type="ORDER_CANCELLED",
+                title=f"Order {order.order_number} cancelled",
+                message=f"Your order has been cancelled by the administrator."
+                + (f" Reason: {body.reason}" if body.reason else ""),
+            )
+        return order.to_dict() if order else None
 
 
 @router.get("/orders/stats/by-status", response_model=OrderStatusResponse, dependencies=[Depends(require_permission("sales:read"))])

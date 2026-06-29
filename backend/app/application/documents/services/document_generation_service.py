@@ -50,7 +50,7 @@ class DocumentGenerationService:
 
         Args:
             tenant_id: Tenant UUID
-            document_type: Type of document (work_order, purchase_order, etc.)
+            document_type: Type of document (purchase_order, invoice, etc.)
             entity_id: Entity UUID the document is for
             template_context: Context data for template rendering
             generated_by: User UUID who is generating the document

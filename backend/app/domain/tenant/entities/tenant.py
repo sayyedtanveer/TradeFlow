@@ -12,7 +12,7 @@ class Tenant(BaseEntity):
     """
     Tenant aggregate root.
 
-    A tenant represents one manufacturing company using the ERP.
+    A tenant represents one distribution/trading company using the ERP.
     All other entities are scoped to a tenant.
     """
 

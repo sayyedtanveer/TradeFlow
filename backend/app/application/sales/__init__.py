@@ -47,7 +47,6 @@ from backend.app.application.sales.commands import (
     RejectSalesOrderCommand,
     ConfirmSalesOrderCommand,
     CancelSalesOrderCommand,
-    TransitionOrderToProductionCommand,
     TransitionOrderToReadyCommand,
     ShipOrderCommand,
     DeliverOrderCommand,
@@ -59,6 +58,11 @@ from backend.app.application.sales.commands import (
     AddPriceListLineCommand,
     UpdatePriceListLineCommand,
     RemovePriceListLineCommand,
+    # Admin workflow commands
+    AssignWarehouseCommand,
+    PlaceOrderOnHoldCommand,
+    ReleaseOrderHoldCommand,
+    AdminCancelOrderCommand,
 )
 
 from backend.app.application.sales.queries import (
@@ -79,7 +83,7 @@ from backend.app.application.sales.queries import (
     ListOrdersByDeliveryDateQuery,
 )
 
-from backend.app.application.sales.command_handlers import (
+from backend.app.application.sales.sales_command_handlers import (
     CreateSalesOrderCommandHandler,
     AddLineToSalesOrderCommandHandler,
     RemoveLineFromSalesOrderCommandHandler,
@@ -91,6 +95,19 @@ from backend.app.application.sales.command_handlers import (
     CancelSalesOrderCommandHandler,
     ShipOrderCommandHandler,
     DeliverOrderCommandHandler,
+    # Admin workflow handlers
+    AssignWarehouseCommandHandler,
+    PlaceOrderOnHoldCommandHandler,
+    ReleaseOrderHoldCommandHandler,
+    AdminCancelOrderCommandHandler,
+)
+
+# Allocation-specific handlers live in the `command_handlers` package submodule
+from backend.app.application.sales.command_handlers.order_allocation_handlers import (
+    AllocateOrderCommandHandler,
+    AssignOrderToWarehouseCommandHandler,
+    ReassignOrderToWarehouseCommandHandler,
+    ReleaseOrderFromWarehouseCommandHandler,
 )
 
 from backend.app.application.sales.client_handlers import (
@@ -131,7 +148,6 @@ __all__ = [
     "RejectSalesOrderCommand",
     "ConfirmSalesOrderCommand",
     "CancelSalesOrderCommand",
-    "TransitionOrderToProductionCommand",
     "TransitionOrderToReadyCommand",
     "ShipOrderCommand",
     "DeliverOrderCommand",
@@ -143,6 +159,11 @@ __all__ = [
     "AddPriceListLineCommand",
     "UpdatePriceListLineCommand",
     "RemovePriceListLineCommand",
+    # Admin workflow commands
+    "AssignWarehouseCommand",
+    "PlaceOrderOnHoldCommand",
+    "ReleaseOrderHoldCommand",
+    "AdminCancelOrderCommand",
     # Queries
     "GetClientByIdQuery",
     "GetClientByCodeQuery",
@@ -171,6 +192,10 @@ __all__ = [
     "CancelSalesOrderCommandHandler",
     "ShipOrderCommandHandler",
     "DeliverOrderCommandHandler",
+    "AssignWarehouseCommandHandler",
+    "PlaceOrderOnHoldCommandHandler",
+    "ReleaseOrderHoldCommandHandler",
+    "AdminCancelOrderCommandHandler",
     "CreateClientCommandHandler",
     "UpdateClientCommandHandler",
     "DeactivateClientCommandHandler",

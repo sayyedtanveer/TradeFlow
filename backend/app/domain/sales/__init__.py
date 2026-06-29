@@ -27,6 +27,9 @@ from backend.app.domain.sales.services import (
     PricingService,
     CreditValidationService,
     InventoryReservationService,
+    InsufficientInventoryError,
+    OrderStateMachine,
+    InvalidTransitionError,
 )
 
 from backend.app.domain.sales.repositories import (
@@ -52,6 +55,9 @@ __all__ = [
     "PricingService",
     "CreditValidationService",
     "InventoryReservationService",
+    "InsufficientInventoryError",
+    "OrderStateMachine",
+    "InvalidTransitionError",
     # Repositories
     "ClientRepository",
     "SalesOrderRepository",

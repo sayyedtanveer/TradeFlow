@@ -77,7 +77,7 @@ export default function ActivityLogPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Activity Log</h1>
           <p className="text-muted-foreground">
-            Tenant-wide audit trail for master data, procurement, supplier collaboration, GRN, and MRP events.
+            Tenant-wide audit trail for master data, procurement, supplier collaboration, and GRN events.
           </p>
         </div>
         <Button variant="outline" onClick={() => load(skip)} disabled={loading}>

@@ -99,7 +99,7 @@ export default function ClientNewOrder() {
       <Card className="rounded-[28px] border-slate-200/70">
         <CardHeader>
           <CardTitle>Order Details</CardTitle>
-          <CardDescription>Submitted orders go to manager approval before inventory and production planning.</CardDescription>
+          <CardDescription>Submitted orders go to manager approval before inventory and fulfilment planning.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
           {createMutation.isError && (

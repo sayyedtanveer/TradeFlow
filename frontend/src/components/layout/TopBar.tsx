@@ -76,7 +76,6 @@ export function TopBar() {
     if (type === "sales_order") return `/sales/orders/${referenceId}`
     if (type === "invoice") return `/finance/invoices/${referenceId}`
     if (type === "purchase_order") return `/procurement/purchase-orders/${referenceId}`
-    if (type === "work_order") return `/work-orders/${referenceId}`
     return "/activity-log"
   }
 

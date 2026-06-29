@@ -5,10 +5,6 @@ import SuppliersListPage from "./pages/SuppliersListPage"
 import PurchaseOrdersPage from "./pages/PurchaseOrdersPage"
 import PurchaseOrderDetailPage from "./pages/PurchaseOrderDetailPage"
 import GrnPage from "./pages/GrnPage"
-import QualityModulePage from "./pages/QualityModulePage"
-import MaterialRequestsPage from "./pages/MaterialRequestsPage"
-import SubcontractListPage from "./pages/SubcontractListPage"
-import SubcontractOrderDetailPage from "./pages/SubcontractOrderDetailPage"
 import SupplierPortalPage from "./pages/SupplierPortalPage"
 import SupplierPortalPoDetailPage from "./pages/SupplierPortalPoDetailPage"
 import SupplierPortalProfilePage from "./pages/SupplierPortalProfilePage"
@@ -29,10 +25,6 @@ export const procurementRoutes: RouteObject[] = [
   { path: "procurement/purchase-orders", element: <PurchaseOrdersPage /> },
   { path: "procurement/purchase-orders/:poId", element: <PurchaseOrderDetailPage /> },
   { path: "procurement/grn", element: <GrnPage /> },
-  { path: "procurement/quality", element: <QualityModulePage /> },
-  { path: "procurement/mrp", element: <MaterialRequestsPage /> },
-  { path: "procurement/subcontract", element: <SubcontractListPage /> },
-  { path: "procurement/subcontract/:orderId", element: <SubcontractOrderDetailPage /> },
   // ── RFQ ──────────────────────────────────────────────────────────────
   { path: "procurement/rfq", element: <RFQListPage /> },
   { path: "procurement/rfq/new", element: <RFQCreatePage /> },

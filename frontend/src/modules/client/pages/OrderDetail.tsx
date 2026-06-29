@@ -90,7 +90,7 @@ export default function OrderDetail() {
             <p className="text-xs uppercase tracking-[0.25em] text-blue-600">Order Detail</p>
             <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">{order.order_number}</h1>
             <p className="mt-3 max-w-2xl text-sm text-slate-600">
-              Follow production progress, review availability warnings, and jump into a reorder when this order needs repeating.
+              Follow fulfilment progress, review availability warnings, and jump into a reorder when this order needs repeating.
             </p>
           </div>
           <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap">

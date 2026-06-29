@@ -110,13 +110,6 @@ class GenerateReportHandler:
                 end_date=datetime.utcnow(),
                 filters=report.query_config.filters,
             )
-        elif report.report_type == "production":
-            report_data = await self.generator.generate_production_report(
-                tenant_id=command.tenant_id,
-                start_date=datetime.utcnow().replace(day=1),
-                end_date=datetime.utcnow(),
-                filters=report.query_config.filters,
-            )
         elif report.report_type == "inventory":
             report_data = await self.generator.generate_inventory_report(
                 tenant_id=command.tenant_id,

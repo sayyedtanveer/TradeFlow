@@ -16,6 +16,9 @@ from backend.app.infrastructure.websocket.event_handlers import (
     InventoryLowStockAlert,
     InvoiceOverdue,
 )
+from backend.app.application.sales.events.inventory_validation_handler import (
+    InventoryValidationHandler,
+)
 from backend.app.interfaces.api.v1.middleware.logging_middleware import RequestLoggingMiddleware
 from backend.app.interfaces.api.v1.middleware.tenant_middleware import TenantMiddleware
 from backend.app.interfaces.api.v1.middleware.audit_middleware import AuditMiddleware
@@ -54,6 +57,16 @@ async def lifespan(app: FastAPI):
     )
     event_dispatcher.subscribe(
         "invoice.overdue", InvoiceOverdue(connection_manager)
+    )
+
+    # Register inventory validation handler for order.placed events (Req 6.1-6.4)
+    event_dispatcher.subscribe(
+        "order.placed",
+        InventoryValidationHandler(
+            session_factory=container.session_factory,
+            connection_manager=connection_manager,
+            audit_service=container.audit_service,
+        ),
     )
 
     logger.info("WebSocket event handlers registered")
@@ -110,6 +123,7 @@ def create_application() -> FastAPI:
 
     # ── Exception handlers ─────────────────────────────
     from backend.app.domain.shared.exceptions.domain_exception import DomainException
+    from backend.app.domain.sales.services.order_state_machine import InvalidTransitionError
     
     @app.exception_handler(DomainException)
     async def domain_exception_handler(request, exc: DomainException):
@@ -117,6 +131,23 @@ def create_application() -> FastAPI:
         return JSONResponse(
             status_code=401,
             content={"detail": str(exc.message)},
+        )
+
+    @app.exception_handler(InvalidTransitionError)
+    async def invalid_transition_exception_handler(request, exc: InvalidTransitionError):
+        """Convert invalid order status transitions to HTTP 409 Conflict responses.
+
+        Response body includes the current status and the list of allowed next statuses
+        so that clients can present actionable information to the user.
+        """
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": str(exc),
+                "current_status": exc.current_status.value,
+                "target_status": exc.target_status.value,
+                "allowed_statuses": [s.value for s in exc.allowed_statuses],
+            },
         )
 
     # ── Health check ──────────────────────────────────

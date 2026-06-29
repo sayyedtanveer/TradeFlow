@@ -61,13 +61,3 @@ class SignatureData(BaseModel):
     name: str
     timestamp: datetime
     signature_image_url: Optional[str] = None
-
-
-class WorkOrderPrintContext(BaseModel):
-    """Context data for Work Order PDF generation."""
-    
-    work_order: dict
-    materials: List[dict]
-    operations: List[dict]
-    signatures: dict
-    tenant: dict

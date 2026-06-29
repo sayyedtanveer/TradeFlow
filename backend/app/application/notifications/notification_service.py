@@ -1,6 +1,6 @@
 """
 Notification Service for WebSocket-based operational alerts.
-Broadcasts real-time alerts for key manufacturing events.
+Broadcasts real-time alerts for key distribution events.
 """
 
 from __future__ import annotations
@@ -30,21 +30,16 @@ class NotificationService:
     Service for broadcasting operational notifications via WebSocket.
     
     Notification Types:
-    - WO_STATUS_CHANGED: Work order state transition
-    - MATERIAL_SHORTAGE: Material shortage detected
-    - QC_RESULT: Quality inspection result (approved/rejected)
+    - ORDER_STATUS_CHANGED: Order status transition
     - DELIVERY_STATUS: Delivery order status change
     - INVENTORY_ALERT: Low stock or stock out
-    - PRODUCTION_ALERT: Production issues or milestones
+    - DOCUMENT_GENERATED: Document has been generated
     """
 
     # Notification Type Constants
-    WO_STATUS_CHANGED = "WO_STATUS_CHANGED"
-    MATERIAL_SHORTAGE = "MATERIAL_SHORTAGE"
-    QC_RESULT = "QC_RESULT"
+    ORDER_STATUS_CHANGED = "ORDER_STATUS_CHANGED"
     DELIVERY_STATUS = "DELIVERY_STATUS"
     INVENTORY_ALERT = "INVENTORY_ALERT"
-    PRODUCTION_ALERT = "PRODUCTION_ALERT"
     DOCUMENT_GENERATED = "DOCUMENT_GENERATED"
 
     def __init__(self, connection_manager: ConnectionManager):
@@ -69,27 +64,27 @@ class NotificationService:
             priority=priority,
         )
 
-    async def notify_wo_status_change(
+    async def notify_order_status_change(
         self,
         tenant_id: uuid.UUID,
-        wo_id: uuid.UUID,
-        wo_number: str,
+        order_id: uuid.UUID,
+        order_number: str,
         old_status: str,
         new_status: str,
         assigned_user_id: Optional[uuid.UUID] = None,
     ) -> None:
         """
-        Notify about work order status change.
+        Notify about order status change.
         
         Sent to: Assigned user (if any) and all tenant users.
         """
         payload = self._create_payload(
-            notification_type=self.WO_STATUS_CHANGED,
-            title=f"Work Order {wo_number} Status Changed",
+            notification_type=self.ORDER_STATUS_CHANGED,
+            title=f"Order {order_number} Status Changed",
             message=f"Status changed from {old_status} to {new_status}",
             data={
-                "wo_id": str(wo_id),
-                "wo_number": wo_number,
+                "order_id": str(order_id),
+                "order_number": order_number,
                 "old_status": old_status,
                 "new_status": new_status,
             },
@@ -106,107 +101,6 @@ class NotificationService:
             )
 
         # Broadcast to all tenant users
-        await self.connection_manager.broadcast_to_tenant(
-            tenant_id=tenant_id,
-            message_type="notification",
-            payload=payload.__dict__,
-        )
-
-    async def notify_material_shortage(
-        self,
-        tenant_id: uuid.UUID,
-        wo_id: uuid.UUID,
-        wo_number: str,
-        material_id: uuid.UUID,
-        material_name: str,
-        required_quantity: float,
-        available_quantity: float,
-    ) -> None:
-        """
-        Notify about material shortage.
-        
-        Sent to: All tenant users (storekeepers, planners).
-        """
-        payload = self._create_payload(
-            notification_type=self.MATERIAL_SHORTAGE,
-            title=f"Material Shortage for {wo_number}",
-            message=f"Material '{material_name}' shortage: required {required_quantity}, available {available_quantity}",
-            data={
-                "wo_id": str(wo_id),
-                "wo_number": wo_number,
-                "material_id": str(material_id),
-                "material_name": material_name,
-                "required_quantity": required_quantity,
-                "available_quantity": available_quantity,
-                "shortage_quantity": required_quantity - available_quantity,
-            },
-            priority="warning",
-        )
-
-        await self.connection_manager.broadcast_to_tenant(
-            tenant_id=tenant_id,
-            message_type="notification",
-            payload=payload.__dict__,
-        )
-
-    async def notify_qc_result(
-        self,
-        tenant_id: uuid.UUID,
-        inspection_id: uuid.UUID,
-        wo_id: uuid.UUID,
-        wo_number: str,
-        result: str,
-        inspector_id: Optional[uuid.UUID] = None,
-        assigned_user_id: Optional[uuid.UUID] = None,
-    ) -> None:
-        """
-        Notify about QC inspection result.
-        
-        Sent to: Inspector, assigned user, and all tenant users.
-        """
-        title = f"QC Result for {wo_number}"
-        if result == "APPROVED":
-            message = f"Quality inspection approved for {wo_number}"
-            priority = "success"
-        elif result == "REJECTED":
-            message = f"Quality inspection rejected for {wo_number}"
-            priority = "error"
-        else:
-            message = f"Quality inspection result: {result} for {wo_number}"
-            priority = "info"
-
-        payload = self._create_payload(
-            notification_type=self.QC_RESULT,
-            title=title,
-            message=message,
-            data={
-                "inspection_id": str(inspection_id),
-                "wo_id": str(wo_id),
-                "wo_number": wo_number,
-                "result": result,
-            },
-            priority=priority,
-        )
-
-        # Notify inspector
-        if inspector_id:
-            await self.connection_manager.send_to_user(
-                tenant_id=tenant_id,
-                user_id=inspector_id,
-                message_type="notification",
-                payload=payload.__dict__,
-            )
-
-        # Notify assigned user
-        if assigned_user_id:
-            await self.connection_manager.send_to_user(
-                tenant_id=tenant_id,
-                user_id=assigned_user_id,
-                message_type="notification",
-                payload=payload.__dict__,
-            )
-
-        # Broadcast to tenant
         await self.connection_manager.broadcast_to_tenant(
             tenant_id=tenant_id,
             message_type="notification",
@@ -282,46 +176,6 @@ class NotificationService:
             },
             priority=priority,
         )
-
-        await self.connection_manager.broadcast_to_tenant(
-            tenant_id=tenant_id,
-            message_type="notification",
-            payload=payload.__dict__,
-        )
-
-    async def notify_production_alert(
-        self,
-        tenant_id: uuid.UUID,
-        wo_id: uuid.UUID,
-        wo_number: str,
-        alert_type: str,
-        message: str,
-        assigned_user_id: Optional[uuid.UUID] = None,
-    ) -> None:
-        """
-        Notify about production alerts (scrap, downtime, milestones).
-        
-        Sent to: Assigned user and all tenant users.
-        """
-        payload = self._create_payload(
-            notification_type=self.PRODUCTION_ALERT,
-            title=f"Production Alert for {wo_number}",
-            message=message,
-            data={
-                "wo_id": str(wo_id),
-                "wo_number": wo_number,
-                "alert_type": alert_type,
-            },
-            priority="warning",
-        )
-
-        if assigned_user_id:
-            await self.connection_manager.send_to_user(
-                tenant_id=tenant_id,
-                user_id=assigned_user_id,
-                message_type="notification",
-                payload=payload.__dict__,
-            )
 
         await self.connection_manager.broadcast_to_tenant(
             tenant_id=tenant_id,

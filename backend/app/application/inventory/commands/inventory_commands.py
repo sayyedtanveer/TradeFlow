@@ -55,6 +55,7 @@ class AddStockCommand:
     to_location_id: Optional[uuid.UUID] = None
     remarks: Optional[str] = None
     reference_id: Optional[uuid.UUID] = None
+    warehouse_id: Optional[uuid.UUID] = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,7 @@ class RemoveStockCommand:
     from_location_id: Optional[uuid.UUID] = None
     remarks: Optional[str] = None
     reference_id: Optional[uuid.UUID] = None
+    warehouse_id: Optional[uuid.UUID] = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,7 @@ class AdjustStockCommand:
     unit_id: Optional[uuid.UUID] = None
     location_id: Optional[uuid.UUID] = None
     remarks: Optional[str] = None
+    warehouse_id: Optional[uuid.UUID] = None
 
 
 # ── Phase 1.2 — Batch Commands ────────────────────────────────────────────

@@ -33,7 +33,7 @@ class DocumentStorageService:
         
         Args:
             tenant_id: Tenant UUID
-            document_type: Type of document (work_order, purchase_order, etc.)
+            document_type: Type of document (purchase_order, invoice, etc.)
             
         Returns:
             Path to document directory

@@ -29,9 +29,7 @@ class Permission(str, Enum):
     SALES_VIEW_ORDERS = "sales:view_orders"
     SALES_CREATE_ORDER = "sales:create_order"
     SALES_APPROVE_ORDER = "sales:approve_order"
-
-    MANUFACTURING_READ = "manufacturing:read"
-    MANUFACTURING_WRITE = "manufacturing:write"
+    SALES_ADMIN_WORKFLOW = "sales:admin_workflow"
 
     PROCUREMENT_READ = "procurement:read"
     PROCUREMENT_WRITE = "procurement:write"
@@ -63,20 +61,69 @@ class Permission(str, Enum):
     DOCUMENTS_READ = "documents:read"
     DOCUMENTS_WRITE = "documents:write"
 
+    # Warehouse permissions (TradeFlow distribution workflow)
+    WAREHOUSE_READ = "warehouse:read"
+    WAREHOUSE_WRITE = "warehouse:write"
+    WAREHOUSE_FULFILMENT = "warehouse:fulfilment"
 
-_mfg_inv_quality = frozenset({
+    # Client portal specific permissions
+    CLIENT_PORTAL_ACCESS = "client_portal:access"
+    CLIENT_ORDERS_OWN = "client:orders_own"
+    CLIENT_INVOICES_OWN = "client:invoices_own"
+    CLIENT_RETURNS_OWN = "client:returns_own"
+    CLIENT_CATALOGUE = "client:catalogue"
+    CLIENT_CART = "client:cart"
+
+    # Returns & Credit Notes
+    RETURNS_READ = "returns:read"
+    RETURNS_WRITE = "returns:write"
+    RETURNS_RECEIVE = "returns:receive"
+    CREDIT_NOTES_READ = "credit_notes:read"
+    CREDIT_NOTES_WRITE = "credit_notes:write"
+
+
+_inv_quality = frozenset({
     Permission.INVENTORY_READ,
     Permission.INVENTORY_WRITE,
-    Permission.MANUFACTURING_READ,
-    Permission.MANUFACTURING_WRITE,
     Permission.QUALITY_READ,
     Permission.QUALITY_WRITE,
 })
 
 
 ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
+    # ─── Admin: Full system management ───────────────────────────────────────
     "admin": frozenset({Permission.ALL}),
     "tenant_admin": frozenset({Permission.ALL}),
+
+    # ─── Warehouse_User: Assigned orders, pick/pack/dispatch, warehouse inventory ─
+    "warehouse_user": frozenset({
+        Permission.WAREHOUSE_READ,
+        Permission.WAREHOUSE_FULFILMENT,
+        Permission.INVENTORY_READ,
+        Permission.SALES_READ,
+        Permission.SALES_VIEW_ORDERS,
+        Permission.RETURNS_RECEIVE,
+    }),
+
+    # ─── Client: Catalogue, cart, own orders/invoices/returns ────────────────
+    "client": frozenset({
+        Permission.CLIENT_PORTAL_ACCESS,
+        Permission.CLIENT_CATALOGUE,
+        Permission.CLIENT_CART,
+        Permission.CLIENT_ORDERS_OWN,
+        Permission.CLIENT_INVOICES_OWN,
+        Permission.CLIENT_RETURNS_OWN,
+        Permission.SALES_READ,
+        Permission.SALES_VIEW_ORDERS,
+        Permission.SALES_CREATE_ORDER,
+        Permission.INVENTORY_READ,
+        Permission.CLIENT_READ,
+        Permission.INVOICE_VIEW,
+        Permission.RETURNS_READ,
+        Permission.CREDIT_NOTES_READ,
+    }),
+
+    # ─── Legacy roles (retained for backward compatibility) ──────────────────
     "manager": frozenset({
         Permission.ADMIN_READ,
         Permission.RBAC_READ,
@@ -89,8 +136,6 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
         Permission.SALES_VIEW_ORDERS,
         Permission.SALES_CREATE_ORDER,
         Permission.SALES_APPROVE_ORDER,
-        Permission.MANUFACTURING_READ,
-        Permission.MANUFACTURING_WRITE,
         Permission.PROCUREMENT_READ,
         Permission.PROCUREMENT_WRITE,
         Permission.FINANCE_READ,
@@ -108,9 +153,15 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
         Permission.REPORTS_READ,
         Permission.STOREKEEPER_READ,
         Permission.WORKER_READ,
+        Permission.WAREHOUSE_READ,
+        Permission.WAREHOUSE_WRITE,
+        Permission.RETURNS_READ,
+        Permission.RETURNS_WRITE,
+        Permission.CREDIT_NOTES_READ,
+        Permission.CREDIT_NOTES_WRITE,
     }),
     "operator": frozenset(
-        _mfg_inv_quality
+        _inv_quality
         | {
             Permission.PROCUREMENT_READ,
             Permission.PROCUREMENT_WRITE,
@@ -118,7 +169,7 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
         }
     ),
     "storekeeper": frozenset(
-        _mfg_inv_quality
+        _inv_quality
         | {
             Permission.PROCUREMENT_READ,
             Permission.PROCUREMENT_WRITE,
@@ -127,8 +178,6 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
     ),
     "planner": frozenset({
         Permission.INVENTORY_READ,
-        Permission.MANUFACTURING_READ,
-        Permission.MANUFACTURING_WRITE,
         Permission.PROCUREMENT_READ,
         Permission.PROCUREMENT_WRITE,
         Permission.QUALITY_READ,
@@ -149,7 +198,6 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
         Permission.SALES_CREATE_ORDER,
         Permission.INVOICE_CREATE,
         Permission.INVOICE_VIEW,
-        Permission.MANUFACTURING_READ,
         Permission.REPORTS_READ,
     }),
     "accountant": frozenset({
@@ -169,18 +217,8 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
         Permission.REPORTS_READ,
     }),
     "worker": frozenset({
-        Permission.MANUFACTURING_READ,
-        Permission.MANUFACTURING_WRITE,
         Permission.INVENTORY_READ,
         Permission.WORKER_READ,
-    }),
-    "client": frozenset({
-        Permission.SALES_READ,
-        Permission.SALES_VIEW_ORDERS,
-        Permission.SALES_CREATE_ORDER,
-        Permission.INVENTORY_READ,
-        Permission.CLIENT_READ,
-        Permission.INVOICE_VIEW,
     }),
     "supplier": frozenset({
         Permission.PROCUREMENT_READ,
@@ -193,7 +231,6 @@ ROLE_PERMISSIONS: Dict[str, FrozenSet[str]] = {
     "viewer": frozenset({
         Permission.INVENTORY_READ,
         Permission.SALES_READ,
-        Permission.MANUFACTURING_READ,
         Permission.PROCUREMENT_READ,
         Permission.FINANCE_READ,
         Permission.QUALITY_READ,
@@ -217,6 +254,11 @@ PERMISSION_FALLBACKS: Dict[str, FrozenSet[str]] = {
         Permission.REPORTS_READ.value,
         Permission.FINANCE_READ.value,
     }),
+    # Warehouse fulfilment implies warehouse read
+    Permission.WAREHOUSE_FULFILMENT.value: frozenset({Permission.WAREHOUSE_READ.value}),
+    # Client portal access fallbacks
+    Permission.CLIENT_ORDERS_OWN.value: frozenset({Permission.SALES_READ.value}),
+    Permission.CLIENT_INVOICES_OWN.value: frozenset({Permission.INVOICE_VIEW.value}),
 }
 
 

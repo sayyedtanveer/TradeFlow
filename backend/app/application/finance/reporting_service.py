@@ -13,12 +13,12 @@ from backend.app.application.finance.finance_service import FinanceService
 
 
 ROLE_REPORT_ACCESS = {
-    "ADMIN": ["inventory", "production", "sales", "procurement", "quality", "finance", "mrp"],
-    "MANAGER": ["inventory", "production", "sales", "procurement", "quality", "finance", "mrp"],
+    "ADMIN": ["inventory", "sales", "procurement", "quality", "finance"],
+    "MANAGER": ["inventory", "sales", "procurement", "quality", "finance"],
     "ACCOUNTANT": ["finance", "sales"],
     "SALES": ["sales"],
     "QC": ["quality"],
-    "OPERATOR": ["production", "inventory"],
+    "OPERATOR": ["inventory"],
     "VIEWER": ["sales", "inventory"],
     "CLIENT": [],
     "SUPPLIER": [],
@@ -83,45 +83,6 @@ class ReportingService:
                     LEFT JOIN materials m ON m.id = mvit.material_id
                     WHERE mvit.tenant_id = :tenant_id
                     ORDER BY mvit.total_consumed DESC
-                    """
-                ),
-                {"tenant_id": tenant_id},
-            )
-            return [dict(row._mapping) for row in result]
-        except Exception:
-            return []
-
-    async def work_order_summary(self, tenant_id: uuid.UUID, role: str) -> Dict:
-        self._check_access(role, "production")
-        result = await self.session.execute(
-            text(
-                """
-                SELECT
-                    status,
-                    COUNT(*) as count,
-                    SUM(produced_quantity) as total_produced,
-                    SUM(scrap_quantity) as total_scrap
-                FROM work_orders
-                WHERE tenant_id = :tenant_id
-                GROUP BY status
-                ORDER BY status
-                """
-            ),
-            {"tenant_id": tenant_id},
-        )
-        return {"by_status": [dict(row._mapping) for row in result]}
-
-    async def work_order_efficiency(self, tenant_id: uuid.UUID, role: str) -> List[Dict]:
-        self._check_access(role, "production")
-        try:
-            result = await self.session.execute(
-                text(
-                    """
-                    SELECT month, total_produced, total_scrap, scrap_percentage
-                    FROM mv_work_order_efficiency
-                    WHERE tenant_id = :tenant_id
-                    ORDER BY month DESC
-                    LIMIT 12
                     """
                 ),
                 {"tenant_id": tenant_id},
@@ -274,7 +235,6 @@ class ReportingService:
     async def refresh_views(self, view_name: Optional[str] = None) -> List[str]:
         views = [
             "mv_inventory_turnover",
-            "mv_work_order_efficiency",
             "mv_sales_revenue",
             "mv_ar_aging",
         ]

@@ -1,7 +1,7 @@
 """Warehouse domain module.
 
 Contains all domain logic for warehouse management:
-- Entities: Warehouse, WarehouseUserAssignment, WarehouseProductThreshold
+- Entities: Warehouse, WarehouseUserAssignment, WarehouseProductThreshold, PickList, PickListLine
 - Value Objects: Address
 - Repositories: WarehouseRepository, WarehouseUserAssignmentRepository
 """
@@ -10,6 +10,9 @@ from backend.app.domain.warehouse.entities import (
     Warehouse,
     WarehouseUserAssignment,
     WarehouseProductThreshold,
+    PickList,
+    PickListLine,
+    PickListStatus,
 )
 
 from backend.app.domain.warehouse.value_objects import Address
@@ -24,6 +27,9 @@ __all__ = [
     "Warehouse",
     "WarehouseUserAssignment",
     "WarehouseProductThreshold",
+    "PickList",
+    "PickListLine",
+    "PickListStatus",
     # Value Objects
     "Address",
     # Repositories

@@ -112,7 +112,7 @@ export function RoleManagementPanel() {
                 id="role-name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="production_supervisor"
+                placeholder="warehouse_supervisor"
               />
             </div>
             <div className="space-y-2">
@@ -121,7 +121,7 @@ export function RoleManagementPanel() {
                 id="role-label"
                 value={label}
                 onChange={(event) => setLabel(event.target.value)}
-                placeholder="Production Supervisor"
+                placeholder="Warehouse Supervisor"
               />
             </div>
           </div>

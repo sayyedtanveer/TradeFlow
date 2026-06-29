@@ -127,6 +127,7 @@ class MaterialRepository(BaseRepository[Material, MaterialModel]):
         category: Optional[str] = None,
         material_type: Optional[str] = None,
         is_active: Optional[bool] = None,
+        warehouse_id: Optional[uuid.UUID] = None,
         page: int = 1,
         page_size: int = 20,
     ) -> List[Material]:
@@ -151,6 +152,18 @@ class MaterialRepository(BaseRepository[Material, MaterialModel]):
             )
         if is_active is not None:
             stmt = stmt.where(MaterialModel.is_active == is_active)
+        if warehouse_id is not None:
+            from backend.app.infrastructure.persistence.models.stock_level_model import StockLevelModel
+            stmt = stmt.where(
+                MaterialModel.id.in_(
+                    select(StockLevelModel.material_id).where(
+                        StockLevelModel.tenant_id == tenant_id,
+                        StockLevelModel.warehouse_id == warehouse_id,
+                        StockLevelModel.is_deleted.is_(False),
+                        StockLevelModel.quantity > 0,
+                    )
+                )
+            )
 
         stmt = stmt.offset(offset).limit(page_size).order_by(MaterialModel.created_at.desc())
         result = await self._session.execute(stmt)
@@ -163,6 +176,7 @@ class MaterialRepository(BaseRepository[Material, MaterialModel]):
         category: Optional[str] = None,
         material_type: Optional[str] = None,
         is_active: Optional[bool] = None,
+        warehouse_id: Optional[uuid.UUID] = None,
     ) -> int:
         stmt = select(func.count()).select_from(MaterialModel).where(
             MaterialModel.tenant_id == tenant_id,
@@ -184,5 +198,17 @@ class MaterialRepository(BaseRepository[Material, MaterialModel]):
             )
         if is_active is not None:
             stmt = stmt.where(MaterialModel.is_active == is_active)
+        if warehouse_id is not None:
+            from backend.app.infrastructure.persistence.models.stock_level_model import StockLevelModel
+            stmt = stmt.where(
+                MaterialModel.id.in_(
+                    select(StockLevelModel.material_id).where(
+                        StockLevelModel.tenant_id == tenant_id,
+                        StockLevelModel.warehouse_id == warehouse_id,
+                        StockLevelModel.is_deleted.is_(False),
+                        StockLevelModel.quantity > 0,
+                    )
+                )
+            )
         result = await self._session.execute(stmt)
         return result.scalar_one()

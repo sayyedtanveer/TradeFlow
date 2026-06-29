@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useSearchParams } from "react-router-dom"
 import { financeService } from "@/services/finance.service"
 import {
-  BarChart3, Package, Factory, ShoppingCart, Truck, ClipboardCheck,
+  BarChart3, Package, ShoppingCart, Truck,
   IndianRupee, RefreshCw, AlertTriangle,
 } from "lucide-react"
 
@@ -26,16 +26,7 @@ const REPORT_SECTIONS: ReportSection[] = [
       { key: "inventory-turnover", label: "Inventory Turnover", fn: financeService.getInventoryTurnover },
     ],
   },
-  {
-    id: "production",
-    label: "Production",
-    icon: Factory,
-    color: "from-purple-500 to-purple-600",
-    endpoints: [
-      { key: "production-summary", label: "Work Order Summary", fn: financeService.getProductionSummary },
-      { key: "production-efficiency", label: "Scrap & Efficiency", fn: financeService.getProductionEfficiency },
-    ],
-  },
+
   {
     id: "sales",
     label: "Sales",
@@ -55,15 +46,7 @@ const REPORT_SECTIONS: ReportSection[] = [
       { key: "procurement-summary", label: "PO Summary", fn: financeService.getProcurementSummary },
     ],
   },
-  {
-    id: "quality",
-    label: "Quality",
-    icon: ClipboardCheck,
-    color: "from-cyan-500 to-cyan-600",
-    endpoints: [
-      { key: "quality-summary", label: "Inspection Results", fn: financeService.getQualitySummary },
-    ],
-  },
+
   {
     id: "finance",
     label: "Finance",
@@ -247,7 +230,7 @@ export default function ReportsPage() {
       return new Set([requestedModule])
     }
 
-    return new Set(["finance", "sales", "inventory", "production", "procurement"])
+    return new Set(["finance", "sales", "inventory", "procurement"])
   }, [searchParams])
   const [selectedModules, setSelectedModules] = useState<Set<string>>(defaultModules)
 

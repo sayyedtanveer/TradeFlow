@@ -292,7 +292,7 @@ async def resolve_scan(
     request: Request,
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
 ):
-    """Resolve barcode/QR payload to material, batch, or work order."""
+    """Resolve barcode/QR payload to material or batch."""
     from backend.app.application.inventory.services.barcode_resolution_service import (
         BarcodeResolutionService,
     )

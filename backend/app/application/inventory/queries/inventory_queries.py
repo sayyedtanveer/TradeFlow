@@ -13,6 +13,7 @@ class ListMaterialsQuery:
     category: Optional[str] = None
     material_type: Optional[str] = None
     is_active: Optional[bool] = None
+    warehouse_id: Optional[uuid.UUID] = None
     page: int = 1
     page_size: int = 20
 
@@ -33,6 +34,7 @@ class GetStockQuery:
 class GetTransactionsQuery:
     tenant_id: uuid.UUID
     material_id: Optional[uuid.UUID] = None
+    warehouse_id: Optional[uuid.UUID] = None
     page: int = 1
     page_size: int = 50
 
@@ -64,3 +66,24 @@ class GetSerialsByMaterialQuery:
     tenant_id: uuid.UUID
     material_id: uuid.UUID
     status: Optional[str] = None  # filter by SerialStatus value
+
+
+# ── Warehouse-Scoped Inventory Queries ─────────────────────────────────────
+
+@dataclass(frozen=True)
+class GetInventorySummaryQuery:
+    """Get aggregated stock across all warehouses for a tenant."""
+    tenant_id: uuid.UUID
+    material_id: Optional[uuid.UUID] = None
+    page: int = 1
+    page_size: int = 20
+
+
+@dataclass(frozen=True)
+class GetWarehouseInventoryQuery:
+    """Get inventory filtered by a specific warehouse."""
+    tenant_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    material_id: Optional[uuid.UUID] = None
+    page: int = 1
+    page_size: int = 20

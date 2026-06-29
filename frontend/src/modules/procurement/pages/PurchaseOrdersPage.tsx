@@ -145,7 +145,7 @@ export default function PurchaseOrdersPage() {
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                Use this form to cover raw-material shortages before production release.
+                Use this form to cover material shortages before order fulfilment.
               </div>
               <div className="space-y-2">
                 <Label>Supplier</Label>

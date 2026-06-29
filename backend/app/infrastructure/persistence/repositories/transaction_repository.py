@@ -63,6 +63,7 @@ class TransactionRepository(BaseRepository[InventoryTransaction, InventoryTransa
         self,
         material_id: uuid.UUID,
         tenant_id: uuid.UUID,
+        warehouse_id: Optional[uuid.UUID] = None,
         page: int = 1,
         page_size: int = 50,
     ) -> List[InventoryTransaction]:
@@ -78,12 +79,15 @@ class TransactionRepository(BaseRepository[InventoryTransaction, InventoryTransa
             .limit(page_size)
             .order_by(InventoryTransactionModel.created_at.desc())
         )
+        if warehouse_id is not None:
+            stmt = stmt.where(InventoryTransactionModel.warehouse_id == warehouse_id)
         result = await self._session.execute(stmt)
         return [self._to_entity(m) for m in result.scalars().all()]
 
     async def list_all(
         self,
         tenant_id: uuid.UUID,
+        warehouse_id: Optional[uuid.UUID] = None,
         page: int = 1,
         page_size: int = 50,
     ) -> List[InventoryTransaction]:
@@ -98,5 +102,7 @@ class TransactionRepository(BaseRepository[InventoryTransaction, InventoryTransa
             .limit(page_size)
             .order_by(InventoryTransactionModel.created_at.desc())
         )
+        if warehouse_id is not None:
+            stmt = stmt.where(InventoryTransactionModel.warehouse_id == warehouse_id)
         result = await self._session.execute(stmt)
         return [self._to_entity(m) for m in result.scalars().all()]

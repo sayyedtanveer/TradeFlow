@@ -14,7 +14,6 @@ class LocationType(str, Enum):
     BIN = "bin"
     QUARANTINE = "quarantine"
     SUBCONTRACTOR = "subcontractor"
-    PRODUCTION = "production"
     SHIPPING = "shipping"
 
 

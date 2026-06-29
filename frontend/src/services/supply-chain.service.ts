@@ -71,69 +71,6 @@ export type PurchaseOrder = {
   lines: PurchaseOrderLine[]
 }
 
-export type SubcontractOrderSummary = {
-  id: string
-  order_number: string
-  supplier_id: string
-  product_id: string
-  product_type: string
-  quantity: number
-  status: string
-}
-
-export type SubcontractOrderDetail = SubcontractOrderSummary & {
-  issues: {
-    id: string
-    material_id: string
-    quantity: number
-    batch_number?: string | null
-    issued_at?: string | null
-  }[]
-}
-
-export type MaterialRequest = {
-  id: string
-  item_id: string
-  item_type: string
-  required_quantity: number
-  fulfilled_quantity: number
-  status: string
-}
-
-export type InspectionRow = {
-  id: string
-  reference_type: string
-  reference_id: string
-  result: string
-  inspection_date: string
-}
-
-export type NCRRow = {
-  id: string
-  inspection_id: string | null
-  ncr_type: string
-  reason?: string | null
-  action_taken?: string | null
-  created_at?: string | null
-}
-
-export type QuarantineRow = {
-  material_id: string
-  material_code: string
-  material_name: string
-  location_id: string
-  location_name: string
-  quantity: number
-}
-
-export type InspectionTemplate = {
-  id: string
-  tenant_id: string
-  name: string
-  parameters: Record<string, unknown>[]
-  is_active: boolean
-}
-
 export const supplyChainApi = {
   listSuppliers: () =>
     withData(apiClient.get<Supplier[] | { items: Supplier[] }>(`${BASE}/suppliers`), asArray),
@@ -182,42 +119,6 @@ export const supplyChainApi = {
     id: string,
     body: { lines: { line_id: string; quantity: number }[]; warehouse_location_id?: string }
   ) => apiClient.put(`${BASE}/purchase-orders/${id}/receive`, body),
-
-  qualityInspect: (body: Record<string, unknown>) => apiClient.post(`${BASE}/quality/inspect`, body),
-  createNCR: (body: Record<string, unknown>) => apiClient.post(`${BASE}/quality/ncr`, body),
-  listInspections: () => apiClient.get<InspectionRow[]>(`${BASE}/quality/inspections`),
-  listNCRs: () => apiClient.get<NCRRow[]>(`${BASE}/quality/ncrs`),
-  quarantineStock: () => apiClient.get<QuarantineRow[]>(`${BASE}/quarantine-stock`),
-
-  listInspectionTemplates: () => apiClient.get<InspectionTemplate[]>(`${BASE}/inspection-templates`),
-  getInspectionTemplate: (id: string) =>
-    apiClient.get<InspectionTemplate>(`${BASE}/inspection-templates/${id}`),
-  createInspectionTemplate: (body: {
-    name: string
-    parameters?: Record<string, unknown>[]
-    is_active?: boolean
-  }) => apiClient.post<InspectionTemplate>(`${BASE}/inspection-templates`, body),
-  updateInspectionTemplate: (
-    id: string,
-    body: { name?: string; parameters?: Record<string, unknown>[]; is_active?: boolean }
-  ) => apiClient.put<InspectionTemplate>(`${BASE}/inspection-templates/${id}`, body),
-  deleteInspectionTemplate: (id: string) => apiClient.delete(`${BASE}/inspection-templates/${id}`),
-
-  listMaterialRequests: () => apiClient.get<MaterialRequest[]>(`${BASE}/material-requests`),
-  runMrp: () => apiClient.post<{ created: number }>(`${BASE}/material-requests/run-mrp`),
-
-  listSubcontractOrders: () => apiClient.get<SubcontractOrderSummary[]>(`${BASE}/subcontract/orders`),
-  getSubcontractOrder: (id: string) => apiClient.get<SubcontractOrderDetail>(`${BASE}/subcontract/orders/${id}`),
-  createSubcontractOrder: (body: {
-    supplier_id: string
-    product_id: string
-    product_type?: string
-    quantity: number
-  }) => apiClient.post(`${BASE}/subcontract/orders`, body),
-  issueSubcontract: (orderId: string, body: Record<string, unknown>) =>
-    apiClient.post(`${BASE}/subcontract/orders/${orderId}/issue`, body),
-  receiveSubcontract: (orderId: string, body: Record<string, unknown>) =>
-    apiClient.post(`${BASE}/subcontract/orders/${orderId}/receive`, body),
 
   supplierPortalPOs: (params?: { status?: string; skip?: number; limit?: number }) => {
     const qs = new URLSearchParams()

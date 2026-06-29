@@ -144,3 +144,70 @@ class ClientPortalNotificationResponse(BaseModel):
     reference_id: Optional[UUID] = None
     is_read: bool
     sent_at: datetime
+
+
+# --- Catalogue, Cart, and Order Placement schemas (Phase 3) ---
+
+
+class CatalogueProductResponse(BaseModel):
+    id: UUID
+    name: str
+    description: Optional[str] = None
+    sku: str
+    category: Optional[str] = None
+    unit_price: float
+    available_quantity: float
+    unit_of_measure: Optional[str] = None
+
+
+class CataloguePaginatedResponse(BaseModel):
+    items: List[CatalogueProductResponse]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+class CartItemAddRequest(BaseModel):
+    product_id: UUID
+    quantity: int = Field(ge=1)
+
+
+class CartItemResponse(BaseModel):
+    id: UUID
+    product_id: UUID
+    product_name: str
+    sku: str
+    quantity: int
+    unit_price: float
+    available_quantity: float
+    created_at: datetime
+
+
+class CartResponse(BaseModel):
+    items: List[CartItemResponse]
+    total_items: int
+    total_amount: float
+
+
+class OrderLineRequest(BaseModel):
+    product_id: UUID
+    quantity: int = Field(ge=1)
+
+
+class ClientPortalOrderCreateRequest(BaseModel):
+    lines: List[OrderLineRequest] = Field(min_length=1)
+    delivery_date: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class OrderShortageItem(BaseModel):
+    product_id: UUID
+    product_name: str
+    requested_quantity: int
+    available_quantity: float
+
+
+class OrderPlacementErrorResponse(BaseModel):
+    detail: str
+    shortage_items: List[OrderShortageItem]

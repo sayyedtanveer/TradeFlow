@@ -103,24 +103,6 @@ class GenerateSalesReportHandler:
         )
 
 
-class GenerateProductionReportHandler:
-    """Handler for generating production reports."""
-
-    def __init__(self, repository):
-        self.repository = repository
-        self.generator = ReportGenerator(repository)
-
-    async def handle(self, query: "GenerateProductionReportQuery") -> dict:
-        """Generate production report."""
-        return await self.generator.generate_production_report(
-            tenant_id=query.tenant_id,
-            start_date=query.start_date,
-            end_date=query.end_date,
-            grouping=query.grouping,
-            filters=query.filters,
-        )
-
-
 class GenerateInventoryReportHandler:
     """Handler for generating inventory reports."""
 
@@ -175,9 +157,6 @@ class GetDashboardSummaryHandler:
             "sales_revenue_total",
             "sales_orders_count",
             "sales_average_order_value",
-            "production_total_qty",
-            "production_completion_rate",
-            "production_scrap_rate",
             "inventory_value_total",
             "inventory_item_count",
             "inventory_stockouts",
@@ -206,11 +185,6 @@ class GetDashboardSummaryHandler:
                     "revenue": metrics.get("sales_revenue_total", 0),
                     "orders": metrics.get("sales_orders_count", 0),
                     "avg_order_value": metrics.get("sales_average_order_value", 0),
-                },
-                "production": {
-                    "total_qty": metrics.get("production_total_qty", 0),
-                    "completion_rate": metrics.get("production_completion_rate", 0),
-                    "scrap_rate": metrics.get("production_scrap_rate", 0),
                 },
                 "inventory": {
                     "total_value": metrics.get("inventory_value_total", 0),

@@ -31,9 +31,9 @@ function mapRoleDashboard(data: any, role: string): KPIData[] {
   if (normalizedRole === "ADMIN" || normalizedRole === "TENANT_ADMIN") {
     return [
       kpi("Open Orders", Number(data.open_orders ?? 0)),
-      kpi("Open Work Orders", Number(data.open_work_orders ?? 0)),
       kpi("Low Stock Alerts", Number(data.inventory?.low_stock_alerts ?? 0), Number(data.inventory?.low_stock_alerts ?? 0) > 0 ? "down" : "neutral"),
       kpi("Revenue", Number(data.revenue ?? 0)),
+      kpi("Pending Dispatches", Number(data.pending_dispatches ?? 0)),
     ]
   }
 
@@ -48,10 +48,10 @@ function mapRoleDashboard(data: any, role: string): KPIData[] {
 
   if (normalizedRole === "PLANNER") {
     return [
-      kpi("Open Work Orders", Number(data.open_work_orders ?? 0)),
+      kpi("Open POs", Number(data.open_purchase_orders ?? 0)),
       kpi("Capacity Load", `${Number(data.capacity_load ?? 0).toFixed(1)}%`),
-      kpi("Shortage Items", Number(data.mrp_suggestions?.shortage_items ?? 0), Number(data.mrp_suggestions?.shortage_items ?? 0) > 0 ? "down" : "neutral"),
-      kpi("Open POs", Number(data.mrp_suggestions?.open_purchase_orders ?? 0)),
+      kpi("Pending Dispatches", Number(data.pending_dispatches ?? 0)),
+      kpi("Low Stock Alerts", Number(data.low_stock_alerts ?? 0), Number(data.low_stock_alerts ?? 0) > 0 ? "down" : "neutral"),
     ]
   }
 
@@ -86,8 +86,8 @@ function mapRoleDashboard(data: any, role: string): KPIData[] {
     return [
       kpi("Ready to Start", Number(data.ready_to_start ?? 0)),
       kpi("In Progress", Number(data.in_progress ?? 0)),
-      kpi("Recent Work Orders", Number(data.recent_work_orders?.length ?? 0)),
-      kpi("Open Work Orders", countStatuses(data.work_orders, ["PLANNED", "RELEASED", "MATERIAL_PENDING", "MATERIAL_RESERVED", "MATERIAL_ISSUED", "IN_PRODUCTION"])),
+      kpi("Pending Tasks", Number(data.pending_tasks ?? 0)),
+      kpi("Completed Today", Number(data.completed_today ?? 0)),
     ]
   }
 

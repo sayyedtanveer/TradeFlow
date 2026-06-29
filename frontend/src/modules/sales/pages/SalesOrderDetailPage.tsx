@@ -348,8 +348,7 @@ export default function SalesOrderDetailPage() {
                 </div>
               </div>
               <p className="text-xs text-gray-500 mt-2">
-                * Note: Pricing is automatically resolved from the Client's assigned Price List or the Default Price List. 
-                Auto-Work Order generation occurs on confirm if no physical stock is available.
+                * Note: Pricing is automatically resolved from the Client's assigned Price List or the Default Price List.
               </p>
             </div>
           )}

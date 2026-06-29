@@ -17,6 +17,9 @@ from backend.app.infrastructure.persistence.models.finance_models import Invoice
 from backend.app.infrastructure.persistence.models.item_template_model import ItemTemplateModel
 from backend.app.infrastructure.persistence.models.item_variant_model import ItemVariantModel
 from backend.app.infrastructure.persistence.models.material_model import MaterialModel
+from backend.app.infrastructure.persistence.models.inventory_reservation_model import InventoryReservationModel
+from backend.app.infrastructure.persistence.models.cart_item_model import CartItemModel
+from backend.app.infrastructure.persistence.models.material_category_model import MaterialCategoryModel
 from backend.app.infrastructure.persistence.models.sales_models import (
     ClientAddressModel,
     ClientModel,
@@ -563,7 +566,7 @@ class ClientPortalService:
                             client_id=client_id,
                             product_id=raw_line["product_id"],
                             product_type=raw_line["product_type"],
-                            price_date=order_date,
+                            price_date=date.today(),
                         )
                     )
                 )
@@ -827,7 +830,7 @@ class ClientPortalService:
                 NotificationModel.is_read.is_(False),
             )
         )
-        query = query.order_by(NotificationModel.sent_at.desc()).offset((page - 1) * page_size).limit(page_size)
+        query = query.order_by(NotificationModel.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
         result = await self.session.execute(query)
         items = [self._serialize_notification(n) for n in result.scalars().all()]
         return {
@@ -1103,13 +1106,13 @@ class ClientPortalService:
     def _serialize_notification(self, notification: NotificationModel) -> dict[str, Any]:
         return {
             "id": str(notification.id),
-            "type": notification.type,
+            "type": notification.notification_type,
             "title": notification.title,
             "message": notification.message,
             "reference_type": notification.reference_type,
             "reference_id": str(notification.reference_id) if notification.reference_id else None,
             "is_read": notification.is_read,
-            "sent_at": notification.sent_at.isoformat(),
+            "sent_at": notification.created_at.isoformat(),
         }
 
     def _serialize_notification_settings(self, settings: ClientNotificationSettingsModel) -> dict[str, Any]:
@@ -1512,7 +1515,7 @@ class ClientPortalService:
                     select(func.count()).where(
                         NotificationModel.tenant_id == tenant_id,
                         NotificationModel.user_id == user_id,
-                        NotificationModel.type == notification_type,
+                        NotificationModel.notification_type == notification_type,
                         NotificationModel.reference_type == ref_type,
                         NotificationModel.reference_id == ref_id,
                     )
@@ -1613,3 +1616,457 @@ class ClientPortalService:
             )
         )
         return f"{prefix}{int(count or 0) + 1:03d}"
+
+    # --- Catalogue, Cart, and Order Placement (Phase 3 / Task 4.5) ---
+
+    async def _get_available_quantity(self, tenant_id: uuid.UUID, material_id: uuid.UUID) -> Decimal:
+        """Calculate available inventory: current_stock - reserved_stock."""
+        material = await self.session.scalar(
+            select(MaterialModel).where(
+                MaterialModel.id == material_id,
+                MaterialModel.tenant_id == tenant_id,
+                MaterialModel.is_deleted.is_(False),
+            )
+        )
+        if material is None:
+            return Decimal("0")
+        current = Decimal(str(material.current_stock or 0))
+        reserved = Decimal(str(material.reserved_stock or 0))
+        return max(Decimal("0"), current - reserved)
+
+    async def _build_catalogue_item(self, material: MaterialModel, tenant_id: uuid.UUID) -> dict[str, Any]:
+        """Build a catalogue item response dict from a MaterialModel."""
+        available = Decimal(str(material.current_stock or 0)) - Decimal(str(material.reserved_stock or 0))
+        available = max(Decimal("0"), available)
+
+        # Resolve category name
+        category_name: Optional[str] = None
+        if material.category_id:
+            cat = await self.session.scalar(
+                select(MaterialCategoryModel).where(
+                    MaterialCategoryModel.id == material.category_id,
+                    MaterialCategoryModel.tenant_id == tenant_id,
+                )
+            )
+            if cat:
+                category_name = cat.name
+
+        # Resolve UOM
+        uom_name: Optional[str] = None
+        if material.base_unit_id:
+            uom = await self._resolve_uom(tenant_id, material.base_unit_id)
+            if uom:
+                uom_name = uom["name"]
+
+        # Resolve unit price from price list
+        unit_price = await self._resolve_catalogue_price(tenant_id, material.id)
+
+        return {
+            "id": str(material.id),
+            "name": material.name,
+            "description": material.description,
+            "sku": material.code,
+            "category": category_name,
+            "unit_price": _money(unit_price),
+            "available_quantity": _money(available),
+            "unit_of_measure": uom_name,
+        }
+
+    async def _resolve_catalogue_price(self, tenant_id: uuid.UUID, product_id: uuid.UUID) -> Decimal:
+        """Resolve the unit price for a product from active price lists."""
+        price_date = date.today()
+        row = await self.session.scalar(
+            select(PriceListLineModel.unit_price)
+            .join(PriceListModel, PriceListModel.id == PriceListLineModel.price_list_id)
+            .where(
+                PriceListModel.tenant_id == tenant_id,
+                PriceListModel.is_active.is_(True),
+                PriceListModel.is_deleted.is_(False),
+                PriceListModel.valid_from <= price_date,
+                or_(PriceListModel.valid_to.is_(None), PriceListModel.valid_to >= price_date),
+                PriceListLineModel.product_id == product_id,
+            )
+            .order_by(PriceListModel.is_default.desc(), PriceListModel.valid_from.desc())
+            .limit(1)
+        )
+        return Decimal(str(row)) if row is not None else Decimal("0")
+
+    async def list_catalogue(
+        self,
+        tenant_id: uuid.UUID,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> dict[str, Any]:
+        """Browse product catalogue — paginated, active products only, sorted by name ascending."""
+        base_query = (
+            select(MaterialModel)
+            .where(
+                MaterialModel.tenant_id == tenant_id,
+                MaterialModel.is_active.is_(True),
+                MaterialModel.is_deleted.is_(False),
+            )
+            .order_by(MaterialModel.name.asc())
+        )
+
+        # Count total active products
+        count_query = select(func.count()).select_from(base_query.subquery())
+        total = await self.session.scalar(count_query) or 0
+
+        # Paginate
+        paginated = base_query.offset((page - 1) * page_size).limit(page_size)
+        result = await self.session.execute(paginated)
+        materials = result.scalars().all()
+
+        items = []
+        for material in materials:
+            items.append(await self._build_catalogue_item(material, tenant_id))
+
+        pages = ((int(total) + page_size - 1) // page_size) if total else 0
+        return {
+            "items": items,
+            "total": int(total),
+            "page": page,
+            "page_size": page_size,
+            "pages": pages,
+        }
+
+    async def search_catalogue(
+        self,
+        tenant_id: uuid.UUID,
+        query: str,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> dict[str, Any]:
+        """Search products by case-insensitive substring match on name, SKU, or category."""
+        if not query:
+            return await self.list_catalogue(tenant_id, page, page_size)
+
+        search_pattern = f"%{query}%"
+
+        # Get category IDs matching the search term
+        matching_category_ids_stmt = (
+            select(MaterialCategoryModel.id).where(
+                MaterialCategoryModel.tenant_id == tenant_id,
+                MaterialCategoryModel.is_deleted.is_(False),
+                func.lower(MaterialCategoryModel.name).like(func.lower(search_pattern)),
+            )
+        )
+
+        base_query = (
+            select(MaterialModel)
+            .where(
+                MaterialModel.tenant_id == tenant_id,
+                MaterialModel.is_active.is_(True),
+                MaterialModel.is_deleted.is_(False),
+                or_(
+                    func.lower(MaterialModel.name).like(func.lower(search_pattern)),
+                    func.lower(MaterialModel.code).like(func.lower(search_pattern)),
+                    MaterialModel.category_id.in_(matching_category_ids_stmt),
+                ),
+            )
+            .order_by(MaterialModel.name.asc())
+        )
+
+        # Count total matching products
+        count_query = select(func.count()).select_from(base_query.subquery())
+        total = await self.session.scalar(count_query) or 0
+
+        # Paginate
+        paginated = base_query.offset((page - 1) * page_size).limit(page_size)
+        result = await self.session.execute(paginated)
+        materials = result.scalars().all()
+
+        items = []
+        for material in materials:
+            items.append(await self._build_catalogue_item(material, tenant_id))
+
+        pages = ((int(total) + page_size - 1) // page_size) if total else 0
+        return {
+            "items": items,
+            "total": int(total),
+            "page": page,
+            "page_size": page_size,
+            "pages": pages,
+        }
+
+    async def add_cart_item(
+        self,
+        tenant_id: uuid.UUID,
+        client_id: uuid.UUID,
+        product_id: uuid.UUID,
+        quantity: int,
+    ) -> dict[str, Any]:
+        """Add item to cart. Validates quantity >= 1 and <= available inventory."""
+        # Validate product exists and is active
+        material = await self.session.scalar(
+            select(MaterialModel).where(
+                MaterialModel.id == product_id,
+                MaterialModel.tenant_id == tenant_id,
+                MaterialModel.is_active.is_(True),
+                MaterialModel.is_deleted.is_(False),
+            )
+        )
+        if material is None:
+            raise ValueError("Product not found or not available")
+
+        # Calculate available inventory
+        available = await self._get_available_quantity(tenant_id, product_id)
+
+        # Validate quantity bounds
+        if quantity < 1:
+            raise ValueError(f"Quantity must be at least 1. Valid range: [1, {int(available)}]")
+        if Decimal(str(quantity)) > available:
+            raise ValueError(
+                f"Quantity {quantity} exceeds available inventory. "
+                f"Valid range: [1, {int(available)}]"
+            )
+
+        # Resolve unit price
+        unit_price = await self._resolve_catalogue_price(tenant_id, product_id)
+
+        # Create cart item
+        cart_item = CartItemModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            client_id=client_id,
+            product_id=product_id,
+            product_type="material",
+            quantity=float(quantity),
+            unit_price=float(unit_price),
+        )
+        self.session.add(cart_item)
+        await self.session.commit()
+
+        # Return updated cart
+        return await self.get_cart(tenant_id, client_id)
+
+    async def remove_cart_item(
+        self,
+        tenant_id: uuid.UUID,
+        client_id: uuid.UUID,
+        item_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        """Remove a cart item."""
+        cart_item = await self.session.scalar(
+            select(CartItemModel).where(
+                CartItemModel.id == item_id,
+                CartItemModel.tenant_id == tenant_id,
+                CartItemModel.client_id == client_id,
+            )
+        )
+        if cart_item is None:
+            raise ValueError("Cart item not found")
+
+        await self.session.delete(cart_item)
+        await self.session.commit()
+
+        # Return updated cart
+        return await self.get_cart(tenant_id, client_id)
+
+    async def get_cart(
+        self,
+        tenant_id: uuid.UUID,
+        client_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        """Get current cart contents."""
+        result = await self.session.execute(
+            select(CartItemModel).where(
+                CartItemModel.tenant_id == tenant_id,
+                CartItemModel.client_id == client_id,
+            ).order_by(CartItemModel.created_at.asc())
+        )
+        cart_items = result.scalars().all()
+
+        items = []
+        total_amount = Decimal("0")
+        for item in cart_items:
+            product_name, product_code = await self._resolve_product_name(tenant_id, item.product_id)
+            available = await self._get_available_quantity(tenant_id, item.product_id)
+            line_total = Decimal(str(item.quantity)) * Decimal(str(item.unit_price))
+            total_amount += line_total
+            items.append({
+                "id": str(item.id),
+                "product_id": str(item.product_id),
+                "product_name": product_name,
+                "sku": product_code or "",
+                "quantity": int(item.quantity),
+                "unit_price": _money(item.unit_price),
+                "available_quantity": _money(available),
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+            })
+
+        return {
+            "items": items,
+            "total_items": len(items),
+            "total_amount": _money(total_amount),
+        }
+
+    async def place_order(
+        self,
+        tenant_id: uuid.UUID,
+        client_id: uuid.UUID,
+        user_id: uuid.UUID,
+        lines: list[dict[str, Any]],
+        delivery_date: Optional[date] = None,
+        notes: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Place order — validates inventory for all line items, reserves quantities on confirmation.
+
+        Rejects orders with zero line items. Insufficient stock returns per-item shortage info.
+        """
+        if not lines:
+            raise ValueError("Order must contain at least one line item")
+
+        # Validate inventory availability for all line items
+        shortage_items: list[dict[str, Any]] = []
+        validated_lines: list[dict[str, Any]] = []
+
+        for line in lines:
+            product_id = line["product_id"]
+            requested_qty = int(line["quantity"])
+
+            material = await self.session.scalar(
+                select(MaterialModel).where(
+                    MaterialModel.id == product_id,
+                    MaterialModel.tenant_id == tenant_id,
+                    MaterialModel.is_active.is_(True),
+                    MaterialModel.is_deleted.is_(False),
+                )
+            )
+            if material is None:
+                shortage_items.append({
+                    "product_id": str(product_id),
+                    "product_name": f"Unknown product {str(product_id)[:8]}",
+                    "requested_quantity": requested_qty,
+                    "available_quantity": 0,
+                })
+                continue
+
+            available = await self._get_available_quantity(tenant_id, product_id)
+
+            if Decimal(str(requested_qty)) > available:
+                shortage_items.append({
+                    "product_id": str(product_id),
+                    "product_name": material.name,
+                    "requested_quantity": requested_qty,
+                    "available_quantity": _money(available),
+                })
+            else:
+                # Resolve unit price
+                unit_price = await self._resolve_catalogue_price(tenant_id, product_id)
+                validated_lines.append({
+                    "product_id": product_id,
+                    "material": material,
+                    "quantity": requested_qty,
+                    "unit_price": unit_price,
+                    "uom_id": material.base_unit_id,
+                })
+
+        # If any shortages, reject the order with per-item details
+        if shortage_items:
+            raise ValueError(
+                "Insufficient stock for the following items: "
+                + "; ".join(
+                    f"{item['product_name']} (requested: {item['requested_quantity']}, "
+                    f"available: {item['available_quantity']})"
+                    for item in shortage_items
+                )
+            )
+
+        # Create the order
+        order_date = date.today()
+        order = SalesOrderModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            client_id=client_id,
+            order_number=await self._next_order_number(tenant_id),
+            order_date=order_date.isoformat(),
+            delivery_date=(delivery_date or (order_date + timedelta(days=7))).isoformat(),
+            status="PENDING_INVENTORY_VALIDATION",
+            payment_status="PENDING",
+            subtotal=0,
+            discount_amount=0,
+            tax_amount=0,
+            grand_total=0,
+            notes=notes,
+            created_by=str(user_id),
+            submitted_at=_utc_now(),
+            is_active=True,
+            is_deleted=False,
+        )
+        self.session.add(order)
+        await self.session.flush()
+
+        subtotal = Decimal("0")
+        for vline in validated_lines:
+            quantity = Decimal(str(vline["quantity"]))
+            unit_price = Decimal(str(vline["unit_price"]))
+            line_total = (quantity * unit_price).quantize(Decimal("0.01"))
+            subtotal += line_total
+
+            order_line = SalesOrderLineModel(
+                id=uuid.uuid4(),
+                sales_order_id=order.id,
+                product_id=vline["product_id"],
+                product_type="material",
+                uom_id=vline["uom_id"] or uuid.uuid4(),
+                quantity=float(quantity),
+                unit_price=float(unit_price),
+                tax_rate=0,
+                tax_amount=0,
+                line_total=float(line_total),
+                allocated_quantity=0,
+                shipped_quantity=0,
+                backorder_quantity=0,
+                status="PENDING",
+            )
+            self.session.add(order_line)
+
+        order.subtotal = float(subtotal)
+        order.grand_total = float(subtotal)
+
+        # Reserve inventory for all line items
+        for vline in validated_lines:
+            material = vline["material"]
+            qty = Decimal(str(vline["quantity"]))
+
+            # Increase reserved_stock on the material
+            material.reserved_stock = float(Decimal(str(material.reserved_stock or 0)) + qty)
+
+            # Create inventory reservation record
+            reservation = InventoryReservationModel(
+                id=uuid.uuid4(),
+                tenant_id=tenant_id,
+                reference_type="sales_order",
+                reference_id=order.id,
+                material_id=vline["product_id"],
+                order_id=order.id,
+                quantity=float(qty),
+                status="RESERVED",
+                unit_id=vline["uom_id"],
+            )
+            self.session.add(reservation)
+
+        await self.session.commit()
+
+        # Build response
+        return {
+            "id": str(order.id),
+            "order_number": order.order_number,
+            "status": order.status,
+            "order_date": order.order_date,
+            "delivery_date": order.delivery_date,
+            "subtotal": _money(order.subtotal),
+            "grand_total": _money(order.grand_total),
+            "lines": [
+                {
+                    "product_id": str(vline["product_id"]),
+                    "product_name": vline["material"].name,
+                    "quantity": vline["quantity"],
+                    "unit_price": _money(vline["unit_price"]),
+                    "line_total": _money(Decimal(str(vline["quantity"])) * Decimal(str(vline["unit_price"]))),
+                }
+                for vline in validated_lines
+            ],
+            "message": "Order placed successfully. Inventory has been reserved.",
+        }

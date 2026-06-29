@@ -23,6 +23,7 @@ class Role(str, Enum):
     WORKER = "worker"
     CLIENT = "client"
     SUPPLIER = "supplier"
+    WAREHOUSE_USER = "warehouse_user"
 
     def __str__(self) -> str:
         return self.value

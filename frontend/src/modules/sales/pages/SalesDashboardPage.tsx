@@ -192,7 +192,7 @@ export default function SalesDashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle>Recent Sales Orders</CardTitle>
-          <CardDescription>Latest order activity across draft, approval, production, and delivery states</CardDescription>
+          <CardDescription>Latest order activity across draft, approval, fulfilment, and delivery states</CardDescription>
         </CardHeader>
         <CardContent>
           {error && (

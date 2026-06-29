@@ -56,16 +56,6 @@ class GenerateSalesReportQuery:
 
 
 @dataclass
-class GenerateProductionReportQuery:
-    """Query to generate production report."""
-    tenant_id: UUID
-    start_date: datetime
-    end_date: datetime
-    grouping: Optional[str] = None
-    filters: Optional[dict] = None
-
-
-@dataclass
 class GenerateInventoryReportQuery:
     """Query to generate inventory report."""
     tenant_id: UUID

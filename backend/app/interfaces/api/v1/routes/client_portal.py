@@ -14,12 +14,14 @@ from backend.app.interfaces.api.v1.dependencies.auth import (
 )
 from backend.app.interfaces.api.v1.dependencies.client_portal import require_client_id, require_client_role
 from backend.app.interfaces.api.v1.schemas.client_portal import (
+    CartItemAddRequest,
     ClientAddressCreateRequest,
     ClientAddressUpdateRequest,
     ClientForgotPasswordRequest,
     ClientLoginRequest,
     ClientLoginResponse,
     ClientOrderCreateRequest,
+    ClientPortalOrderCreateRequest,
     ClientProfileUpdateRequest,
     ClientRefreshResponse,
     ClientReorderRequest,
@@ -430,3 +432,100 @@ async def client_support_contact(
     session: AsyncSession = Depends(_get_db_session),
 ):
     return await _service(request, session).submit_support_request(tenant_id, client_id, user_id, body.subject, body.message)
+
+
+# --- Catalogue, Cart, and Order Placement (Phase 3 / Task 4.5) ---
+
+
+@router.get("/catalogue")
+async def client_catalogue(
+    request: Request,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=50),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    client_id: uuid.UUID = Depends(require_client_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Browse product catalogue — paginated (50/page), active products only, sorted by name ascending."""
+    return await _service(request, session).list_catalogue(tenant_id, page, page_size)
+
+
+@router.get("/catalogue/search")
+async def client_catalogue_search(
+    request: Request,
+    q: str = Query("", description="Search query for product name, SKU, or category"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=50),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    client_id: uuid.UUID = Depends(require_client_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Search products by case-insensitive substring match on name, SKU, or category."""
+    return await _service(request, session).search_catalogue(tenant_id, q.strip(), page, page_size)
+
+
+@router.post("/cart/items", status_code=status.HTTP_201_CREATED)
+async def client_cart_add_item(
+    body: CartItemAddRequest,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    client_id: uuid.UUID = Depends(require_client_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Add item to cart. Validates quantity >= 1 and <= available inventory."""
+    try:
+        return await _service(request, session).add_cart_item(tenant_id, client_id, body.product_id, body.quantity)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.delete("/cart/items/{item_id}")
+async def client_cart_remove_item(
+    item_id: uuid.UUID,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    client_id: uuid.UUID = Depends(require_client_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Remove a cart item."""
+    try:
+        return await _service(request, session).remove_cart_item(tenant_id, client_id, item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/cart")
+async def client_cart(
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    client_id: uuid.UUID = Depends(require_client_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Get current cart contents."""
+    return await _service(request, session).get_cart(tenant_id, client_id)
+
+
+@router.post("/orders/place", status_code=status.HTTP_201_CREATED)
+async def client_place_order(
+    body: ClientPortalOrderCreateRequest,
+    request: Request,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    client_id: uuid.UUID = Depends(require_client_id),
+    session: AsyncSession = Depends(_get_db_session),
+):
+    """Place order — validates inventory for all line items, reserves quantities on confirmation.
+
+    Rejects orders with zero line items. Insufficient stock items return per-item shortage info.
+    """
+    try:
+        return await _service(request, session).place_order(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            user_id=user_id,
+            lines=[{"product_id": line.product_id, "quantity": line.quantity} for line in body.lines],
+            delivery_date=body.delivery_date,
+            notes=body.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

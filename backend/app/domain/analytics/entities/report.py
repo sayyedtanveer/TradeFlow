@@ -44,7 +44,7 @@ class SavedReport(AggregateRoot):
     created_by: UUID
     name: str
     description: Optional[str]
-    report_type: str  # 'sales', 'production', 'inventory', 'finance'
+    report_type: str  # 'sales', 'inventory', 'finance'
     query_config: ReportQueryConfig
     is_public: bool
     created_at: datetime

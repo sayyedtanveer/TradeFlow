@@ -273,35 +273,6 @@ async def generate_sales_report(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/production-report", response_model=dict)
-async def generate_production_report(
-    start_date: str = Query(...),
-    end_date: str = Query(...),
-    grouping: Optional[str] = Query(None),
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
-    request: Request = None,
-):
-    """Generate production report."""
-    try:
-        from backend.app.application.handlers.analytics.queries import GenerateProductionReportQuery
-        from backend.app.application.handlers.analytics.query_handlers import GenerateProductionReportHandler
-
-        container = request.app.state.container
-        repository = container.analytics_repository
-        handler = GenerateProductionReportHandler(repository)
-
-        query = GenerateProductionReportQuery(
-            tenant_id=tenant_id,
-            start_date=datetime.fromisoformat(start_date),
-            end_date=datetime.fromisoformat(end_date),
-            grouping=grouping,
-        )
-
-        return await handler.handle(query)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
 @router.get("/inventory-report", response_model=dict)
 async def generate_inventory_report(
     start_date: str = Query(...),

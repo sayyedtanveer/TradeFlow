@@ -152,7 +152,7 @@ export default function ProductTemplateFormPage() {
               <div className="col-span-2 flex items-center justify-between pt-2">
                 <div className="space-y-0.5">
                   <Label>Active Status</Label>
-                  <p className="text-xs text-muted-foreground">Inactive templates cannot be used in new BOMs.</p>
+                  <p className="text-xs text-muted-foreground">Inactive templates cannot be used in new orders.</p>
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox id="is-active" checked={isActive} onCheckedChange={(val) => setIsActive(!!val)} disabled={!canEdit} />

@@ -19,7 +19,7 @@ NOTIFICATION_TYPES = {
     "PO_RECEIVED": "Purchase Order Received",
     "NCR_CREATED": "Non-Conformance Report Created",
     "INVOICE_OVERDUE": "Invoice Overdue",
-    "WORK_ORDER": "Work Order Update",
+    "ORDER_STATUS": "Order Status Update",
     "PAYMENT_RECEIVED": "Payment Received",
     "SYSTEM": "System Notification",
 }

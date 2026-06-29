@@ -118,6 +118,8 @@ class SalesInventoryIntegrationService:
         uom_id: UUID,
         reference_type: str,
         reference_id: UUID,
+        warehouse_id: Optional[UUID] = None,
+        order_id: Optional[UUID] = None,
     ) -> None:
         """Reserve stock for a sales order line without reducing physical stock."""
         if reference_type != "sales_order_line":
@@ -130,6 +132,8 @@ class SalesInventoryIntegrationService:
             sales_order_line_id=reference_id,
             unit_id=uom_id,
             created_by=self.created_by,
+            warehouse_id=warehouse_id,
+            order_id=order_id,
         )
 
     async def release_stock(

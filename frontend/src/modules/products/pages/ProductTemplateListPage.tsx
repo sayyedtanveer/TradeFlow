@@ -50,7 +50,7 @@ export default function ProductTemplateListPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Finished Goods</h1>
           <p className="text-muted-foreground">
-            Manage sellable product templates here. Raw materials stay under inventory for BOM and procurement planning.
+            Manage sellable product templates here. Raw materials stay under inventory for procurement planning.
           </p>
         </div>
         {canEdit && (

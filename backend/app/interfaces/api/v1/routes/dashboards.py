@@ -56,9 +56,7 @@ async def admin_dashboard(
     - Purchase order metrics (count by status)
     - GRN reception metrics
     - Inventory levels and alerts
-    - Work order status distribution
     - Sales order status distribution
-    - Production completion percentage
     """
     container = get_container(request)
     async with container.session_factory() as session:
@@ -91,19 +89,6 @@ async def admin_dashboard(
         )
         low_stock_count = (await session.execute(low_stock_stmt)).scalar() or 0
         
-        # WO metrics
-        wo_stmt = select(
-            WorkOrderModel.status,
-            func.count(WorkOrderModel.id).label("count")
-        ).where(
-            WorkOrderModel.tenant_id == tenant_id,
-            WorkOrderModel.is_deleted.is_(False),
-        ).group_by(WorkOrderModel.status)
-        
-        wo_result = await session.execute(wo_stmt)
-        wo_by_status = {row[0]: row[1] for row in wo_result}
-        total_wos = sum(wo_by_status.values())
-        
         # SO metrics
         so_stmt = select(
             SalesOrderModel.status,
@@ -128,16 +113,10 @@ async def admin_dashboard(
             select(func.count(SalesOrderModel.id)).where(
                 SalesOrderModel.tenant_id == tenant_id,
                 SalesOrderModel.status.in_(
-                    ["PENDING_APPROVAL", "APPROVED", "CONFIRMED", "PRODUCTION", "READY", "SHIPPED"]
+                    ["PENDING_APPROVAL", "APPROVED", "CONFIRMED", "READY", "SHIPPED"]
                 ),
                 SalesOrderModel.is_deleted.is_(False),
             )
-        )
-        
-        # Production completion %
-        completed_wos = wo_by_status.get("COMPLETED", 0)
-        production_completion_pct = (
-            (completed_wos / total_wos * 100) if total_wos > 0 else 0
         )
         
         # Total inventory value (estimated)
@@ -168,13 +147,6 @@ async def admin_dashboard(
         },
         "revenue": float(revenue or 0),
         "open_orders": int(open_orders or 0),
-        "open_work_orders": int(total_wos - completed_wos),
-        "production_target_progress": round(production_completion_pct, 1),
-        "work_orders": {
-            "total": total_wos,
-            "by_status": wo_by_status,
-            "completion_percentage": round(production_completion_pct, 1),
-        },
         "sales_orders": {
             "total": total_sos,
             "by_status": so_by_status,
@@ -288,16 +260,14 @@ async def manager_dashboard(
     user_id: uuid.UUID = Depends(get_current_user_id),
     role: str = Depends(get_current_role),
 ):
-    """Manager operational workspace dashboard with queue-first design."""
+    """Manager operational workspace dashboard."""
     container = get_container(request)
     async with container.session_factory() as session:
-        # Manufacturing manager service removed - return basic dashboard data
         dashboard_data = {
             "dashboard_type": "manager",
-            "message": "Manufacturing manager dashboard has been removed in TradeFlow distribution system.",
         }
         
-        # Add legacy pending approvals for backward compatibility
+        # Pending approvals
         pending_query = select(SalesOrderModel).where(
             SalesOrderModel.tenant_id == tenant_id,
             SalesOrderModel.status == "PENDING_APPROVAL",
@@ -315,7 +285,7 @@ async def manager_dashboard(
             )
         ).scalars().all()
 
-        dashboard_data["legacy_pending_approvals"] = {
+        dashboard_data["pending_approvals"] = {
             "count": len(pending_orders),
             "items": [
                 {

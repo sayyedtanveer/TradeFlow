@@ -185,7 +185,7 @@ export default function StockMovementPage() {
             <Textarea
               value={draft.remarks}
               onChange={(event) => setDraft((current) => ({ ...current, remarks: event.target.value }))}
-              placeholder="Reason, PO number, work order number, or receiving note"
+              placeholder="Reason, PO number, or receiving note"
             />
           </div>
         </div>

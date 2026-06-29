@@ -69,26 +69,6 @@ export const OrdersChart: React.FC<ChartProps> = ({ data, title = 'Orders', heig
   );
 };
 
-export const ProductionChart: React.FC<ChartProps> = ({ data, title = 'Production', height = 300 }) => {
-  return (
-    <div className="w-full bg-white rounded-lg shadow p-4">
-      <h3 className="text-lg font-semibold mb-4">{title}</h3>
-      <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="date" />
-          <YAxis />
-          <Tooltip />
-          <Legend />
-          <Bar dataKey="planned" fill={COLORS[0]} />
-          <Bar dataKey="produced" fill={COLORS[1]} />
-          <Bar dataKey="scrap" fill={COLORS[3]} />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-};
-
 export const InventoryChart: React.FC<ChartProps> = ({ data, title = 'Inventory Value', height = 300 }) => {
   return (
     <div className="w-full bg-white rounded-lg shadow p-4">

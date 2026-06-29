@@ -18,7 +18,6 @@ const RegisterTenantPage = lazy(() => import("@/modules/auth/pages/RegisterTenan
 const DashboardPage = lazy(() => import("@/modules/dashboard/pages/DashboardPage"))
 const SystemMapPage = lazy(() => import("@/modules/dashboard/pages/SystemMapPage"))
 const ActivityLogPage = lazy(() => import("@/modules/audit/pages/ActivityLogPage"))
-const StorekeeperDashboardPage = lazy(() => import("@/modules/inventory/pages/StorekeeperDashboardPage"))
 
 // Error fallback component
 const RouteErrorFallback = () => (
@@ -64,9 +63,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
           { path: "dashboard/planner", element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
-          { path: "dashboard/storekeeper", element: <Suspense fallback={<PageLoading />}><StorekeeperDashboardPage /></Suspense> },
           { path: "dashboard/sales", element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
-          { path: "dashboard/qc", element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
           { path: "dashboard/client", element: <Suspense fallback={<PageLoading />}><DashboardPage /></Suspense> },
           { path: "system-map", element: <Suspense fallback={<PageLoading />}><SystemMapPage /></Suspense> },
           {

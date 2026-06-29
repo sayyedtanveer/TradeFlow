@@ -12,7 +12,6 @@ import { Save } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Drawer } from "@/components/shared/Drawer"
 import { useEffect } from "react"
-import { supplyChainApi } from "@/services/supply-chain.service"
 import { Checkbox } from "@/components/ui/checkbox"
 
 const GENERIC_RAW_NAMES = new Set([
@@ -112,12 +111,6 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
   const { data: locations, isLoading: isFetchingLocations } = useQuery({
     queryKey: ["locations"],
     queryFn: () => materialService.getLocations(),
-  })
-
-  const { data: inspectionTemplates } = useQuery({
-    queryKey: ["inspection-templates"],
-    queryFn: () => supplyChainApi.listInspectionTemplates().then((r) => r.data),
-    enabled: open && isEditing,
   })
 
   const isFetching = isFetchingMaterial || isFetchingCategories || isFetchingUnits || isFetchingLocations;
@@ -356,7 +349,7 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
 
             {isEditing && (
               <div className="space-y-3 border-t pt-4">
-                <p className="text-sm font-medium">Receiving / inspection</p>
+                <p className="text-sm font-medium">Receiving</p>
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="insp_req"
@@ -366,27 +359,6 @@ export function MaterialFormDrawer({ materialId, open, onClose }: Props) {
                   <Label htmlFor="insp_req" className="font-normal cursor-pointer">
                     Inspection required
                   </Label>
-                </div>
-                <div className="space-y-2">
-                  <Label>Inspection template</Label>
-                  <Select
-                    value={watch("inspection_template_id") || "__none__"}
-                    onValueChange={(v) =>
-                      setValue("inspection_template_id", v === "__none__" ? null : v, { shouldValidate: true })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="None" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">(none)</SelectItem>
-                      {(inspectionTemplates ?? []).map((t) => (
-                        <SelectItem key={t.id} value={t.id}>
-                          {t.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 </div>
               </div>
             )}

@@ -64,6 +64,10 @@ async def get_effective_role_permissions(
 ) -> EffectiveRolePermissions:
     """Return DB-managed role permissions, falling back to built-in defaults."""
     normalized = normalize_role_name(role_name)
+    
+    # Ensure default roles exist if they're not in the database yet
+    await ensure_default_roles(session, tenant_id)
+    
     try:
         role = await session.scalar(
             select(TenantRoleModel).where(

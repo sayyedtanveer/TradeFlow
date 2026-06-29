@@ -4,7 +4,7 @@ class ProductStatus(str, Enum):
     Lifecycle states for product templates.
     
     - DRAFT: Initial state, not yet ready for use
-    - ACTIVE: Ready for use in BOMs, procurement, sales
+    - ACTIVE: Ready for use in procurement, sales
     - INACTIVE: No longer in use but history maintained
     - ARCHIVED: Historic records, rarely accessed
     """
@@ -37,7 +37,7 @@ class ProductStatus(str, Enum):
 
     @property
     def is_usable(self) -> bool:
-        """Returns True if product can be used in operations (ACTIVE or DRAFT)."""
+        """Returns True if product can be used in sales/procurement (ACTIVE or DRAFT)."""
         return self in {ProductStatus.ACTIVE, ProductStatus.DRAFT}
 
 

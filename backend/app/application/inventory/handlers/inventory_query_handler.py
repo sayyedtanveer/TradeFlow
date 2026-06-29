@@ -15,6 +15,7 @@ from backend.app.application.inventory.handlers.inventory_handlers import (
 )
 from backend.app.application.inventory.queries.inventory_queries import (
     GetMaterialQuery, GetStockQuery, GetTransactionsQuery, ListMaterialsQuery,
+    GetInventorySummaryQuery, GetWarehouseInventoryQuery,
 )
 from backend.app.domain.inventory.entities.inventory_transaction import InventoryTransaction
 from backend.app.infrastructure.persistence.repositories.material_repository import MaterialRepository
@@ -70,6 +71,7 @@ class InventoryQueryHandler:
             category=query.category,
             material_type=query.material_type,
             is_active=query.is_active,
+            warehouse_id=query.warehouse_id,
             page=query.page,
             page_size=query.page_size,
         )
@@ -79,6 +81,7 @@ class InventoryQueryHandler:
             category=query.category,
             material_type=query.material_type,
             is_active=query.is_active,
+            warehouse_id=query.warehouse_id,
         )
         return PaginatedMaterials(
             items=[_to_result(m) for m in items],
@@ -112,12 +115,14 @@ class InventoryQueryHandler:
             txs = await self._tx_repo.list_by_material(
                 material_id=query.material_id,
                 tenant_id=query.tenant_id,
+                warehouse_id=query.warehouse_id,
                 page=query.page,
                 page_size=query.page_size,
             )
         else:
             txs = await self._tx_repo.list_all(
                 tenant_id=query.tenant_id,
+                warehouse_id=query.warehouse_id,
                 page=query.page,
                 page_size=query.page_size,
             )

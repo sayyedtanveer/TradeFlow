@@ -1,5 +1,5 @@
-"""
-InventoryService — canonical gateway for ALL stock mutations.
+﻿"""
+InventoryService â€” canonical gateway for ALL stock mutations.
 
 Rules:
   - ALL stock changes MUST go through this service.
@@ -26,11 +26,10 @@ from backend.app.infrastructure.persistence.models.inventory_management_models i
 from backend.app.infrastructure.persistence.models.location_model import LocationModel
 from backend.app.infrastructure.persistence.models.stock_level_model import StockLevelModel
 from backend.app.domain.shared.exceptions.inventory_exceptions import InsufficientStockError
-from backend.app.domain.inventory.entities.material_shortage import MaterialShortage, ShortageStatus
 
-# Locations usable for internal manufacturing issue (not subcontractor / quarantine)
+# Locations usable for internal stock issue (not subcontractor / quarantine)
 _INTERNAL_ISSUE_LOCATION_TYPES: frozenset[str] = frozenset(
-    {"warehouse", "zone", "rack", "bin", "production"}
+    {"warehouse", "zone", "rack", "bin"}
 )
 
 _BLOCKED_BATCH_STATUSES: frozenset[str] = frozenset(
@@ -55,7 +54,7 @@ class InventoryService:
     def __init__(self, session: AsyncSession):
         self._session = session
 
-    # ── Internal helper ────────────────────────────────────────────────────────
+    # â”€â”€ Internal helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def _lock_material(self, tenant_id: uuid.UUID, material_id: uuid.UUID) -> MaterialModel:
         """Acquire a row-level lock (SELECT FOR UPDATE) on the material."""
@@ -69,21 +68,6 @@ class InventoryService:
         if model is None:
             raise ValueError(f"Material {material_id} not found for tenant {tenant_id}")
         return model
-
-    async def _lock_work_order(self, tenant_id: uuid.UUID, work_order_id: uuid.UUID) -> None:
-        from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderModel
-
-        stmt = (
-            select(WorkOrderModel.id)
-            .where(
-                WorkOrderModel.id == work_order_id,
-                WorkOrderModel.tenant_id == tenant_id,
-                WorkOrderModel.is_deleted.is_(False),
-            )
-            .with_for_update()
-        )
-        if (await self._session.execute(stmt)).scalar_one_or_none() is None:
-            raise ValueError(f"Work order {work_order_id} not found")
 
     async def _log_transaction(
         self,
@@ -100,6 +84,7 @@ class InventoryService:
         batch_id: Optional[uuid.UUID] = None,
         from_location_id: Optional[uuid.UUID] = None,
         to_location_id: Optional[uuid.UUID] = None,
+        warehouse_id: Optional[uuid.UUID] = None,
     ) -> InventoryTransactionModel:
         tx = InventoryTransactionModel(
             id=uuid.uuid4(),
@@ -109,6 +94,7 @@ class InventoryService:
             quantity=float(quantity),
             unit_id=unit_id,
             batch_id=batch_id,
+            warehouse_id=warehouse_id,
             from_location_id=from_location_id,
             to_location_id=to_location_id,
             reference_type=reference_type,
@@ -460,7 +446,7 @@ class InventoryService:
             batch.status = "AVAILABLE"
         batch.updated_at = datetime.now(timezone.utc)
 
-    # ── Public API ──────────────────────────────────────────────────────────────
+    # â”€â”€ Public API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def add_stock(
         self,
@@ -476,6 +462,7 @@ class InventoryService:
         batch_id: Optional[uuid.UUID] = None,
         transaction_type: str = "in",
         reference_type: str = "manual",
+        warehouse_id: Optional[uuid.UUID] = None,
     ) -> None:
         """Canonical manual stock increase."""
         if quantity <= 0:
@@ -506,6 +493,7 @@ class InventoryService:
             remarks=remarks,
             batch_id=batch_id,
             to_location_id=loc,
+            warehouse_id=warehouse_id,
         )
         await self._log_ledger(
             tenant_id=tenant_id,
@@ -531,6 +519,7 @@ class InventoryService:
         batch_id: Optional[uuid.UUID] = None,
         transaction_type: str = "out",
         reference_type: str = "manual",
+        warehouse_id: Optional[uuid.UUID] = None,
     ) -> None:
         """Canonical manual stock decrease."""
         if quantity <= 0:
@@ -577,6 +566,7 @@ class InventoryService:
             remarks=remarks,
             batch_id=batch_id,
             from_location_id=loc,
+            warehouse_id=warehouse_id,
         )
         await self._log_ledger(
             tenant_id=tenant_id,
@@ -598,6 +588,7 @@ class InventoryService:
         created_by: uuid.UUID,
         location_id: Optional[uuid.UUID] = None,
         remarks: Optional[str] = None,
+        warehouse_id: Optional[uuid.UUID] = None,
     ) -> Decimal:
         """Canonical absolute stock adjustment. Returns signed delta."""
         if new_quantity < 0:
@@ -615,6 +606,7 @@ class InventoryService:
                 remarks=remarks or f"Adjusted to {new_quantity}",
                 transaction_type="adjustment",
                 reference_type="adjustment",
+                warehouse_id=warehouse_id,
             )
         elif delta < 0:
             await self.remove_stock(
@@ -627,6 +619,7 @@ class InventoryService:
                 remarks=remarks or f"Adjusted to {new_quantity}",
                 transaction_type="adjustment",
                 reference_type="adjustment",
+                warehouse_id=warehouse_id,
             )
         return delta
 
@@ -745,32 +738,6 @@ class InventoryService:
         )
         await self._session.flush()
         return batch
-
-    async def reserve_stock(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        material_id: uuid.UUID,
-        quantity: Decimal,
-        work_order_id: uuid.UUID,
-        unit_id: Optional[uuid.UUID] = None,
-        created_by: uuid.UUID,
-        batch_id: Optional[uuid.UUID] = None,
-    ) -> None:
-        """Reserve stock (soft lock) when WO is released. Non-destructive."""
-        reserved, shortage = await self.reserve_for_work_order(
-            tenant_id=tenant_id,
-            material_id=material_id,
-            quantity=quantity,
-            work_order_id=work_order_id,
-            unit_id=unit_id,
-            created_by=created_by,
-            batch_id=batch_id,
-        )
-        if shortage > 0:
-            raise InsufficientStockError(
-                f"Cannot reserve {quantity}: only {reserved} available for {material_id}"
-            )
 
     async def reserve_reference_stock(
         self,
@@ -909,76 +876,6 @@ class InventoryService:
             remarks=remarks or "Legacy reservation cancelled",
         )
 
-    async def cancel_work_order_reservation(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        material_id: uuid.UUID,
-        work_order_id: uuid.UUID,
-        unit_id: Optional[uuid.UUID],
-        created_by: uuid.UUID,
-        remarks: Optional[str] = None,
-        batch_id: Optional[uuid.UUID] = None,
-    ) -> Decimal:
-        """Cancel unissued WO reservation quantity and return it to availability."""
-        await self._lock_work_order(tenant_id, work_order_id)
-        model = await self._lock_material(tenant_id, material_id)
-        stmt = (
-            select(InventoryReservationModel)
-            .where(
-                InventoryReservationModel.tenant_id == tenant_id,
-                InventoryReservationModel.reference_type == "work_order",
-                InventoryReservationModel.reference_id == work_order_id,
-                InventoryReservationModel.material_id == material_id,
-                InventoryReservationModel.status.in_(("RESERVED", "PARTIALLY_ISSUED")),
-            )
-            .order_by(InventoryReservationModel.created_at)
-            .with_for_update()
-        )
-        if batch_id is not None:
-            stmt = stmt.where(InventoryReservationModel.batch_id == batch_id)
-        reservations = (await self._session.execute(stmt)).scalars().all()
-
-        cancelled_by_batch: dict[Optional[uuid.UUID], Decimal] = {}
-        now = datetime.now(timezone.utc)
-        for reservation in reservations:
-            unissued = Decimal(str(reservation.quantity or 0)) - Decimal(str(reservation.issued_quantity or 0))
-            if unissued <= 0:
-                continue
-            if reservation.batch_id is not None:
-                batch = await self._lock_batch(tenant_id, reservation.batch_id)
-                batch.reserved_quantity = float(
-                    max(Decimal("0"), Decimal(str(batch.reserved_quantity or 0)) - unissued)
-                )
-                self._update_batch_status(batch)
-            reservation.status = "ISSUED" if Decimal(str(reservation.issued_quantity or 0)) > 0 else "RETURNED"
-            reservation.updated_at = now
-            cancelled_by_batch[reservation.batch_id] = cancelled_by_batch.get(
-                reservation.batch_id, Decimal("0")
-            ) + unissued
-
-        cancelled_qty = sum(cancelled_by_batch.values(), Decimal("0"))
-        if cancelled_qty <= 0:
-            return Decimal("0")
-
-        reserved = Decimal(str(model.reserved_stock or 0))
-        model.reserved_stock = float(max(Decimal("0"), reserved - cancelled_qty))
-        model.updated_at = now
-        for cancelled_batch_id, qty in cancelled_by_batch.items():
-            await self._log_transaction(
-                tenant_id=tenant_id,
-                material_id=material_id,
-                transaction_type="reservation_cancel",
-                quantity=qty,
-                unit_id=unit_id,
-                batch_id=cancelled_batch_id,
-                reference_type="work_order",
-                reference_id=work_order_id,
-                created_by=created_by,
-                remarks=remarks or f"Reservation cancelled for WO {work_order_id}",
-            )
-        return cancelled_qty
-
     async def get_available_stock(
         self,
         *,
@@ -989,6 +886,118 @@ class InventoryService:
         model = await self._lock_material(tenant_id, material_id)
         return await self._available_for_locked_material(model)
 
+    async def get_available_stock_for_warehouse(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+        warehouse_id: uuid.UUID,
+    ) -> Decimal:
+        """Get available stock for a material within a specific warehouse.
+
+        Available = warehouse_stock - warehouse_reserved.
+        Uses stock_levels filtered by warehouse_id and subtracts active
+        reservations scoped to that warehouse.
+
+        This implements the requirement: available_quantity = current_stock - reserved_quantity
+        at the warehouse level for accurate per-warehouse inventory validation.
+        """
+        # Get warehouse-scoped on-hand stock
+        stmt = (
+            select(func.coalesce(func.sum(StockLevelModel.quantity), 0))
+            .where(
+                StockLevelModel.tenant_id == tenant_id,
+                StockLevelModel.material_id == material_id,
+                StockLevelModel.warehouse_id == warehouse_id,
+                StockLevelModel.stock_status == _ST_AVAILABLE,
+                StockLevelModel.is_deleted.is_(False),
+            )
+        )
+        result = await self._session.execute(stmt)
+        on_hand = Decimal(str(result.scalar_one()))
+
+        # Get warehouse-scoped reserved quantity from reservation records
+        reserved_stmt = (
+            select(func.coalesce(func.sum(InventoryReservationModel.quantity), 0))
+            .where(
+                InventoryReservationModel.tenant_id == tenant_id,
+                InventoryReservationModel.material_id == material_id,
+                InventoryReservationModel.warehouse_id == warehouse_id,
+                InventoryReservationModel.status == "RESERVED",
+            )
+        )
+        reserved_result = await self._session.execute(reserved_stmt)
+        reserved = Decimal(str(reserved_result.scalar_one()))
+
+        return max(Decimal("0"), on_hand - reserved)
+
+    async def get_total_reserved_for_material(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        material_id: uuid.UUID,
+    ) -> Decimal:
+        """Get total reserved quantity across all warehouses for a material."""
+        stmt = (
+            select(func.coalesce(func.sum(InventoryReservationModel.quantity), 0))
+            .where(
+                InventoryReservationModel.tenant_id == tenant_id,
+                InventoryReservationModel.material_id == material_id,
+                InventoryReservationModel.status == "RESERVED",
+            )
+        )
+        result = await self._session.execute(stmt)
+        return Decimal(str(result.scalar_one()))
+
+    async def release_all_reservations_for_order(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        order_id: uuid.UUID,
+        created_by: uuid.UUID,
+    ) -> None:
+        """Release all active reservations for an order (on cancellation).
+
+        Finds all RESERVED reservation records for the given order_id,
+        marks them as RELEASED, and decrements each material's reserved_stock.
+
+        Requirements: 6.3 (inventory insufficient → cancel → release),
+                      6.13 (admin cancel → release reserved inventory)
+        """
+        stmt = (
+            select(InventoryReservationModel)
+            .where(
+                InventoryReservationModel.tenant_id == tenant_id,
+                InventoryReservationModel.order_id == order_id,
+                InventoryReservationModel.status == "RESERVED",
+            )
+            .with_for_update()
+        )
+        result = await self._session.execute(stmt)
+        reservations = result.scalars().all()
+
+        for reservation in reservations:
+            quantity = Decimal(str(reservation.quantity))
+            reservation.status = "RELEASED"
+
+            # Decrement material's reserved_stock
+            material = await self._lock_material(tenant_id, reservation.material_id)
+            current_reserved = Decimal(str(material.reserved_stock))
+            material.reserved_stock = float(max(Decimal("0"), current_reserved - quantity))
+
+            await self._log_transaction(
+                tenant_id=tenant_id,
+                material_id=reservation.material_id,
+                transaction_type="release",
+                quantity=quantity,
+                unit_id=reservation.unit_id,
+                reference_type="sales_order_line",
+                reference_id=reservation.reference_id,
+                created_by=created_by,
+                remarks=f"Released reservation for cancelled order {order_id}",
+                warehouse_id=reservation.warehouse_id,
+            )
+
     async def reserve_sales_stock(
         self,
         *,
@@ -998,8 +1007,17 @@ class InventoryService:
         sales_order_line_id: uuid.UUID,
         unit_id: Optional[uuid.UUID] = None,
         created_by: uuid.UUID,
+        warehouse_id: Optional[uuid.UUID] = None,
+        order_id: Optional[uuid.UUID] = None,
     ) -> None:
-        """Reserve finished goods for a sales order line without reducing on-hand stock."""
+        """Reserve finished goods for a sales order line without reducing on-hand stock.
+
+        Creates an InventoryReservationModel record for audit and tracking,
+        and increments the material's reserved_stock counter to reflect the
+        available quantity calculation: current_stock - reserved_quantity.
+
+        Requirements: 5.7 (reserve on order confirmation to prevent overselling)
+        """
         model = await self._lock_material(tenant_id, material_id)
         available = await self._available_for_locked_material(model)
         if quantity > available:
@@ -1007,6 +1025,25 @@ class InventoryService:
                 f"Cannot reserve {quantity}: only {available} available for {material_id}"
             )
         model.reserved_stock = float(Decimal(str(model.reserved_stock)) + quantity)
+
+        # Create reservation record for audit trail and lifecycle tracking
+        reservation = InventoryReservationModel(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            reference_type="sales_order_line",
+            reference_id=sales_order_line_id,
+            material_id=material_id,
+            quantity=float(quantity),
+            status="RESERVED",
+            unit_id=unit_id,
+            warehouse_id=warehouse_id,
+            order_id=order_id,
+            issued_quantity=0,
+            consumed_quantity=0,
+            returned_quantity=0,
+        )
+        self._session.add(reservation)
+
         await self._log_transaction(
             tenant_id=tenant_id,
             material_id=material_id,
@@ -1017,6 +1054,7 @@ class InventoryService:
             reference_id=sales_order_line_id,
             created_by=created_by,
             remarks=f"Reserved for sales order line {sales_order_line_id}",
+            warehouse_id=warehouse_id,
         )
 
     async def release_sales_reservation(
@@ -1029,12 +1067,36 @@ class InventoryService:
         unit_id: Optional[uuid.UUID] = None,
         created_by: uuid.UUID,
     ) -> None:
-        """Release a sales reservation back to available stock."""
+        """Release a sales reservation back to available stock.
+
+        Updates the InventoryReservationModel record to RELEASED status and
+        decrements the material's reserved_stock counter.
+
+        Requirements: 6.3 (release on cancellation), 6.13 (release on admin cancel)
+        """
         model = await self._lock_material(tenant_id, material_id)
         reserved = Decimal(str(model.reserved_stock))
         released = min(quantity, reserved)
         model.reserved_stock = float(reserved - released)
+
+        # Update reservation record status to RELEASED
         if released > 0:
+            stmt = (
+                select(InventoryReservationModel)
+                .where(
+                    InventoryReservationModel.tenant_id == tenant_id,
+                    InventoryReservationModel.reference_type == "sales_order_line",
+                    InventoryReservationModel.reference_id == sales_order_line_id,
+                    InventoryReservationModel.material_id == material_id,
+                    InventoryReservationModel.status == "RESERVED",
+                )
+                .with_for_update()
+            )
+            result = await self._session.execute(stmt)
+            reservation_row = result.scalar_one_or_none()
+            if reservation_row is not None:
+                reservation_row.status = "RELEASED"
+
             await self._log_transaction(
                 tenant_id=tenant_id,
                 material_id=material_id,
@@ -1057,7 +1119,11 @@ class InventoryService:
         unit_id: Optional[uuid.UUID] = None,
         created_by: uuid.UUID,
     ) -> None:
-        """Ship reserved goods: deduct physical stock and consume the reservation."""
+        """Ship reserved goods: deduct physical stock and consume the reservation.
+
+        Updates the InventoryReservationModel record to CONSUMED status
+        after deducting physical stock.
+        """
         model = await self._lock_material(tenant_id, material_id)
         if await self._has_stock_levels(tenant_id, material_id):
             remaining = await self._deduct_available_internal(tenant_id, material_id, quantity)
@@ -1076,6 +1142,27 @@ class InventoryService:
 
         reserved = Decimal(str(model.reserved_stock))
         model.reserved_stock = float(max(Decimal("0"), reserved - quantity))
+
+        # Update reservation record status to CONSUMED
+        stmt = (
+            select(InventoryReservationModel)
+            .where(
+                InventoryReservationModel.tenant_id == tenant_id,
+                InventoryReservationModel.reference_type == "sales_order_line",
+                InventoryReservationModel.reference_id == sales_order_line_id,
+                InventoryReservationModel.material_id == material_id,
+                InventoryReservationModel.status == "RESERVED",
+            )
+            .with_for_update()
+        )
+        result = await self._session.execute(stmt)
+        reservation_row = result.scalar_one_or_none()
+        if reservation_row is not None:
+            reservation_row.status = "CONSUMED"
+            reservation_row.consumed_quantity = float(
+                Decimal(str(reservation_row.consumed_quantity or 0)) + quantity
+            )
+
         await self._log_transaction(
             tenant_id=tenant_id,
             material_id=material_id,
@@ -1095,243 +1182,6 @@ class InventoryService:
             quantity_change=-quantity,
             reference_type="sales_order_line",
             reference_id=sales_order_line_id,
-        )
-
-    async def issue_stock(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        material_id: uuid.UUID,
-        quantity: Decimal,
-        work_order_id: uuid.UUID,
-        unit_id: Optional[uuid.UUID] = None,
-        created_by: uuid.UUID,
-        batch_id: Optional[uuid.UUID] = None,
-    ) -> None:
-        """Physically issue material: decrease available stock and reserved_stock."""
-        model = await self._lock_material(tenant_id, material_id)
-        if await self._has_stock_levels(tenant_id, material_id):
-            remaining = await self._deduct_available_internal(tenant_id, material_id, quantity)
-            if remaining > 0:
-                raise InsufficientStockError(
-                    f"Insufficient available stock for {material_id}: "
-                    f"short by {remaining} (pending inspection / quarantine not usable)"
-                )
-            await self._sync_material_total_from_buckets(model)
-        else:
-            current = Decimal(str(model.current_stock))
-            if quantity > current:
-                raise InsufficientStockError(
-                    f"Insufficient stock for {material_id}: requested {quantity}, available {current}"
-                )
-            model.current_stock = float(current - quantity)
-        reserved = Decimal(str(model.reserved_stock))
-        model.reserved_stock = float(max(Decimal("0"), reserved - quantity))
-        await self._log_transaction(
-            tenant_id=tenant_id, material_id=material_id, transaction_type="issue",
-            quantity=quantity, unit_id=unit_id, reference_type="work_order",
-            reference_id=work_order_id, created_by=created_by,
-            remarks=f"Issued for WO {work_order_id}",
-            batch_id=batch_id,
-        )
-        # ── Stock Ledger ─────────────────────────────────────────────────────
-        await self._log_ledger(
-            tenant_id=tenant_id,
-            material_id=material_id,
-            location_id=None,
-            transaction_type="ISSUE",
-            quantity_change=-quantity,  # negative = reduction
-            reference_type="work_order",
-            reference_id=work_order_id,
-        )
-
-    async def issue_material_for_wo(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        work_order_id: uuid.UUID,
-        material_id: uuid.UUID,
-        quantity: Decimal,
-        unit_id: Optional[uuid.UUID],
-        created_by: uuid.UUID,
-        transition_wo_status: bool = True,
-        batch_id: Optional[uuid.UUID] = None,
-    ) -> dict:
-        """Canonical WO material issue: stock mutation + WO line + reservation rows."""
-        from datetime import datetime, timezone
-
-        from backend.app.domain.manufacturing.entities.work_order import WorkOrderStatus
-        from backend.app.infrastructure.persistence.models.work_order_model import (
-            WorkOrderMaterialModel,
-            WorkOrderModel,
-        )
-
-        wo_stmt = select(WorkOrderModel).where(
-            WorkOrderModel.id == work_order_id,
-            WorkOrderModel.tenant_id == tenant_id,
-            WorkOrderModel.is_deleted.is_(False),
-        ).with_for_update()
-        wo = (await self._session.execute(wo_stmt)).scalar_one_or_none()
-        if wo is None:
-            raise ValueError(f"Work order {work_order_id} not found")
-
-        mat_stmt = select(WorkOrderMaterialModel).where(
-            WorkOrderMaterialModel.work_order_id == work_order_id,
-            WorkOrderMaterialModel.material_id == material_id,
-        )
-        req = (await self._session.execute(mat_stmt)).scalar_one_or_none()
-        if req is None:
-            raise ValueError(f"Material {material_id} is not in the WO material requirements")
-
-        remaining = Decimal(str(req.required_quantity)) - Decimal(str(req.issued_quantity))
-        if quantity > remaining:
-            raise ValueError(
-                f"Cannot issue {quantity}: only {remaining} remaining for this material requirement"
-            )
-
-        # Update reservation rows (FIFO by created_at)
-        await self._lock_material(tenant_id, material_id)
-        res_stmt = (
-            select(InventoryReservationModel)
-            .where(
-                InventoryReservationModel.tenant_id == tenant_id,
-                InventoryReservationModel.reference_type == "work_order",
-                InventoryReservationModel.reference_id == work_order_id,
-                InventoryReservationModel.material_id == material_id,
-                InventoryReservationModel.status.in_(("RESERVED", "PARTIALLY_ISSUED", "ISSUED")),
-            )
-            .order_by(InventoryReservationModel.created_at)
-            .with_for_update()
-        )
-        if batch_id is not None:
-            res_stmt = res_stmt.where(InventoryReservationModel.batch_id == batch_id)
-        reservations = (await self._session.execute(res_stmt)).scalars().all()
-        reservable = sum(
-            Decimal(str(res.quantity)) - Decimal(str(res.issued_quantity))
-            for res in reservations
-        )
-        if quantity > reservable:
-            raise ValueError(
-                f"Cannot issue {quantity}: only {reservable} reserved and unissued for this material"
-            )
-
-        qty_left = quantity
-        now = datetime.now(timezone.utc)
-        for res in reservations:
-            if qty_left <= 0:
-                break
-            res_qty = Decimal(str(res.quantity)) - Decimal(str(res.issued_quantity))
-            if res_qty <= 0:
-                continue
-            issue_from_res = min(qty_left, res_qty)
-
-            if res.batch_id is not None:
-                batch = await self._lock_batch(tenant_id, res.batch_id)
-                remaining_qty = Decimal(
-                    str(batch.remaining_quantity if batch.remaining_quantity is not None else batch.quantity)
-                )
-                if issue_from_res > remaining_qty:
-                    raise InsufficientStockError(
-                        f"Cannot issue {issue_from_res} from batch {batch.batch_number}: only {remaining_qty} remains"
-                    )
-                batch.remaining_quantity = float(remaining_qty - issue_from_res)
-                batch.reserved_quantity = float(
-                    max(Decimal("0"), Decimal(str(batch.reserved_quantity or 0)) - issue_from_res)
-                )
-                self._update_batch_status(batch)
-
-            await self.issue_stock(
-                tenant_id=tenant_id,
-                material_id=material_id,
-                quantity=issue_from_res,
-                work_order_id=work_order_id,
-                unit_id=unit_id,
-                created_by=created_by,
-                batch_id=res.batch_id,
-            )
-
-            res.issued_quantity = float(Decimal(str(res.issued_quantity)) + issue_from_res)
-            if Decimal(str(res.issued_quantity)) >= Decimal(str(res.quantity)):
-                res.status = "ISSUED"
-            else:
-                res.status = "PARTIALLY_ISSUED"
-            res.updated_at = now
-            qty_left -= issue_from_res
-
-        if qty_left > 0:
-            raise ValueError(f"Unable to issue {qty_left}: no matching reservation remained")
-
-        req.issued_quantity = float(Decimal(str(req.issued_quantity)) + quantity)
-
-        new_wo_status = wo.status
-        if transition_wo_status:
-            all_materials = (
-                await self._session.execute(
-                    select(WorkOrderMaterialModel).where(
-                        WorkOrderMaterialModel.work_order_id == work_order_id
-                    )
-                )
-            ).scalars().all()
-            all_issued = all(
-                Decimal(str(m.issued_quantity)) >= Decimal(str(m.required_quantity))
-                for m in all_materials
-            )
-            if all_issued and wo.status in (
-                WorkOrderStatus.MATERIAL_RESERVED.value,
-                WorkOrderStatus.MATERIAL_PENDING.value,
-                WorkOrderStatus.MATERIAL_ISSUED.value,
-            ):
-                new_wo_status = WorkOrderStatus.MATERIAL_ISSUED.value
-                wo.status = new_wo_status
-                wo.updated_at = now
-
-        return {
-            "issued_quantity": float(req.issued_quantity),
-            "remaining_quantity": float(remaining - quantity),
-            "work_order_status": new_wo_status,
-        }
-
-    async def receive_stock(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        material_id: uuid.UUID,
-        quantity: Decimal,
-        work_order_id: uuid.UUID,
-        unit_id: Optional[uuid.UUID] = None,
-        created_by: uuid.UUID,
-        to_location_id: Optional[uuid.UUID] = None,
-    ) -> None:
-        """Receive finished goods into stock after production (available at warehouse)."""
-        model = await self._lock_material(tenant_id, material_id)
-        loc = to_location_id or await self._default_warehouse_location(tenant_id)
-        if loc:
-            await self._add_bucket_quantity(
-                tenant_id=tenant_id,
-                material_id=material_id,
-                location_id=loc,
-                stock_status=_ST_AVAILABLE,
-                quantity=quantity,
-            )
-            await self._sync_material_total_from_buckets(model)
-        else:
-            model.current_stock = float(Decimal(str(model.current_stock)) + quantity)
-        await self._log_transaction(
-            tenant_id=tenant_id, material_id=material_id, transaction_type="produce",
-            quantity=quantity, unit_id=unit_id, reference_type="work_order",
-            reference_id=work_order_id, created_by=created_by,
-            remarks=f"Production receipt for WO {work_order_id}",
-            to_location_id=loc,
-        )
-        # ── Stock Ledger ────────────────────────────────────────────────────
-        await self._log_ledger(
-            tenant_id=tenant_id,
-            material_id=material_id,
-            location_id=loc,
-            transaction_type="PRODUCTION_RECEIPT",
-            quantity_change=quantity,
-            reference_type="work_order",
-            reference_id=work_order_id,
         )
 
     async def receive_purchase_receipt(
@@ -1372,7 +1222,7 @@ class InventoryService:
             remarks="Goods receipt",
             to_location_id=loc,
         )
-        # ── Stock Ledger (immutable audit) ───────────────────────────────────
+        # â”€â”€ Stock Ledger (immutable audit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         await self._log_ledger(
             tenant_id=tenant_id,
             material_id=material_id,
@@ -1558,7 +1408,7 @@ class InventoryService:
             reference_type="quality_inspection",
             reference_id=inspection_id,
             created_by=created_by,
-            remarks="Inspection pass → available",
+            remarks="Inspection pass â†’ available",
             from_location_id=warehouse_location_id,
             to_location_id=warehouse_location_id,
         )
@@ -1594,7 +1444,7 @@ class InventoryService:
             reference_type="quality_inspection",
             reference_id=inspection_id,
             created_by=created_by,
-            remarks="Inspection fail → quarantine",
+            remarks="Inspection fail â†’ quarantine",
             from_location_id=warehouse_location_id,
             to_location_id=quarantine_location_id,
         )
@@ -1672,675 +1522,3 @@ class InventoryService:
             to_location_id=warehouse_location_id,
         )
 
-    # ── Phase 2: Inventory Reservation System Extensions ───────────────────────
-
-    async def reserve_for_work_order(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        material_id: uuid.UUID,
-        quantity: Decimal,
-        work_order_id: uuid.UUID,
-        unit_id: Optional[uuid.UUID] = None,
-        created_by: uuid.UUID,
-        batch_id: Optional[uuid.UUID] = None,
-    ) -> tuple[Decimal, Decimal]:
-        """Reserve stock for work order with partial reservation handling.
-
-        Returns: (reserved_qty, shortage_qty)
-        """
-        await self._lock_work_order(tenant_id, work_order_id)
-        model = await self._lock_material(tenant_id, material_id)
-        available = await self._available_for_locked_material(model)
-
-        reserve_qty = min(quantity, available)
-        batch_allocations: list[tuple[Optional[BatchModel], Decimal]] = []
-
-        if reserve_qty > 0 and getattr(model, "is_batch_tracked", False):
-            remaining_to_allocate = reserve_qty
-            for batch in await self._candidate_batches(
-                tenant_id=tenant_id,
-                material_id=material_id,
-                batch_id=batch_id,
-            ):
-                free_qty = Decimal(
-                    str(batch.remaining_quantity if batch.remaining_quantity is not None else batch.quantity)
-                )
-                free_qty -= Decimal(str(batch.reserved_quantity or 0))
-                if free_qty <= 0:
-                    continue
-                take = min(free_qty, remaining_to_allocate)
-                batch_allocations.append((batch, take))
-                remaining_to_allocate -= take
-                if remaining_to_allocate <= 0:
-                    break
-            if remaining_to_allocate > 0:
-                reserve_qty -= remaining_to_allocate
-        elif reserve_qty > 0:
-            batch_allocations.append((None, reserve_qty))
-
-        shortage_qty = max(Decimal("0"), quantity - reserve_qty)
-
-        if reserve_qty > 0:
-            model.reserved_stock = float(Decimal(str(model.reserved_stock)) + reserve_qty)
-
-            for batch, allocation_qty in batch_allocations:
-                if batch is not None:
-                    batch.reserved_quantity = float(
-                        Decimal(str(batch.reserved_quantity or 0)) + allocation_qty
-                    )
-                    self._update_batch_status(batch)
-
-                await self._log_transaction(
-                    tenant_id=tenant_id,
-                    material_id=material_id,
-                    transaction_type="reserve",
-                    quantity=allocation_qty,
-                    unit_id=unit_id,
-                    batch_id=batch.id if batch is not None else None,
-                    reference_type="work_order",
-                    reference_id=work_order_id,
-                    created_by=created_by,
-                    remarks=f"Reserved for WO {work_order_id}",
-                )
-
-                self._session.add(InventoryReservationModel(
-                    tenant_id=tenant_id,
-                    reference_type="work_order",
-                    reference_id=work_order_id,
-                    material_id=material_id,
-                    batch_id=batch.id if batch is not None else None,
-                    quantity=float(allocation_qty),
-                    status="RESERVED",
-                    unit_id=unit_id,
-                    issued_quantity=0,
-                    consumed_quantity=0,
-                    returned_quantity=0,
-                ))
-
-        return reserve_qty, shortage_qty
-
-    async def get_existing_reservation_qty_for_wo(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        work_order_id: uuid.UUID,
-        material_id: uuid.UUID,
-    ) -> Decimal:
-        """Sum active reservation quantity for WO line (idempotent release)."""
-        from backend.app.infrastructure.persistence.models.inventory_reservation_model import (
-            InventoryReservationModel,
-        )
-
-        stmt = select(func.coalesce(func.sum(InventoryReservationModel.quantity), 0)).where(
-            InventoryReservationModel.tenant_id == tenant_id,
-            InventoryReservationModel.reference_type == "work_order",
-            InventoryReservationModel.reference_id == work_order_id,
-            InventoryReservationModel.material_id == material_id,
-            InventoryReservationModel.status.in_(
-                ("RESERVED", "PARTIALLY_ISSUED", "ISSUED", "PARTIALLY_CONSUMED", "CONSUMED", "RETURNED")
-            ),
-        )
-        total = (await self._session.execute(stmt)).scalar()
-        return Decimal(str(total or 0))
-
-    async def create_shortage_record(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        work_order_id: uuid.UUID,
-        material_id: uuid.UUID,
-        required_quantity: Decimal,
-        shortage_quantity: Decimal,
-        created_by: uuid.UUID,
-    ) -> None:
-        """Create a material shortage record."""
-        from backend.app.infrastructure.persistence.models.material_shortage_model import MaterialShortageModel
-
-        available_qty = required_quantity - shortage_quantity
-        existing = (
-            await self._session.execute(
-                select(MaterialShortageModel).where(
-                    MaterialShortageModel.tenant_id == tenant_id,
-                    MaterialShortageModel.work_order_id == work_order_id,
-                    MaterialShortageModel.material_id == material_id,
-                    MaterialShortageModel.status.in_(["open", "partial"]),
-                )
-            )
-        ).scalar_one_or_none()
-
-        if existing is not None:
-            existing.required_quantity = float(required_quantity)
-            existing.available_quantity = float(available_qty)
-            existing.shortage_quantity = float(shortage_quantity)
-            existing.updated_at = datetime.now(timezone.utc)
-            return
-
-        shortage = MaterialShortageModel(
-            id=uuid.uuid4(),
-            tenant_id=tenant_id,
-            work_order_id=work_order_id,
-            material_id=material_id,
-            required_quantity=float(required_quantity),
-            available_quantity=float(available_qty),
-            shortage_quantity=float(shortage_quantity),
-            status="open",
-            created_by=created_by,
-        )
-        self._session.add(shortage)
-
-    async def get_shortages_for_work_order(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        work_order_id: uuid.UUID,
-    ) -> list[MaterialShortage]:
-        """Get all shortage records for a work order."""
-        from backend.app.infrastructure.persistence.models.material_shortage_model import MaterialShortageModel
-
-        stmt = select(MaterialShortageModel).where(
-            MaterialShortageModel.tenant_id == tenant_id,
-            MaterialShortageModel.work_order_id == work_order_id,
-            MaterialShortageModel.status.in_(["open", "partial"]),
-        )
-        result = await self._session.execute(stmt)
-        models = result.scalars().all()
-
-        shortages = []
-        for model in models:
-            shortages.append(
-                MaterialShortage(
-                    id=model.id,
-                    tenant_id=model.tenant_id,
-                    work_order_id=model.work_order_id,
-                    material_id=model.material_id,
-                    required_quantity=Decimal(str(model.required_quantity)),
-                    available_quantity=Decimal(str(model.available_quantity)),
-                    shortage_quantity=Decimal(str(model.shortage_quantity)),
-                    status=ShortageStatus(model.status),
-                    created_at=model.created_at,
-                    updated_at=model.updated_at,
-                )
-            )
-        return shortages
-
-    async def get_pending_issues(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-    ) -> list[dict]:
-        """Get pending material issue queue for storekeeper dashboard."""
-        from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderModel
-        from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderMaterialModel
-
-        # Include MATERIAL_PENDING because a WO can have partial reservations while shortages remain.
-        stmt = (
-            select(WorkOrderModel)
-            .where(
-                WorkOrderModel.tenant_id == tenant_id,
-                WorkOrderModel.status.in_(["MATERIAL_PENDING", "MATERIAL_RESERVED", "MATERIAL_ISSUED"]),
-                WorkOrderModel.is_deleted.is_(False),
-            )
-            .order_by(WorkOrderModel.due_date)
-        )
-        result = await self._session.execute(stmt)
-        wos = result.scalars().all()
-
-        pending_issues = []
-        for wo in wos:
-            # Get material requirements for this WO
-            mat_stmt = select(WorkOrderMaterialModel).where(
-                WorkOrderMaterialModel.work_order_id == wo.id
-            )
-            mat_result = await self._session.execute(mat_stmt)
-            materials = mat_result.scalars().all()
-
-            for mat in materials:
-                remaining = Decimal(str(mat.required_quantity)) - Decimal(str(mat.issued_quantity))
-                if remaining > 0:
-                    material_model = (
-                        await self._session.execute(
-                            select(MaterialModel).where(
-                                MaterialModel.id == mat.material_id,
-                                MaterialModel.tenant_id == tenant_id,
-                                MaterialModel.is_deleted.is_(False),
-                            )
-                        )
-                    ).scalar_one_or_none()
-                    res_rows = (
-                        await self._session.execute(
-                            select(InventoryReservationModel, BatchModel)
-                            .outerjoin(BatchModel, BatchModel.id == InventoryReservationModel.batch_id)
-                            .where(
-                                InventoryReservationModel.tenant_id == tenant_id,
-                                InventoryReservationModel.reference_type == "work_order",
-                                InventoryReservationModel.reference_id == wo.id,
-                                InventoryReservationModel.material_id == mat.material_id,
-                                InventoryReservationModel.status.in_(
-                                    (
-                                        "RESERVED",
-                                        "PARTIALLY_ISSUED",
-                                        "ISSUED",
-                                        "PARTIALLY_CONSUMED",
-                                        "CONSUMED",
-                                        "RETURNED",
-                                    )
-                                ),
-                            )
-                            .order_by(InventoryReservationModel.created_at)
-                        )
-                    ).all()
-                    reserved_quantity = sum(Decimal(str(res.quantity or 0)) for res, _batch in res_rows)
-                    issued_quantity = sum(Decimal(str(res.issued_quantity or 0)) for res, _batch in res_rows)
-                    consumed_quantity = sum(Decimal(str(res.consumed_quantity or 0)) for res, _batch in res_rows)
-                    returned_quantity = sum(Decimal(str(res.returned_quantity or 0)) for res, _batch in res_rows)
-                    batch_numbers = [
-                        batch.batch_number
-                        for _res, batch in res_rows
-                        if batch is not None and batch.batch_number
-                    ]
-                    batch_ids = [
-                        res.batch_id
-                        for res, _batch in res_rows
-                        if res.batch_id is not None
-                    ]
-                    current_stock = (
-                        Decimal(str(material_model.current_stock or 0))
-                        if material_model is not None
-                        else Decimal("0")
-                    )
-                    reserved_stock = (
-                        Decimal(str(material_model.reserved_stock or 0))
-                        if material_model is not None
-                        else Decimal("0")
-                    )
-                    pending_issues.append({
-                        "work_order_id": wo.id,
-                        "wo_number": wo.wo_number,
-                        "material_id": mat.material_id,
-                        "material_code": material_model.code if material_model is not None else None,
-                        "material_name": material_model.name if material_model is not None else None,
-                        "batch_id": batch_ids[0] if batch_ids else None,
-                        "batch_number": ", ".join(dict.fromkeys(batch_numbers)) if batch_numbers else None,
-                        "required_quantity": mat.required_quantity,
-                        "reserved_quantity": float(reserved_quantity),
-                        "issued_quantity": mat.issued_quantity,
-                        "consumed_quantity": float(consumed_quantity),
-                        "returned_quantity": float(returned_quantity),
-                        "remaining_quantity": float(remaining),
-                        "available_quantity": float(max(Decimal("0"), current_stock - reserved_stock)),
-                        "due_date": wo.due_date,
-                        "status": wo.status,
-                    })
-
-        return pending_issues
-
-    # ── Production Inventory Methods ─────────────────────────────────────────────
-
-    async def consume_stock(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        material_id: uuid.UUID,
-        quantity: Decimal,
-        work_order_id: uuid.UUID,
-        unit_id: Optional[uuid.UUID] = None,
-        created_by: uuid.UUID,
-        batch_id: Optional[uuid.UUID] = None,
-    ) -> None:
-        """Consume stock during production (ISSUED → CONSUMED).
-
-        Stock was already reduced on issue; this records consumption and closes reservations.
-        """
-        await self._lock_work_order(tenant_id, work_order_id)
-        model = await self._lock_material(tenant_id, material_id)
-        model.updated_at = datetime.now(timezone.utc)
-
-        qty_left = quantity
-        stmt = (
-            select(InventoryReservationModel)
-            .where(
-                InventoryReservationModel.tenant_id == tenant_id,
-                InventoryReservationModel.reference_type == "work_order",
-                InventoryReservationModel.reference_id == work_order_id,
-                InventoryReservationModel.material_id == material_id,
-                InventoryReservationModel.status.in_(
-                    ("ISSUED", "PARTIALLY_ISSUED", "PARTIALLY_CONSUMED", "RESERVED")
-                ),
-            )
-            .order_by(InventoryReservationModel.created_at)
-            .with_for_update()
-        )
-        if batch_id is not None:
-            stmt = stmt.where(InventoryReservationModel.batch_id == batch_id)
-        res_rows = (await self._session.execute(stmt)).scalars().all()
-        total_issuable = sum(
-            max(
-                Decimal("0"),
-                Decimal(str(res.issued_quantity or 0))
-                - Decimal(str(res.consumed_quantity or 0))
-                - Decimal(str(res.returned_quantity or 0)),
-            )
-            for res in res_rows
-        )
-        if quantity > total_issuable:
-            raise ValueError(f"Cannot consume {quantity}: only {total_issuable} issued and unconsumed")
-
-        consumed_by_batch: dict[Optional[uuid.UUID], Decimal] = {}
-        for res in res_rows:
-            if qty_left <= 0:
-                break
-            issuable = (
-                Decimal(str(res.issued_quantity))
-                - Decimal(str(res.consumed_quantity))
-                - Decimal(str(res.returned_quantity or 0))
-            )
-            if issuable <= 0:
-                continue
-            take = min(qty_left, issuable)
-            res.consumed_quantity = float(Decimal(str(res.consumed_quantity)) + take)
-            if res.batch_id is not None:
-                batch = await self._lock_batch(tenant_id, res.batch_id)
-                batch.consumed_quantity = float(Decimal(str(batch.consumed_quantity or 0)) + take)
-                self._update_batch_status(batch)
-            if Decimal(str(res.consumed_quantity)) >= Decimal(str(res.quantity)):
-                res.status = "CONSUMED"
-            else:
-                res.status = "PARTIALLY_CONSUMED"
-            res.updated_at = datetime.now(timezone.utc)
-            consumed_by_batch[res.batch_id] = consumed_by_batch.get(res.batch_id, Decimal("0")) + take
-            qty_left -= take
-
-        if qty_left > 0:
-            raise ValueError(f"Cannot consume {quantity}: only {quantity - qty_left} issued and unconsumed")
-
-        for consumed_batch_id, consumed_qty in consumed_by_batch.items():
-            await self._log_transaction(
-                tenant_id=tenant_id,
-                material_id=material_id,
-                transaction_type="CONSUME",
-                quantity=consumed_qty,
-                unit_id=unit_id,
-                batch_id=consumed_batch_id,
-                reference_type="work_order",
-                reference_id=work_order_id,
-                created_by=created_by,
-                remarks=f"Production consumption for WO {work_order_id}",
-            )
-        
-        await self._log_ledger(
-            tenant_id=tenant_id,
-            material_id=material_id,
-            location_id=None,
-            transaction_type="PRODUCTION_CONSUMPTION",
-            quantity_change=-quantity,
-            reference_type="work_order",
-            reference_id=work_order_id,
-        )
-
-    async def receive_fg(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        product_id: uuid.UUID,
-        quantity: Decimal,
-        work_order_id: uuid.UUID,
-        unit_id: Optional[uuid.UUID] = None,
-        created_by: uuid.UUID,
-        to_location_id: Optional[uuid.UUID] = None,
-    ) -> bool:
-        """Receive finished goods after QC approval (QC_APPROVED → FG_RECEIVED).
-        
-        Inventory impact: Increases FG stock.
-        """
-        await self._lock_work_order(tenant_id, work_order_id)
-        # Use product_id instead of material_id for FG
-        model = await self._lock_material(tenant_id, product_id)
-        existing_receipt = (
-            await self._session.execute(
-                select(InventoryTransactionModel.id).where(
-                    InventoryTransactionModel.tenant_id == tenant_id,
-                    InventoryTransactionModel.material_id == product_id,
-                    InventoryTransactionModel.reference_type == "work_order",
-                    InventoryTransactionModel.reference_id == work_order_id,
-                    InventoryTransactionModel.transaction_type == "FG_RECEIPT",
-                    InventoryTransactionModel.is_deleted.is_(False),
-                )
-            )
-        ).scalar_one_or_none()
-        if existing_receipt is not None:
-            return False
-
-        loc = to_location_id or await self._default_warehouse_location(tenant_id)
-        
-        if loc:
-            await self._add_bucket_quantity(
-                tenant_id=tenant_id,
-                material_id=product_id,
-                location_id=loc,
-                stock_status=_ST_AVAILABLE,
-                quantity=quantity,
-            )
-            await self._sync_material_total_from_buckets(model)
-        else:
-            model.current_stock = float(Decimal(str(model.current_stock)) + quantity)
-        
-        await self._log_transaction(
-            tenant_id=tenant_id,
-            material_id=product_id,
-            transaction_type="FG_RECEIPT",
-            quantity=quantity,
-            unit_id=unit_id,
-            reference_type="work_order",
-            reference_id=work_order_id,
-            created_by=created_by,
-            remarks=f"FG receipt for WO {work_order_id}",
-            to_location_id=loc,
-        )
-        
-        await self._log_ledger(
-            tenant_id=tenant_id,
-            material_id=product_id,
-            location_id=loc,
-            transaction_type="FG_RECEIPT",
-            quantity_change=quantity,
-            reference_type="work_order",
-            reference_id=work_order_id,
-        )
-        return True
-
-    async def reject_stock(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        material_id: uuid.UUID,
-        quantity: Decimal,
-        work_order_id: uuid.UUID,
-        unit_id: Optional[uuid.UUID] = None,
-        created_by: uuid.UUID,
-        reason: Optional[str] = None,
-    ) -> None:
-        """Reject stock (CONSUMED → REJECTED or ISSUED → REJECTED).
-        
-        Used for scrap/rejection during production or QC.
-        """
-        model = await self._lock_material(tenant_id, material_id)
-        
-        # Reduce current stock (scrap is removed from available stock)
-        current = Decimal(str(model.current_stock))
-        if current < quantity:
-            raise InsufficientStockError(
-                f"Cannot reject {quantity}: only {current} available"
-            )
-        model.current_stock = float(current - quantity)
-        model.updated_at = datetime.now(timezone.utc)
-        
-        await self._log_transaction(
-            tenant_id=tenant_id,
-            material_id=material_id,
-            transaction_type="REJECT",
-            quantity=quantity,
-            unit_id=unit_id,
-            reference_type="work_order",
-            reference_id=work_order_id,
-            created_by=created_by,
-            remarks=reason or f"Stock rejection for WO {work_order_id}",
-        )
-        
-        await self._log_ledger(
-            tenant_id=tenant_id,
-            material_id=material_id,
-            location_id=None,
-            transaction_type="REJECTION",
-            quantity_change=-quantity,
-            reference_type="work_order",
-            reference_id=work_order_id,
-        )
-
-    async def return_stock(
-        self,
-        *,
-        tenant_id: uuid.UUID,
-        material_id: uuid.UUID,
-        quantity: Decimal,
-        work_order_id: uuid.UUID,
-        unit_id: Optional[uuid.UUID] = None,
-        created_by: uuid.UUID,
-        batch_id: Optional[uuid.UUID] = None,
-    ) -> None:
-        """Return issued stock back to available (ISSUED → RESERVED → AVAILABLE).
-        
-        Used when material is returned from work order.
-        """
-        if quantity <= 0:
-            return
-
-        from backend.app.infrastructure.persistence.models.work_order_model import WorkOrderMaterialModel
-
-        await self._lock_work_order(tenant_id, work_order_id)
-        model = await self._lock_material(tenant_id, material_id)
-        loc = await self._default_warehouse_location(tenant_id)
-
-        res_stmt = (
-            select(InventoryReservationModel)
-            .where(
-                InventoryReservationModel.tenant_id == tenant_id,
-                InventoryReservationModel.reference_type == "work_order",
-                InventoryReservationModel.reference_id == work_order_id,
-                InventoryReservationModel.material_id == material_id,
-                InventoryReservationModel.status.in_(
-                    ("ISSUED", "PARTIALLY_ISSUED", "PARTIALLY_CONSUMED", "CONSUMED", "RETURNED")
-                ),
-            )
-            .order_by(InventoryReservationModel.created_at)
-            .with_for_update()
-        )
-        if batch_id is not None:
-            res_stmt = res_stmt.where(InventoryReservationModel.batch_id == batch_id)
-
-        reservations = (await self._session.execute(res_stmt)).scalars().all()
-        total_returnable = sum(
-            max(
-                Decimal("0"),
-                Decimal(str(res.issued_quantity or 0))
-                - Decimal(str(res.consumed_quantity or 0))
-                - Decimal(str(res.returned_quantity or 0)),
-            )
-            for res in reservations
-        )
-        if quantity > total_returnable:
-            raise ValueError(
-                f"Cannot return {quantity}: only {total_returnable} issued, unconsumed, and unreturned"
-            )
-
-        qty_left = quantity
-        returned_by_batch: dict[Optional[uuid.UUID], Decimal] = {}
-        now = datetime.now(timezone.utc)
-        for res in reservations:
-            if qty_left <= 0:
-                break
-            returnable = (
-                Decimal(str(res.issued_quantity or 0))
-                - Decimal(str(res.consumed_quantity or 0))
-                - Decimal(str(res.returned_quantity or 0))
-            )
-            if returnable <= 0:
-                continue
-            take = min(qty_left, returnable)
-            res.returned_quantity = float(Decimal(str(res.returned_quantity or 0)) + take)
-
-            consumed = Decimal(str(res.consumed_quantity or 0))
-            returned = Decimal(str(res.returned_quantity or 0))
-            issued = Decimal(str(res.issued_quantity or 0))
-            if consumed <= 0 and returned >= issued:
-                res.status = "RETURNED"
-            elif consumed >= Decimal(str(res.quantity or 0)):
-                res.status = "CONSUMED"
-            elif consumed > 0:
-                res.status = "PARTIALLY_CONSUMED"
-            elif returned > 0:
-                res.status = "PARTIALLY_ISSUED"
-            res.updated_at = now
-
-            if res.batch_id is not None:
-                batch = await self._lock_batch(tenant_id, res.batch_id)
-                current_remaining = Decimal(
-                    str(batch.remaining_quantity if batch.remaining_quantity is not None else batch.quantity)
-                )
-                batch.remaining_quantity = float(current_remaining + take)
-                batch.returned_quantity = float(Decimal(str(batch.returned_quantity or 0)) + take)
-                self._update_batch_status(batch)
-
-            returned_by_batch[res.batch_id] = returned_by_batch.get(res.batch_id, Decimal("0")) + take
-            qty_left -= take
-
-        if loc:
-            await self._add_bucket_quantity(
-                tenant_id=tenant_id,
-                material_id=material_id,
-                location_id=loc,
-                stock_status=_ST_AVAILABLE,
-                quantity=quantity,
-            )
-            await self._sync_material_total_from_buckets(model)
-        else:
-            model.current_stock = float(Decimal(str(model.current_stock)) + quantity)
-
-        mat_req = (
-            await self._session.execute(
-                select(WorkOrderMaterialModel)
-                .where(
-                    WorkOrderMaterialModel.work_order_id == work_order_id,
-                    WorkOrderMaterialModel.material_id == material_id,
-                )
-                .with_for_update()
-            )
-        ).scalar_one_or_none()
-        if mat_req is not None:
-            issued_qty = Decimal(str(mat_req.issued_quantity or 0))
-            mat_req.issued_quantity = float(max(Decimal("0"), issued_qty - quantity))
-
-        for returned_batch_id, returned_qty in returned_by_batch.items():
-            await self._log_transaction(
-                tenant_id=tenant_id,
-                material_id=material_id,
-                transaction_type="RETURN",
-                quantity=returned_qty,
-                unit_id=unit_id,
-                batch_id=returned_batch_id,
-                reference_type="work_order",
-                reference_id=work_order_id,
-                created_by=created_by,
-                remarks=f"Material return for WO {work_order_id}",
-                to_location_id=loc,
-            )
-        
-        await self._log_ledger(
-            tenant_id=tenant_id,
-            material_id=material_id,
-            location_id=loc,
-            transaction_type="RETURN",
-            quantity_change=quantity,
-            reference_type="work_order",
-            reference_id=work_order_id,
-        )

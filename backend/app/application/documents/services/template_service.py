@@ -40,7 +40,7 @@ class TemplateService:
         """Get the template path for a document type.
         
         Args:
-            document_type: Type of document (work_order, purchase_order, etc.)
+            document_type: Type of document (purchase_order, invoice, etc.)
             template_name: Name of the template file (default: print.html)
             
         Returns:

@@ -21,6 +21,12 @@ from backend.app.interfaces.api.v1.routes.notifications import router as notific
 from backend.app.interfaces.api.v1.routes.client_portal import router as client_portal_router
 
 from backend.app.interfaces.api.v1.routes.inventory_extended import router as inventory_extended_router
+from backend.app.interfaces.api.v1.routes.stock_aggregation import router as stock_aggregation_router
+from backend.app.interfaces.api.v1.routes.warehouse import router as warehouse_router
+from backend.app.interfaces.api.v1.routes.warehouse_fulfilment import router as warehouse_fulfilment_router
+from backend.app.interfaces.api.v1.routes.warehouse_product_assignment import router as warehouse_product_assignment_router
+from backend.app.interfaces.api.v1.routes.admin_orders import router as admin_orders_router
+from backend.app.interfaces.api.v1.routes.admin_dashboard import router as admin_dashboard_router
 from backend.app.interfaces.api.v1.routes.rbac_admin import router as rbac_admin_router
 from backend.app.interfaces.api.v1.routes.users import router as users_router
 from backend.app.interfaces.api.v1.routes.dashboards import router as dashboards_router
@@ -41,6 +47,12 @@ api_v1_router.include_router(tenants_router)
 api_v1_router.include_router(files_router)
 api_v1_router.include_router(inventory_router)
 api_v1_router.include_router(inventory_extended_router)
+api_v1_router.include_router(stock_aggregation_router)
+api_v1_router.include_router(warehouse_router)
+api_v1_router.include_router(warehouse_product_assignment_router)
+api_v1_router.include_router(warehouse_fulfilment_router)
+api_v1_router.include_router(admin_orders_router)
+api_v1_router.include_router(admin_dashboard_router)
 api_v1_router.include_router(master_data_router)
 api_v1_router.include_router(batch_and_serial_router)
 api_v1_router.include_router(products_router)
@@ -55,6 +67,7 @@ api_v1_router.include_router(client_portal_router)
 api_v1_router.include_router(documents_router)
 api_v1_router.include_router(delivery_dashboard_router)
 api_v1_router.include_router(analytics_router)
+api_v1_router.include_router(warehouse_fulfilment_router)
 
 
 # --- Dynamic Module Registration ---
@@ -86,6 +99,16 @@ module_registry.register(
     roles=["ADMIN", "MANAGER"],
     status="active",
     icon="PackageSearch"
+)
+
+module_registry.register(
+    id="warehouse",
+    name="Warehouse Management",
+    route="/warehouses",
+    dependencies=["inventory"],
+    roles=["ADMIN", "WAREHOUSE_USER"],
+    status="active",
+    icon="Warehouse"
 )
 
 module_registry.register(
@@ -123,7 +146,7 @@ module_registry.register(
     name="Deliveries",
     route="/sales/deliveries",
     dependencies=["sales", "inventory"],
-    roles=["ADMIN", "MANAGER", "SALES", "WAREHOUSE"],
+    roles=["ADMIN", "MANAGER", "SALES", "WAREHOUSE_USER"],
     status="active",
     icon="Truck"
 )
